@@ -130,7 +130,7 @@ async function loadFromSheets() {
     sheetsGet("settings!A2:B100"),
     sheetsGet("prices!A2:B1000"),
   ]);
-  // Build price map: ticker -> price_usd
+  // Build price map: ticker -> price_czk (cena v CZK)
   const prices = {};
   for (const row of (p||[])) {
     if (row[0] && row[1]) prices[row[0].trim()] = parseFloat(row[1]) || 0;
@@ -512,12 +512,10 @@ function InvestBook() {
       if (data.manual && data.manual.length)   setManualRows(data.manual);
       if (data.imported && data.imported.length) {
         const priced = data.imported.map(pos => {
-          const priceNative = pos.ticker && data.prices ? data.prices[pos.ticker] : null;
-          if (priceNative != null && pos.shares) {
-            const rate = pos.fx || (pos.currency === 'EUR' ? DEGIRO_FX : pos.currency === 'GBP' ? GBP_FX : ETORO_FX);
-            return { ...pos, priceCZK: priceNative * rate };
-          }
-          return pos;
+          // prices sheet: ticker | cena_CZK  (cena již v CZK, žádná konverze)
+          const priceCZK = (pos.ticker && data.prices && data.prices[pos.ticker] > 0)
+            ? data.prices[pos.ticker] : null;
+          return { ...pos, priceCZK };
         });
         setImportedRows(priced);
       }
@@ -1016,8 +1014,8 @@ function InvestBook() {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ borderBottom: "1px solid " + T.border }}>
-                {["Ticker","Broker","Kategorie","Kusy","Investováno","Invest. CZK","Hodnota CZK","Výnos CZK","Výnos %","Podíl","Roční %","Od"].map((h, i) => (
-                  <th key={i} style={{ padding: "9px 12px", textAlign: i <= 2 ? "left" : "right", fontSize: 11, color: T.muted, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
+                {["Název / Ticker","Broker","Kategorie","Kusy","Investováno","Invest. CZK","Hodnota CZK","Výnos CZK","Výnos %"].map((h, i) => (
+                  <th key={i} style={{ padding: "9px 12px", textAlign: i <= 2 ? "left" : "right", fontSize: 10, color: T.muted, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -1037,33 +1035,37 @@ function InvestBook() {
                   <tr key={pos.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.03)" }}
                     onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.02)"}
                     onMouseLeave={e => e.currentTarget.style.background = ""}>
-                    <td style={{ padding: "10px 12px", minWidth: 140 }}>
-                      <div style={{ fontWeight: 700, fontSize: 12, color: T.text }}>{pos.ticker}</div>
-                      <div style={{ fontSize: 10, color: T.subtle }}>{pos.name.split("(")[0].trim()}</div>
+                    <td style={{ padding:"10px 12px", minWidth:160 }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                        <div style={{ width:7, height:7, borderRadius:2, background:CAT_COLOR[pos.category]||T.muted, flexShrink:0 }} />
+                        <div>
+                          <div style={{ fontWeight:700, fontSize:13, color:T.text }}>{pos.ticker}</div>
+                          <div style={{ fontSize:10, color:T.subtle }}>{pos.name.split("(")[0].trim()}</div>
+                        </div>
+                      </div>
                     </td>
                     <EditCell value={pos.broker} type="text" align="left" color={T.muted} onSave={v=>updateImported(pos.id,"broker",v)}/>
                     <EditCell value={pos.category} isSelect options={CATEGORIES} align="left" color={CAT_COLOR[pos.category]||T.muted} onSave={v=>updateImported(pos.id,"category",v)}/>
-                    <td style={nc(T.subtle)}>{pos.shares != null ? pos.shares.toLocaleString("cs-CZ",{maximumFractionDigits:4}) : "—"}</td>
-                    <td style={nc(T.muted)}>{(pos.invested||0).toLocaleString("cs-CZ",{maximumFractionDigits:0})} {pos.currency}</td>
+                    <td style={nc(T.subtle)}>{pos.shares != null ? pos.shares.toLocaleString("cs-CZ",{maximumFractionDigits:6}) : "—"}</td>
+                    <td style={nc(T.muted)}>{(pos.invested||0).toLocaleString("cs-CZ",{maximumFractionDigits:2})} {pos.currency}</td>
                     <td style={nc(T.muted)}>{fmtCZK(invCZK)}</td>
-                    <td style={nc(hasPrice ? T.text : T.subtle)}>{hasPrice ? fmtCZK(valueCZK) : <span style={{fontSize:10,color:T.subtle}}>chybí cena</span>}</td>
+                    <td style={{ ...nc(hasPrice ? T.text : "#f59e0b"), fontWeight: hasPrice ? 700 : 400 }}>
+                      {hasPrice ? fmtCZK(valueCZK) : "doplň cenu"}
+                    </td>
                     <td style={nc(hasPrice ? gc : T.subtle)}>{hasPrice ? (gainCZK>=0?"+":"")+fmtCZK(gainCZK) : "—"}</td>
                     <td style={{...nc(hasPrice ? gc : T.subtle), fontWeight:700}}>{hasPrice ? (gainPct>=0?"+":"")+gainPct.toFixed(2)+"%" : "—"}</td>
-                    <td style={nc(T.subtle)}>{sharePct.toFixed(2)}%</td>
-                    <td style={nc(annR !== null ? (annR>=0?T.green:T.red) : T.subtle)}>{annR !== null ? (annR>=0?"+":"")+annR.toFixed(2)+"%" : "—"}</td>
-                    <td style={nc(T.subtle)}>{pos.start}</td>
                   </tr>
                 );
               })}
             </tbody>
             <tfoot>
-              <tr style={{ borderTop: "1px solid rgba(59,130,246,0.2)", background: "rgba(59,130,246,0.03)" }}>
-                <td colSpan={3} style={{ padding: "10px 12px", fontSize: 12, color: T.blue, fontWeight: 700 }}>SOUČET</td>
-                <td style={nc(T.muted)}>—</td>
-                <td style={{ ...nc(T.text), fontSize: 15, fontWeight: 800 }}>{fmtCZK(importedTotal)}</td>
+              <tr style={{ borderTop:"1px solid rgba(59,130,246,0.2)", background:"rgba(59,130,246,0.03)" }}>
+                <td colSpan={3} style={{ padding:"10px 12px", fontSize:12, color:T.blue, fontWeight:700 }}>SOUČET</td>
+                <td colSpan={2} style={nc(T.muted)}>—</td>
+                <td style={nc(T.muted)}>{fmtCZK(importedInvested)}</td>
+                <td style={{ ...nc(T.text), fontSize:14, fontWeight:800 }}>{fmtCZK(importedTotal)}</td>
                 <td style={nc(T.green)}>{fmtCZK(importedTotal - importedInvested)}</td>
-                <td style={{ ...nc(T.green), fontWeight: 700 }}>{importedInvested > 0 ? "+" + (((importedTotal-importedInvested)/importedInvested)*100).toFixed(2)+"%" : "—"}</td>
-                <td colSpan={4} />
+                <td style={{ ...nc(T.green), fontWeight:700 }}>{importedInvested > 0 ? "+"+(((importedTotal-importedInvested)/importedInvested)*100).toFixed(2)+"%" : "—"}</td>
               </tr>
             </tfoot>
           </table>
