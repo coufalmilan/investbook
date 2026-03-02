@@ -515,9 +515,14 @@ function InvestBook() {
           const t = pos.ticker;
           const tClean = t.replace(/[*]/g, "");
           const candidates = [t, t+"-USD", tClean, tClean+"-USD", t.replace(/-(USD|EUR|GBP)$/, "")];
-          let priceUSD = null;
-          for (const c of candidates) { if (data.prices[c] > 0) { priceUSD = data.prices[c]; break; } }
-          if (priceUSD) priceCZK = priceUSD * ETORO_FX;
+          let priceNative = null;
+          for (const c of candidates) { if (data.prices[c] > 0) { priceNative = data.prices[c]; break; } }
+          if (priceNative != null) {
+            // prices sheet stores price in native currency (USD for US stocks, EUR for EU stocks)
+            // priceCZK = cena za 1 akcii v CZK
+            const positionFx = pos.fx || (pos.currency === "EUR" ? DEGIRO_FX : pos.currency === "GBP" ? GBP_FX : ETORO_FX);
+            priceCZK = priceNative * positionFx;
+          }
         }
         return { ...pos, priceCZK };
       });
