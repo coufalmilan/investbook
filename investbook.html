@@ -93,8 +93,19 @@ const rowToPos = r => ({
   shares: r[10]!==""?parseFloat(r[10]):undefined, ticker: r[11]||undefined,
 });
 
+async function clearSheet(name) {
+  await gapi.client.sheets.spreadsheets.values.clear({
+    spreadsheetId: window.INVESTBOOK_CONFIG.SPREADSHEET_ID,
+    range: name + "!A1:Z10000",
+  });
+}
 async function saveToSheets(manual, imported, settings) {
   await ensureSheets();
+  await Promise.all([
+    clearSheet("manual_positions"),
+    clearSheet("imported_positions"),
+    clearSheet("settings"),
+  ]);
   await sheetsSet("manual_positions!A1",   [PHDR, ...manual.map(posToRow)]);
   await sheetsSet("imported_positions!A1", [PHDR, ...imported.map(posToRow)]);
   await sheetsSet("settings!A1", [["key","value"], ...Object.entries(settings).map(([k,v])=>[k,v])]);
@@ -256,13 +267,24 @@ const fmtCZK = (v) => new Intl.NumberFormat("cs-CZ", { style: "currency", curren
 const parseFlt = (s) => { const n = parseFloat(String(s).replace(/\s/g,"").replace(",",".")); return isNaN(n) ? 0 : n; };
 
 // Convert position value to CZK
+const FX_EUR = 24.23;
+const FX_USD = 20.57;
+const FX_GBP = 25.80;
+
+const fxRate = (pos) => {
+  if (pos.fx) return pos.fx;
+  if (pos.currency === "EUR") return FX_EUR;
+  if (pos.currency === "GBP") return FX_GBP;
+  if (pos.currency === "USD") return FX_USD;
+  return 1;
+};
 const toCZK = (pos) => {
   if (pos.currency === "CZK") return pos.value;
-  return pos.value * (pos.fx || 1);
+  return pos.value * fxRate(pos);
 };
 const investedCZK = (pos) => {
   if (pos.currency === "CZK") return pos.invested;
-  return pos.invested * (pos.fx || 1);
+  return pos.invested * fxRate(pos);
 };
 
 // ─── EDIT CELL ────────────────────────────────────────────────────────────────
@@ -518,8 +540,11 @@ function InvestBook() {
         const priced = data.imported.map(pos => {
           if (pos.ticker && data.prices && data.prices[pos.ticker]) {
             const priceUSD = data.prices[pos.ticker];
-            const rate = pos.currency === "EUR" ? FX_EUR : pos.currency === "GBP" ? FX_GBP : FX_USD;
-            const newValue = Math.round(priceUSD * rate * (pos.shares || 1));
+            // prices sheet is in USD — convert to position currency then to CZK
+            let priceInCurrency = priceUSD;
+            if (pos.currency === "EUR") priceInCurrency = priceUSD * (FX_USD / FX_EUR);
+            else if (pos.currency === "GBP") priceInCurrency = priceUSD * (FX_USD / FX_GBP);
+            const newValue = Math.round(priceInCurrency * (pos.shares || 1));
             return { ...pos, value: newValue };
           }
           return pos;
