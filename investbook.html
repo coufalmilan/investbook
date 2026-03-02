@@ -505,10 +505,7 @@ function InvestBook() {
           if (price && pos.shares) {
             // prices sheet stores price in position's native currency (USD/EUR/GBP)
             const newValue = Math.round(price * pos.shares * 100) / 100;
-            const annR = pos.invested > 0 && pos.start
-              ? (Math.pow(newValue / pos.invested, 1 / Math.max(1, new Date().getFullYear() - pos.start)) - 1) * 100
-              : null;
-            return { ...pos, value: newValue, annReturn: annR !== null ? Math.round(annR * 100) / 100 : null };
+            return { ...pos, value: newValue };
           }
           return pos;
         });
@@ -1010,11 +1007,15 @@ function InvestBook() {
             </thead>
             <tbody>
               {importedRows.map(pos => {
-                const valCZK = toCZK(pos);
-                const invCZK = investedCZK(pos);
+                const valCZK  = toCZK(pos);
+                const invCZK  = investedCZK(pos);
                 const gain    = valCZK - invCZK;
                 const gainPct = invCZK > 0 ? (gain / invCZK) * 100 : 0;
                 const share   = totalValue > 0 ? (valCZK / totalValue) * 100 : 0;
+                const yearsHeld = Math.max(1, new Date().getFullYear() - (pos.start || 2024));
+                const liveAnnReturn = pos.value > 0 && pos.invested > 0
+                  ? (Math.pow(pos.value / pos.invested, 1 / yearsHeld) - 1) * 100
+                  : null;
                 const gc = gain >= 0 ? T.green : T.red;
                 const cur = pos.currency;
                 return (
@@ -1038,7 +1039,7 @@ function InvestBook() {
                     <td style={{ ...nc(gc), fontWeight: 700 }}>{gainPct >= 0 ? "+" : ""}{gainPct.toFixed(2)}%</td>
                     <td style={nc(T.muted)}>{share.toFixed(2)}%</td>
                     <td style={nc(T.muted)}>{pos.start}</td>
-                    <EditCell value={pos.annReturn != null ? pos.annReturn : ""} color={pos.annReturn != null ? (pos.annReturn >= 0 ? T.green : T.red) : T.subtle} suffix={pos.annReturn != null ? "%" : ""} onSave={v => updateImported(pos.id,"annReturn",v)} />
+                    <EditCell value={liveAnnReturn !== null ? liveAnnReturn.toFixed(2) : ""} color={liveAnnReturn !== null ? (liveAnnReturn >= 0 ? T.green : T.red) : T.subtle} suffix={liveAnnReturn !== null ? "%" : ""} onSave={v => updateImported(pos.id,"annReturn",v)} />
                     <td style={nc(T.subtle)}>{pos.shares != null ? pos.shares.toLocaleString("cs-CZ", {maximumFractionDigits:4}) : "—"}</td>
                   </tr>
                 );
