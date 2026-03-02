@@ -130,10 +130,15 @@ async function loadFromSheets() {
     sheetsGet("settings!A2:B100"),
     sheetsGet("prices!A2:B1000"),
   ]);
-  // Build price map: ticker -> price_czk (cena v CZK)
+  // Build price map: ticker -> price_usd (raw USD from sheet)
   const prices = {};
   for (const row of (p||[])) {
-    if (row[0] && row[1]) prices[row[0].trim()] = parseFloat(row[1]) || 0;
+    if (!row[0] || !row[1]) continue;
+    const ticker = row[0].trim();
+    // Clean value: remove $, spaces, convert comma decimal to dot
+    const raw = String(row[1]).replace(/[$\s]/g,"").replace(",",".");
+    const price = parseFloat(raw);
+    if (ticker && isFinite(price) && price > 0) prices[ticker] = price;
   }
   return {
     manual:   m.filter(r=>r.length>=6).map(rowToPos),
@@ -512,16 +517,26 @@ function InvestBook() {
       if (data.manual && data.manual.length)   setManualRows(data.manual);
       if (data.imported && data.imported.length) {
         const priced = data.imported.map(pos => {
-          // prices sheet: ticker | cena_CZK  (cena již v CZK, žádná konverze)
-          const priceCZK = (pos.ticker && data.prices && data.prices[pos.ticker] > 0)
-            ? data.prices[pos.ticker] : null;
+          // prices sheet: ticker | cena_CZK
+          // Try exact match first, then with -USD/-EUR/-GBP suffix
+          let priceCZK = null;
+          if (pos.ticker && data.prices) {
+            const t = pos.ticker;
+            // Try exact ticker, then strip/add -USD suffix
+            const candidates = [t, t+"-USD", t.replace(/-(USD|EUR|GBP)$/,"")];
+            let priceUSD = null;
+            for (const c of candidates) {
+              if (data.prices[c] > 0) { priceUSD = data.prices[c]; break; }
+            }
+            // Convert USD price to CZK
+            if (priceUSD) {
+              if (pos.currency === "EUR") priceCZK = priceUSD * ETORO_FX; // price is USD
+              else if (pos.currency === "GBP") priceCZK = priceUSD * ETORO_FX;
+              else priceCZK = priceUSD * ETORO_FX; // default USD->CZK
+            }
+          }
           return { ...pos, priceCZK };
         });
-        console.log("=== INVESTBOOK DEBUG ===");
-        console.log("prices map:", JSON.stringify(data.prices));
-        console.log("imported[0]:", JSON.stringify(priced[0]));
-        console.log("imported count:", priced.length);
-        priced.slice(0,3).forEach(p => console.log(p.ticker, "shares:", p.shares, "priceCZK:", p.priceCZK, "invested:", p.invested, "currency:", p.currency, "fx:", p.fx));
         setImportedRows(priced);
       }
       if (data.settings) {
