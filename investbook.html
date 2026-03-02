@@ -445,13 +445,20 @@ function InvestBook() {
   const [gsMsg, setGsMsg] = useState("");
 
   // All rows combined (in CZK)
+  // gainPctOrig = výnos % v PŮVODNÍ měně (USD/EUR/CZK), aby ho nezkresloval FX kurz
   const allRows = [
-    ...manualRows.map(p => ({ ...p, valueCZK: p.value||0, investedCZK: p.invested||0 })),
+    ...manualRows.map(p => ({
+      ...p, valueCZK: p.value||0, investedCZK: p.invested||0,
+      gainPctOrig: p.invested > 0 ? (((p.value||0)-(p.invested||0))/(p.invested))*100 : 0,
+    })),
     ...importedRows.map(p => {
       const fx = p.fx||(p.currency==="EUR"?DEGIRO_FX:p.currency==="GBP"?GBP_FX:ETORO_FX);
       const valCZK = p.priceCZK && p.shares ? Math.round(p.priceCZK*p.shares) : Math.round((p.invested||0)*fx);
       const invCZK = Math.round((p.invested||0)*fx);
-      return { ...p, valueCZK: valCZK, investedCZK: invCZK };
+      // Přepočet hodnoty zpátky do původní měny pro správné %
+      const valueOrig = (p.priceCZK && p.shares && fx > 0) ? (p.priceCZK * p.shares) / fx : (p.invested||0);
+      const gainPctOrig = p.invested > 0 ? ((valueOrig - p.invested) / p.invested) * 100 : 0;
+      return { ...p, valueCZK: valCZK, investedCZK: invCZK, gainPctOrig };
     }),
   ];
   const totalValue = manualRows.reduce((s,p) => s + (p.value||0), 0) + importedRows.reduce((s,p) => {
@@ -703,7 +710,7 @@ function InvestBook() {
             { key: "invested",  label: "Investováno", align: "right", sortFn: (a,b) => a.investedCZK - b.investedCZK },
             { key: "value",     label: "Hodnota",     align: "right", sortFn: (a,b) => a.valueCZK - b.valueCZK },
             { key: "gain",      label: "Výnos",       align: "right", sortFn: (a,b) => (a.valueCZK-a.investedCZK) - (b.valueCZK-b.investedCZK) },
-            { key: "gainPct",   label: "Výnos %",     align: "right", sortFn: (a,b) => ((a.valueCZK-a.investedCZK)/a.investedCZK) - ((b.valueCZK-b.investedCZK)/b.investedCZK) },
+            { key: "gainPct",   label: "Výnos %",     align: "right", sortFn: (a,b) => (a.gainPctOrig||0) - (b.gainPctOrig||0) },
             { key: "share",     label: "Podíl %",     align: "right", sortFn: (a,b) => a.valueCZK - b.valueCZK },
             { key: "start",     label: "Od",          align: "right", sortFn: (a,b) => a.start - b.start },
             { key: "annReturn", label: "Roční %",     align: "right", sortFn: (a,b) => (a.annReturn || 0) - (b.annReturn || 0) },
@@ -736,9 +743,9 @@ function InvestBook() {
                   <tbody>
                     {sortedRows.map((p, idx) => {
                       const gain    = p.valueCZK - p.investedCZK;
-                      const gainPct = p.investedCZK > 0 ? (gain / p.investedCZK) * 100 : 0;
+                      const gainPct = p.gainPctOrig || 0;  // % v původní měně (USD/EUR/CZK)
                       const share   = (p.valueCZK / totalValue) * 100;
-                      const gc = gain >= 0 ? T.green : T.red;
+                      const gc = gainPct >= 0 ? T.green : T.red;
                       return (
                         <tr key={p.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.03)", transition: "background 0.1s" }}
                           onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.025)"; }}
@@ -1049,10 +1056,13 @@ function InvestBook() {
                 const hasPrice = isFinite(pos.priceCZK) && pos.priceCZK > 0 && isFinite(pos.shares) && pos.shares > 0;
                 const valueCZK = hasPrice ? pos.priceCZK * pos.shares : invCZK;
                 const gainCZK  = valueCZK - invCZK;
-                const gainPct  = invCZK > 0 ? (gainCZK / invCZK) * 100 : 0;
+                // Výnos % počítáme v PŮVODNÍ měně (ne CZK), aby zkreslení kurzu neovlivnilo %
+                // valueOrig = priceCZK / rate * shares (zpět do orig měny) nebo invOrig = pos.invested
+                const valueOrig = hasPrice && rate > 0 ? (pos.priceCZK * pos.shares) / rate : pos.invested;
+                const gainPct  = pos.invested > 0 ? ((valueOrig - pos.invested) / pos.invested) * 100 : 0;
                 const sharePct = totalValue > 0 ? (valueCZK / totalValue) * 100 : 0;
                 const years    = Math.max(1, new Date().getFullYear() - (pos.start || 2024));
-                const annR     = hasPrice && invCZK > 0 ? (Math.pow(valueCZK / invCZK, 1 / years) - 1) * 100 : null;
+                const annR     = hasPrice && pos.invested > 0 ? (Math.pow(valueOrig / pos.invested, 1 / years) - 1) * 100 : null;
                 const gc       = gainCZK >= 0 ? T.green : T.red;
                 return (
                   <tr key={pos.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.03)" }}
