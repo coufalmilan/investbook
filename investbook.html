@@ -517,6 +517,11 @@ function InvestBook() {
             ? data.prices[pos.ticker] : null;
           return { ...pos, priceCZK };
         });
+        console.log("=== INVESTBOOK DEBUG ===");
+        console.log("prices map:", JSON.stringify(data.prices));
+        console.log("imported[0]:", JSON.stringify(priced[0]));
+        console.log("imported count:", priced.length);
+        priced.slice(0,3).forEach(p => console.log(p.ticker, "shares:", p.shares, "priceCZK:", p.priceCZK, "invested:", p.invested, "currency:", p.currency, "fx:", p.fx));
         setImportedRows(priced);
       }
       if (data.settings) {
