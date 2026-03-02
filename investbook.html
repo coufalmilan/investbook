@@ -400,6 +400,8 @@ function InvestBook() {
   // Imported positions (DEGIRO + eToro + Crypto)
   const [importedRows, setImportedRows] = useState([...DEGIRO_POSITIONS_INIT, ...ETORO_POSITIONS_INIT, ...CRYPTO_POSITIONS_INIT]);
   const [csvLoaded, setCsvLoaded] = useState(false);
+  const [gsStatus, setGsStatus] = useState("idle"); // idle | loading | saving | saved | error
+  const [gsMsg, setGsMsg] = useState("");
 
   // All rows combined (in CZK)
   const allRows = [
@@ -494,7 +496,61 @@ function InvestBook() {
 
   // ── REFRESH PRICES (re-fetch without re-parsing CSV) ─────────────────────────
 
-  const tabPrehled = () => {
+  // ── GOOGLE SHEETS LOAD / SAVE ────────────────────────────────────────────────
+  const handleLoad = async () => {
+    if (!gapiReady) { setGsMsg("Google API se ještě načítá, zkus za chvíli."); return; }
+    setGsStatus("loading");
+    setGsMsg("");
+    try {
+      const data = await withAuth(loadFromSheets);
+      if (data.manual && data.manual.length)   setManualRows(data.manual);
+      if (data.imported && data.imported.length) {
+        // Apply prices from sheets
+        const priced = data.imported.map(pos => {
+          if (pos.ticker && data.prices && data.prices[pos.ticker]) {
+            const priceUSD = data.prices[pos.ticker];
+            const rate = pos.currency === "EUR" ? FX_EUR : pos.currency === "GBP" ? FX_GBP : FX_USD;
+            const newValue = Math.round(priceUSD * rate * (pos.shares || 1));
+            return { ...pos, value: newValue };
+          }
+          return pos;
+        });
+        setImportedRows(priced);
+      }
+      if (data.settings) {
+        if (data.settings.monthlyContrib) setMonthlyContrib(parseFloat(data.settings.monthlyContrib));
+        if (data.settings.hypoteka) setHypoteka(parseFloat(data.settings.hypoteka));
+        if (data.settings.zustatek) setZustatek(parseFloat(data.settings.zustatek));
+      }
+      setGsStatus("idle");
+      setGsMsg("✓ Načteno ze Sheets");
+      setTimeout(() => setGsMsg(""), 4000);
+    } catch (err) {
+      setGsStatus("error");
+      setGsMsg("✗ " + (err.message || "Chyba při načítání"));
+    }
+  };
+
+  const handleSave = async () => {
+    if (!gapiReady) { setGsMsg("Google API se ještě načítá, zkus za chvíli."); return; }
+    setGsStatus("saving");
+    setGsMsg("");
+    try {
+      await withAuth(() => saveToSheets(manualRows, importedRows, {
+        monthlyContrib: String(monthlyContrib),
+        hypoteka: String(hypoteka),
+        zustatek: String(zustatek),
+      }));
+      setGsStatus("saved");
+      setGsMsg("✓ Uloženo do Sheets");
+      setTimeout(() => { setGsStatus("idle"); setGsMsg(""); }, 3000);
+    } catch (err) {
+      setGsStatus("error");
+      setGsMsg("✗ " + (err.message || "Chyba při ukládání"));
+    }
+  };
+
+    const tabPrehled = () => {
     const brokerMap = {};
     const catMap = {};
     allRows.forEach(p => {
@@ -881,10 +937,7 @@ function InvestBook() {
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <span style={{ fontSize: 12, color: T.muted, padding: "6px 12px", background: "rgba(255,255,255,0.04)", borderRadius: 8 }}>✎ klikni pro editaci</span>
             <button onClick={addManual} style={{ background: T.green, border: "none", borderRadius: 8, color: "#000", cursor: "pointer", padding: "8px 16px", fontSize: 13, fontWeight: 700 }}>+ Přidat</button>
-            <button onClick={() => fileInputRef.current?.click()}
-              style={{ background: "rgba(59,130,246,0.15)", border: "1px solid rgba(59,130,246,0.3)", borderRadius: 8, color: T.blue, cursor: "pointer", padding: "8px 16px", fontSize: 13, fontWeight: 600 }}>
-              ↑ Import CSV
-            </button>
+
                       </div>
         </div>
 
@@ -952,11 +1005,10 @@ function InvestBook() {
             {csvLoaded && <span style={{ marginLeft: 8, color: T.green }}>✓ CSV načteno</span>}
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <span style={{ fontSize: 11, color: T.muted }}>Editovat: hodnota + roční výnos</span>
             <input ref={fileInputRef} type="file" accept=".csv" style={{ display: "none" }} onChange={handleFileChange} />
             <button onClick={() => fileInputRef.current?.click()}
-              style={{ background: "rgba(59,130,246,0.12)", border: "1px solid rgba(59,130,246,0.3)", borderRadius: 8, color: T.blue, cursor: "pointer", padding: "7px 14px", fontSize: 12, fontWeight: 600 }}>
-              ↑ Importovat CSV
+              style={{ background: "rgba(59,130,246,0.15)", border: "1px solid rgba(59,130,246,0.3)", borderRadius: 8, color: T.blue, cursor: "pointer", padding: "6px 14px", fontSize: 12, fontWeight: 600 }}>
+              ↑ Import CSV
             </button>
           </div>
         </div>
@@ -1279,10 +1331,26 @@ function InvestBook() {
             <div style={{ height: 20, width: 1, background: T.border }} />
             <span style={{ fontSize: 14, fontWeight: 700, color: T.green, fontFamily: "'DM Mono',monospace" }}>{fmtCZK(totalValue)}</span>
             <div style={{ height: 20, width: 1, background: T.border }} />
-                      </div>
+            <button onClick={handleLoad} disabled={gsStatus === "loading"}
+              style={{ background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.3)", borderRadius: 8, color: "#a5b4fc", cursor: gsStatus === "loading" ? "default" : "pointer", padding: "6px 14px", fontSize: 13, fontWeight: 600, opacity: gsStatus === "loading" ? 0.6 : 1 }}>
+              {gsStatus === "loading" ? "⟳ Načítám…" : "↺ Refresh"}
+            </button>
+            <button onClick={handleSave} disabled={gsStatus === "saving" || gsStatus === "loading"}
+              style={{ background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.3)", borderRadius: 8, color: "#6ee7b7", cursor: "pointer", padding: "6px 14px", fontSize: 13, fontWeight: 600, opacity: gsStatus === "saving" ? 0.6 : 1 }}>
+              {gsStatus === "saving" ? "⟳ Ukládám…" : gsStatus === "saved" ? "✓ Uloženo" : "↑ Uložit"}
+            </button>
+          </div>
         </header>
 
         <main style={{ maxWidth: 1360, margin: "0 auto", padding: "28px 32px" }}>
+          {gsMsg !== "" && (
+            <div style={{ marginBottom: 14, padding: "8px 16px", borderRadius: 8, fontSize: 12, fontWeight: 600,
+              background: gsStatus === "error" ? "rgba(239,68,68,0.1)" : "rgba(16,185,129,0.1)",
+              border: "1px solid " + (gsStatus === "error" ? "rgba(239,68,68,0.25)" : "rgba(16,185,129,0.25)"),
+              color: gsStatus === "error" ? "#f87171" : "#6ee7b7" }}>
+              {gsMsg}
+            </div>
+          )}
           {activeTab === "portfolio" && tabPrehled()}
           {activeTab === "positions" && tabPozice()}
           {activeTab === "analyza"   && tabAnalyza()}
