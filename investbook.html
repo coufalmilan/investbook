@@ -446,7 +446,7 @@ function InvestBook() {
 
   // All rows combined (in CZK)
   const allRows = [
-    ...manualRows.map(p => ({ ...p, valueCZK: toCZK(p), investedCZK: investedCZK(p) })),
+    ...manualRows.map(p => ({ ...p, valueCZK: p.value||0, investedCZK: p.invested||0 })),
     ...importedRows.map(p => {
       const fx = p.fx||(p.currency==="EUR"?DEGIRO_FX:p.currency==="GBP"?GBP_FX:ETORO_FX);
       const valCZK = p.priceCZK && p.shares ? Math.round(p.priceCZK*p.shares) : Math.round((p.invested||0)*fx);
@@ -454,7 +454,7 @@ function InvestBook() {
       return { ...p, valueCZK: valCZK, investedCZK: invCZK };
     }),
   ];
-  const totalValue = manualRows.reduce((s,p) => s + toCZK(p), 0) + importedRows.reduce((s,p) => {
+  const totalValue = manualRows.reduce((s,p) => s + (p.value||0), 0) + importedRows.reduce((s,p) => {
       const fx = p.fx||(p.currency==="EUR"?DEGIRO_FX:p.currency==="GBP"?GBP_FX:ETORO_FX);
       return s + (p.priceCZK && p.shares ? Math.round(p.priceCZK*p.shares) : Math.round((p.invested||0)*fx));
     }, 0);
@@ -949,8 +949,8 @@ function InvestBook() {
 
   // ── POZICE ───────────────────────────────────────────────────────────────────
   const tabPozice = () => {
-    const manualTotal   = manualRows.reduce((s, p) => s + toCZK(p), 0);
-    const manualInvested = manualRows.reduce((s, p) => s + investedCZK(p), 0);
+    const manualTotal    = manualRows.reduce((s, p) => s + (p.value||0), 0);
+    const manualInvested = manualRows.reduce((s, p) => s + (p.invested||0), 0);
     const importedTotal    = importedRows.reduce((s,p) => {
       const fx = p.fx||(p.currency==="EUR"?DEGIRO_FX:p.currency==="GBP"?GBP_FX:ETORO_FX);
       return s + (p.priceCZK && p.shares ? Math.round(p.priceCZK*p.shares) : Math.round((p.invested||0)*fx));
@@ -984,31 +984,28 @@ function InvestBook() {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ borderBottom: "1px solid " + T.border }}>
-                {["Název","Broker","Kategorie","Investováno (CZK)","Hodnota (CZK)","Výnos","Výnos %","Podíl %","Start","Roční %",""].map((h, i) => (
-                  <th key={i} style={{ padding: "9px 12px", textAlign: i <= 2 ? "left" : i === 10 ? "center" : "right", fontSize: 11, color: T.muted, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
+                {["Název","Broker","Kategorie","Investováno (CZK)","Hodnota (CZK)","Výnos CZK","Výnos %","Start",""].map((h, i) => (
+                  <th key={i} style={{ padding: "9px 12px", textAlign: i <= 2 ? "left" : i === 8 ? "center" : "right", fontSize: 11, color: T.muted, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
               {manualRows.map(pos => {
-                const gain    = toCZK(pos) - investedCZK(pos);
-                const gainPct = investedCZK(pos) > 0 ? (gain / investedCZK(pos)) * 100 : 0;
-                const share   = totalValue > 0 ? (toCZK(pos) / totalValue) * 100 : 0;
+                const gain    = (pos.value || 0) - (pos.invested || 0);
+                const gainPct = pos.invested > 0 ? (gain / pos.invested) * 100 : 0;
                 const gc = gain >= 0 ? T.green : T.red;
                 return (
                   <tr key={pos.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.03)" }}
                     onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.02)"}
                     onMouseLeave={e => e.currentTarget.style.background = ""}>
                     <EditCell value={pos.name}     type="text" align="left" color={CAT_COLOR[pos.category] || T.text} onSave={v => updateManual(pos.id,"name",v)} />
-                    <EditCell value={pos.broker}   type="text" align="left" color={T.muted}                           onSave={v => updateManual(pos.id,"broker",v)} />
-                    <EditCell value={pos.category} isSelect options={CATEGORIES} align="left" color={CAT_COLOR[pos.category]||T.muted} onSave={v=>updateImported(pos.id,"category",v)}/>
+                    <EditCell value={pos.broker}   type="text" align="left" color={T.muted} onSave={v => updateManual(pos.id,"broker",v)} />
+                    <EditCell value={pos.category} isSelect options={CATEGORIES} align="left" color={CAT_COLOR[pos.category]||T.muted} onSave={v => updateManual(pos.id,"category",v)}/>
                     <EditCell value={pos.invested} color={T.muted} onSave={v => updateManual(pos.id,"invested",v)} />
                     <EditCell value={pos.value}    color={T.text}  onSave={v => updateManual(pos.id,"value",v)} />
                     <td style={nc(gc)}>{gain >= 0 ? "+" : ""}{fmtCZK(gain)}</td>
                     <td style={{ ...nc(gc), fontWeight: 700 }}>{gainPct >= 0 ? "+" : ""}{gainPct.toFixed(2)}%</td>
-                    <td style={nc(T.muted)}>{share.toFixed(2)}%</td>
-                    <EditCell value={pos.start}    color={T.muted} onSave={v => updateManual(pos.id,"start",v)} />
-                    <EditCell value={pos.annReturn != null ? pos.annReturn : ""} color={pos.annReturn != null ? (pos.annReturn >= 0 ? T.green : T.red) : T.subtle} suffix={pos.annReturn != null ? "%" : ""} onSave={v => updateManual(pos.id,"annReturn",v)} />
+                    <EditCell value={pos.start} color={T.muted} onSave={v => updateManual(pos.id,"start",v)} />
                     <td style={{ padding: "0 8px", textAlign: "center" }}>
                       <button onClick={() => deleteManual(pos.id)} style={{ background: "none", border: "none", color: T.subtle, cursor: "pointer", fontSize: 18, padding: "4px 6px", borderRadius: 4 }}
                         onMouseEnter={e => e.currentTarget.style.color = T.red}
@@ -1025,7 +1022,7 @@ function InvestBook() {
                 <td style={{ ...nc(T.text), fontSize: 15, fontWeight: 800 }}>{fmtCZK(manualTotal)}</td>
                 <td style={nc(T.green)}>{fmtCZK(manualTotal - manualInvested)}</td>
                 <td style={{ ...nc(T.green), fontWeight: 700 }}>{manualInvested > 0 ? "+" + (((manualTotal-manualInvested)/manualInvested)*100).toFixed(2)+"%" : "—"}</td>
-                <td colSpan={4} />
+                <td colSpan={2} />
               </tr>
             </tfoot>
           </table>
