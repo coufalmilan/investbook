@@ -499,7 +499,42 @@ function InvestBook() {
 
   // ── GOOGLE SHEETS LOAD / SAVE ────────────────────────────────────────────────
   // ── INIT GOOGLE API ON MOUNT ─────────────────────────────────────────────────
-  React.useEffect(() => { initGoogleAPI(() => {}); }, []);
+  const applyLoadedData = (data) => {
+    if (data.manual && data.manual.length) setManualRows(data.manual);
+    if (data.imported && data.imported.length) {
+      const priced = data.imported.map(pos => {
+        let priceCZK = pos.priceCZK || null;
+        if (pos.ticker && data.prices) {
+          const t = pos.ticker;
+          const tClean = t.replace(/[*]/g, "");
+          const candidates = [t, t+"-USD", tClean, tClean+"-USD", t.replace(/-(USD|EUR|GBP)$/, "")];
+          let priceUSD = null;
+          for (const c of candidates) { if (data.prices[c] > 0) { priceUSD = data.prices[c]; break; } }
+          if (priceUSD) priceCZK = priceUSD * ETORO_FX;
+        }
+        return { ...pos, priceCZK };
+      });
+      setImportedRows(priced);
+    }
+    if (data.settings) {
+      if (data.settings.monthlyContrib) setMonthlyContrib(parseFloat(data.settings.monthlyContrib));
+      if (data.settings.hypoteka) setHypoteka(parseFloat(data.settings.hypoteka));
+      if (data.settings.zustatek) setZustatek(parseFloat(data.settings.zustatek));
+    }
+  };
+
+  React.useEffect(() => {
+    initGoogleAPI(() => {
+      // Auto-load from Sheets after Google API is ready
+      withAuthPromise(loadFromSheets).then(data => {
+        applyLoadedData(data);
+        setGsMsg("✓ Načteno");
+        setTimeout(() => setGsMsg(""), 3000);
+      }).catch(() => {
+        // Silent fail — user can click Refresh manually
+      });
+    });
+  }, []);
 
   const withAuthPromise = (fn) => new Promise((resolve, reject) => {
     if (!gapiInited || !gisInited) { reject(new Error("Google API se ještě načítá, zkus za chvíli.")); return; }
@@ -514,30 +549,7 @@ function InvestBook() {
     setGsMsg("");
     try {
       const data = await withAuthPromise(loadFromSheets);
-      if (data.manual && data.manual.length)   setManualRows(data.manual);
-      if (data.imported && data.imported.length) {
-        const priced = data.imported.map(pos => {
-          // Look up fresh price from prices sheet (USD -> CZK)
-          let priceCZK = pos.priceCZK || null; // fallback to saved value
-          if (pos.ticker && data.prices) {
-            const t = pos.ticker;
-            const tClean = t.replace(/[*]/g, "");
-            const candidates = [t, t+"-USD", tClean, tClean+"-USD", t.replace(/-(USD|EUR|GBP)$/, "")];
-            let priceUSD = null;
-            for (const c of candidates) {
-              if (data.prices[c] > 0) { priceUSD = data.prices[c]; break; }
-            }
-            if (priceUSD) priceCZK = priceUSD * ETORO_FX;
-          }
-          return { ...pos, priceCZK };
-        });
-        setImportedRows(priced);
-      }
-      if (data.settings) {
-        if (data.settings.monthlyContrib) setMonthlyContrib(parseFloat(data.settings.monthlyContrib));
-        if (data.settings.hypoteka) setHypoteka(parseFloat(data.settings.hypoteka));
-        if (data.settings.zustatek) setZustatek(parseFloat(data.settings.zustatek));
-      }
+      applyLoadedData(data);
       setGsStatus("idle");
       setGsMsg("✓ Načteno ze Sheets");
       setTimeout(() => setGsMsg(""), 4000);
