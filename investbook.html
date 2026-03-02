@@ -497,15 +497,24 @@ function InvestBook() {
   // ── REFRESH PRICES (re-fetch without re-parsing CSV) ─────────────────────────
 
   // ── GOOGLE SHEETS LOAD / SAVE ────────────────────────────────────────────────
+  // ── INIT GOOGLE API ON MOUNT ─────────────────────────────────────────────────
+  React.useEffect(() => { initGoogleAPI(() => {}); }, []);
+
+  const withAuthPromise = (fn) => new Promise((resolve, reject) => {
+    if (!gapiInited || !gisInited) { reject(new Error("Google API se ještě načítá, zkus za chvíli.")); return; }
+    if (_token) { fn().then(resolve).catch(reject); return; }
+    window._authCb = () => fn().then(resolve).catch(reject);
+    try { tokenClient.requestAccessToken({ prompt: "" }); }
+    catch(e) { reject(e); }
+  });
+
   const handleLoad = async () => {
-    if (!gapiReady) { setGsMsg("Google API se ještě načítá, zkus za chvíli."); return; }
     setGsStatus("loading");
     setGsMsg("");
     try {
-      const data = await withAuth(loadFromSheets);
+      const data = await withAuthPromise(loadFromSheets);
       if (data.manual && data.manual.length)   setManualRows(data.manual);
       if (data.imported && data.imported.length) {
-        // Apply prices from sheets
         const priced = data.imported.map(pos => {
           if (pos.ticker && data.prices && data.prices[pos.ticker]) {
             const priceUSD = data.prices[pos.ticker];
@@ -532,11 +541,10 @@ function InvestBook() {
   };
 
   const handleSave = async () => {
-    if (!gapiReady) { setGsMsg("Google API se ještě načítá, zkus za chvíli."); return; }
     setGsStatus("saving");
     setGsMsg("");
     try {
-      await withAuth(() => saveToSheets(manualRows, importedRows, {
+      await withAuthPromise(() => saveToSheets(manualRows, importedRows, {
         monthlyContrib: String(monthlyContrib),
         hypoteka: String(hypoteka),
         zustatek: String(zustatek),
