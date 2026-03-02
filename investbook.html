@@ -84,8 +84,8 @@ async function ensureSheets() {
 }
 
 const PHDR = ["id","name","broker","category","invested","value","currency","fx","start","annReturn","shares","ticker"];
-const PHDR_IMP = ["id","name","broker","category","invested","currency","fx","start","shares","ticker"];
-const posToRowImp = p => [p.id,p.name,p.broker,p.category,p.invested,p.currency,p.fx??"",p.start,p.shares??"",p.ticker??""];
+const PHDR_IMP = ["id","name","broker","category","invested","currency","fx","start","shares","ticker","priceCZK"];
+const posToRowImp = p => [p.id,p.name,p.broker,p.category,p.invested,p.currency,p.fx??"",p.start,p.shares??"",p.ticker??"",p.priceCZK??""];
 const pf = s => { if (s==null||s==="") return 0; const n = parseFloat(String(s).replace(/\s/g,"").replace(",",".")); return isFinite(n)?n:0; };
 const pfn = s => { if (s==null||s==="") return null; const n = parseFloat(String(s).replace(/\s/g,"").replace(",",".")); return isFinite(n)?n:null; };
 const rowToImp = r => ({
@@ -517,23 +517,17 @@ function InvestBook() {
       if (data.manual && data.manual.length)   setManualRows(data.manual);
       if (data.imported && data.imported.length) {
         const priced = data.imported.map(pos => {
-          // prices sheet: ticker | cena_CZK
-          // Try exact match first, then with -USD/-EUR/-GBP suffix
-          let priceCZK = null;
+          // Look up fresh price from prices sheet (USD -> CZK)
+          let priceCZK = pos.priceCZK || null; // fallback to saved value
           if (pos.ticker && data.prices) {
             const t = pos.ticker;
-            // Try exact ticker, then strip/add -USD suffix
-            const candidates = [t, t+"-USD", t.replace(/-(USD|EUR|GBP)$/,"")];
+            const tClean = t.replace(/[*]/g, "");
+            const candidates = [t, t+"-USD", tClean, tClean+"-USD", t.replace(/-(USD|EUR|GBP)$/, "")];
             let priceUSD = null;
             for (const c of candidates) {
               if (data.prices[c] > 0) { priceUSD = data.prices[c]; break; }
             }
-            // Convert USD price to CZK
-            if (priceUSD) {
-              if (pos.currency === "EUR") priceCZK = priceUSD * ETORO_FX; // price is USD
-              else if (pos.currency === "GBP") priceCZK = priceUSD * ETORO_FX;
-              else priceCZK = priceUSD * ETORO_FX; // default USD->CZK
-            }
+            if (priceUSD) priceCZK = priceUSD * ETORO_FX;
           }
           return { ...pos, priceCZK };
         });
