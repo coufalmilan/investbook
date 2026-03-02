@@ -402,66 +402,6 @@ function aggregateCSV(rows) {
 // Converts a raw ticker string to Yahoo Finance symbol.
 // Positions with explicit .ticker field use that directly.
 // Fallback for CSV-imported positions without explicit mapping:
-function toYahooSymbol(ticker) {
-  if (!ticker) return null;
-  const cryptoMap = {
-    "BTC":"BTC-USD","ETH":"ETH-USD","XRP":"XRP-USD","LTC":"LTC-USD",
-    "ETC":"ETC-USD","SOL*":"SOL-USD","SOL":"SOL-USD","DOGE":"DOGE-USD",
-    "BNB":"BNB-USD","ADA":"ADA-USD","BCH":"BCH-USD","MIOTA":"IOTA-USD",
-  };
-  if (cryptoMap[ticker]) return cryptoMap[ticker];
-  return ticker; // exchange suffixes (.DE, .AS, .PA, .L) pass through as-is
-}
-
-async function fetchYahooPrices(positions) {
-  // Each position should have a .ticker field (raw) or .name to derive ticker
-  // Use .ticker if available, otherwise derive from name
-  const symbolMap = {}; // yahooSymbol -> [positionIndex]
-  positions.forEach((p, i) => {
-    const raw = p.ticker || (p.name || "").split("(")[0].trim();
-    const sym = raw.includes("-USD") ? raw : toYahooSymbol(raw);
-    if (!sym) return;
-    if (!symbolMap[sym]) symbolMap[sym] = [];
-    symbolMap[sym].push(i);
-  });
-  const symbols = Object.keys(symbolMap);
-  if (!symbols.length) return {};
-
-  const results = {};
-  const BATCH = 8; // keep batches small for reliability
-  for (let b = 0; b < symbols.length; b += BATCH) {
-    const batch = symbols.slice(b, b + BATCH);
-    // Use query2 as fallback to query1 for CORS
-    const urls = [
-      "https://query2.finance.yahoo.com/v8/finance/spark?symbols=" + encodeURIComponent(batch.join(",")) + "&range=1d&interval=1d",
-      "https://query1.finance.yahoo.com/v8/finance/spark?symbols=" + encodeURIComponent(batch.join(",")) + "&range=1d&interval=1d",
-    ];
-    for (const url of urls) {
-      try {
-        const res = await fetch(url, {
-          headers: { "Accept": "application/json", "User-Agent": "Mozilla/5.0" },
-          mode: "cors",
-        });
-        if (!res.ok) continue;
-        const data = await res.json();
-        for (const item of (data?.spark?.result || [])) {
-          const meta = item?.response?.[0]?.meta;
-          if (meta?.regularMarketPrice != null) {
-            results[item.symbol] = { price: meta.regularMarketPrice, currency: meta.currency || "USD" };
-          }
-        }
-        break; // success — don't try fallback
-      } catch (_) { /* try next url */ }
-    }
-  }
-
-  const byIndex = {};
-  for (const [sym, idxs] of Object.entries(symbolMap)) {
-    if (results[sym]) idxs.forEach(i => { byIndex[i] = results[sym]; });
-  }
-  return byIndex;
-}
-
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
 function InvestBook() {
   const [activeTab, setActiveTab] = useState("portfolio");
@@ -481,10 +421,6 @@ function InvestBook() {
   // Imported positions (DEGIRO + eToro + Crypto)
   const [importedRows, setImportedRows] = useState([...DEGIRO_POSITIONS_INIT, ...ETORO_POSITIONS_INIT, ...CRYPTO_POSITIONS_INIT]);
   const [csvLoaded, setCsvLoaded] = useState(false);
-  const [priceStatus, setPriceStatus] = useState("idle"); // idle | loading | done | partial | error
-  const [pricesFetchedAt, setPricesFetchedAt] = useState(null);
-  const [priceLog, setPriceLog] = useState([]); // {ticker, price, currency, ok}
-
   // ── Google Sheets state ──
   const [gsStatus,   setGsStatus]   = useState("init");
   const [gsError,    setGsError]    = useState("");
@@ -632,32 +568,8 @@ function InvestBook() {
         setCsvError("");
 
         // ── AUTO FETCH PRICES ─────────────────────────────────────────────────
-        setPriceStatus("loading");
-        setPriceLog([]);
         try {
-          const priceByIdx = await fetchYahooPrices(newPositions);
-          const log = [];
-          const updated = newPositions.map((pos, i) => {
-            if (priceByIdx[i]) {
-              const { price, currency } = priceByIdx[i];
-              const newValue = price * pos.shares;
-              log.push({ ticker: pos.ticker || toYahooSymbol((pos.name||"").split("(")[0].trim()), price, currency, ok: true });
-              const years1 = Math.max(new Date().getFullYear() - pos.start, 1);
-              const annRet1 = pos.invested > 0 ? (Math.pow(newValue / pos.invested, 1 / years1) - 1) * 100 : null;
-              return { ...pos, value: newValue, annReturn: annRet1 !== null ? Math.round(annRet1 * 100) / 100 : null };
-            } else {
-              log.push({ ticker: toYahooSymbol(pos.ticker), price: null, currency: pos.currency, ok: false });
-              return pos;
-            }
-          });
-          setImportedRows(updated);
-          setPriceLog(log);
-          const fetchedCount = log.filter(l => l.ok).length;
-          setPriceStatus(fetchedCount === newPositions.length ? "done" : "partial");
-          setPricesFetchedAt(new Date());
         } catch (err) {
-          setPriceStatus("error");
-          setPriceLog([]);
         }
       } catch (err) {
         setCsvError("Chyba při parsování CSV: " + err.message);
@@ -666,38 +578,351 @@ function InvestBook() {
     reader.readAsText(file);
   };
 
-  // ── REFRESH PRICES (re-fetch without re-parsing CSV) ─────────────────────────
-  const handleRefreshPrices = async () => {
-    if (!importedRows.length) return;
-    setPriceStatus("loading");
-    setPriceLog([]);
-    try {
-      const priceByIdx = await fetchYahooPrices(importedRows);
-      const log = [];
-      const updated = importedRows.map((pos, i) => {
-        if (priceByIdx[i]) {
-          const { price, currency } = priceByIdx[i];
-          log.push({ ticker: pos.ticker || toYahooSymbol((pos.name||"").split("(")[0].trim()), price, currency, ok: true });
-          const newVal2 = price * pos.shares;
-          const years2 = Math.max(new Date().getFullYear() - pos.start, 1);
-          const annRet2 = pos.invested > 0 ? (Math.pow(newVal2 / pos.invested, 1 / years2) - 1) * 100 : null;
-          return { ...pos, value: newVal2, annReturn: annRet2 !== null ? Math.round(annRet2 * 100) / 100 : null };
-        }
-        log.push({ ticker: pos.ticker, price: null, currency: pos.currency, ok: false });
-        return pos;
-      });
-      setImportedRows(updated);
-      setPriceLog(log);
-      const fetchedCount = log.filter(l => l.ok).length;
-      setPriceStatus(fetchedCount === importedRows.length ? "done" : "partial");
-      setPricesFetchedAt(new Date());
-    } catch (err) {
-      setPriceStatus("error");
-    }
+  
+  const commitContrib = () => { const n = parseFlt(contribDraft); if (!isNaN(n) && n >= 0) setMonthlyContrib(n); setEditingContrib(false); };
+
+          return (
+            <div>
+              {/* Contrib row */}
+              <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 14, padding: "14px 20px", background: T.card, border: "1px solid " + T.border, borderRadius: 12 }}>
+                <div style={{ fontSize: 13, color: T.muted, fontWeight: 500, letterSpacing: "0.06em", textTransform: "uppercase" }}>Měsíční příkop vlastního kapitálu</div>
+                <div style={{ flex: 1 }} />
+                {editingContrib ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <input autoFocus type="text" value={contribDraft}
+                      onChange={e => setContribDraft(e.target.value)}
+                      onBlur={commitContrib}
+                      onKeyDown={e => { if (e.key === "Enter") commitContrib(); if (e.key === "Escape") setEditingContrib(false); }}
+                      style={{ background: T.bg, border: "1px solid " + T.blue, borderRadius: 8, color: T.text, fontFamily: "'DM Mono',monospace", fontSize: 16, padding: "6px 12px", width: 130, outline: "none", textAlign: "right" }} />
+                    <span style={{ fontSize: 14, color: T.blue, fontWeight: 600 }}>Kč / měs</span>
+                  </div>
+                ) : (
+                  <div onClick={() => { setContribDraft(String(monthlyContrib)); setEditingContrib(true); }}
+                    style={{ display: "flex", alignItems: "center", gap: 10, cursor: "text", padding: "7px 16px", background: "rgba(59,130,246,0.08)", border: "1px solid rgba(59,130,246,0.2)", borderRadius: 8, transition: "all 0.12s" }}>
+                    <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 18, color: T.blue, fontWeight: 700 }}>{fmtCZK(monthlyContrib)}</span>
+                    <span style={{ fontSize: 13, color: T.muted }}>/ měs</span>
+                    <span style={{ fontSize: 13, color: T.subtle, marginLeft: 2 }}>✎</span>
+                  </div>
+                )}
+                <div style={{ fontSize: 13, color: T.muted }}>= {fmtCZK(monthlyContrib * 12)} ročně</div>
+              </div>
+
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                {[
+                  { label: "Predikce · " + STATIC.avgAnnReturnNoCrypto + " % p.a.", sub: "průměrný výnos bez crypto", key: "avg", baseKey: "avgBase", color: T.green, grad: "gPA" },
+                  { label: "Predikce · 10 % p.a.", sub: "konzervativní scénář S&P 500", key: "r10", baseKey: "r10Base", color: T.blue, grad: "gP10" },
+                ].map(cfg => {
+                  const finalVal    = projData[projData.length - 1][cfg.key];
+                  const finalBase   = projData[projData.length - 1][cfg.baseKey];
+                  const contribGain = finalVal - finalBase;
+                  return (
+                    <div key={cfg.key} style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 16, padding: 22 }}>
+                      <div style={{ fontSize: 15, fontWeight: 600, color: T.text, marginBottom: 2 }}>{cfg.label}</div>
+                      <div style={{ fontSize: 13, color: T.muted, marginBottom: 10 }}>{cfg.sub}</div>
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: monthlyContrib > 0 ? 2 : 16 }}>
+                        <span style={{ fontSize: 31, fontWeight: 800, color: cfg.color, letterSpacing: "-0.02em" }}>{fmtCZK(finalVal)}</span>
+                        <span style={{ fontSize: 13, color: T.muted }}>v roce 2032</span>
+                      </div>
+                      {monthlyContrib > 0 && (
+                        <div style={{ fontSize: 13, color: T.muted, marginBottom: 16 }}>
+                          z toho příkopem <span style={{ color: cfg.color, fontWeight: 600 }}>{fmtCZK(contribGain)}</span>
+                        </div>
+                      )}
+                      {monthlyContrib === 0 && <div style={{ marginBottom: 16 }} />}
+                      <ResponsiveContainer width="100%" height={180}>
+                        <AreaChart data={projData} margin={{ left: 4, right: 4, top: 4, bottom: 0 }}>
+                          <defs>
+                            <linearGradient id={cfg.grad} x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor={cfg.color} stopOpacity={0.2} />
+                              <stop offset="100%" stopColor={cfg.color} stopOpacity={0} />
+                            </linearGradient>
+                            <linearGradient id={cfg.grad+"b"} x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor={cfg.color} stopOpacity={0.06} />
+                              <stop offset="100%" stopColor={cfg.color} stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+                          <XAxis dataKey="rok" tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.muted }} axisLine={false} tickLine={false} />
+                          <YAxis tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.muted }} axisLine={false} tickLine={false} width={52}
+                            domain={[
+                              () => Math.floor(base * 0.95 / 100000) * 100000,
+                              dataMax => Math.ceil(dataMax * 1.05 / 100000) * 100000,
+                            ]}
+                            tickFormatter={v => v >= 1000000 ? (v/1000000).toFixed(1)+"M" : (v/1000).toFixed(0)+"k"} />
+                          <Tooltip {...ttStyle} formatter={(v, name) => [fmtCZK(v), name === cfg.key ? "S příkopem" : "Bez příkopu"]} />
+                          <Area type="monotone" dataKey={cfg.baseKey} stroke={cfg.color} strokeWidth={1} strokeDasharray="4 3" fill={"url(#"+cfg.grad+"b)"} dot={false} />
+                          <Area type="monotone" dataKey={cfg.key} stroke={cfg.color} strokeWidth={2.5} fill={"url(#"+cfg.grad+")"} dot={{ r: 3, fill: cfg.color, strokeWidth: 0 }} activeDot={{ r: 5, fill: cfg.color, strokeWidth: 0 }} />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginTop: 14, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+                        {projData.filter((_, i) => i > 0).map(pt => (
+                          <div key={pt.rok} style={{ textAlign: "center" }}>
+                            <div style={{ fontSize: 12, color: T.muted, marginBottom: 3 }}>{pt.rok}</div>
+                            <div style={{ fontSize: 12, color: cfg.color, fontFamily: "'DM Mono',monospace", fontWeight: 600 }}>{fmt(pt[cfg.key])}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
+      </div>
+    );
   };
 
-  // ── PŘEHLED ──────────────────────────────────────────────────────────────────
-  const tabPrehled = () => {
+  // ── ANALÝZA ──────────────────────────────────────────────────────────────────
+  const tabAnalyza = () => {
+    const sorted    = allRows.slice().sort((a,b) => b.valueCZK - a.valueCZK);
+    const posCount  = allRows.length;
+    const profitable = allRows.filter(p => p.valueCZK > p.investedCZK).length;
+    const avgHold   = allRows.reduce((s,p) => s + (NOW_YEAR - p.start), 0) / Math.max(posCount, 1);
+    const oldest    = allRows.slice().sort((a,b) => a.start - b.start)[0];
+    const newest    = allRows.slice().sort((a,b) => b.start - a.start)[0];
+
+    const geoMap = {};
+    allRows.forEach(p => {
+      const nm = p.name.toUpperCase();
+      let geo = "USA";
+      if (p.category === "Crypto") geo = "Crypto";
+      else if (nm.indexOf(".DE") > -1 || nm.indexOf("RHM") > -1 || nm.indexOf("CSG") > -1 || nm.indexOf("BA-.L") > -1 || nm.indexOf("DFND") > -1) geo = "Evropa";
+      else if (p.category === "Fond" || p.category === "Portfolio") geo = "Fond/Portu";
+      geoMap[geo] = (geoMap[geo] || 0) + p.valueCZK;
+    });
+    const GEO_COLOR = { USA: "#3b82f6", Evropa: "#8b5cf6", Crypto: "#ec4899", "Fond/Portu": "#22c55e" };
+    const geoEntries = Object.keys(geoMap).map(k => [k, geoMap[k]]).sort((a,b) => b[1] - a[1]);
+
+    const catMap = {};
+    allRows.forEach(p => { catMap[p.category] = (catMap[p.category] || 0) + p.valueCZK; });
+    const catEntries = Object.keys(catMap).map(k => [k, catMap[k]]).sort((a,b) => b[1] - a[1]);
+
+    const rate = STATIC.avgAnnReturnNoCrypto / 100;
+    const milestones = [3000000, 5000000, 10000000];
+    const milColors  = [T.green, T.amber, "#ec4899"];
+
+    const barData = sorted.slice(0,12).map(p => ({
+      name: p.name.split("(")[0].trim().slice(0,10),
+      Investováno: p.investedCZK,
+      Hodnota: p.valueCZK,
+      cat: p.category,
+    }));
+
+    const C = { background: T.card, border: "1px solid " + T.border, borderRadius: 14, padding: 20 };
+
+    return (
+      <div>
+        <div style={{ marginBottom: 28 }}>
+          <h1 style={{ fontSize: 27, fontWeight: 800, color: T.text, letterSpacing: "-0.02em" }}>Analýza portfolia</h1>
+          <div style={{ fontSize: 14, color: T.muted, marginTop: 4 }}>{posCount} pozic · průměrné držení {avgHold.toFixed(1)} let</div>
+        </div>
+
+        {/* Stats cards row */}
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 16 }}>
+          <StatCard label="Ziskové pozice"    value={profitable + " / " + posCount}                                        color={T.green}  accent={T.green} />
+          <StatCard label="Průměrné držení"   value={avgHold.toFixed(1) + " let"}                                          color={T.text}   accent={T.blue} />
+          <StatCard label="Nejstarší pozice"  value={oldest ? oldest.name.split("(")[0].trim() : "—"} sub={oldest ? String(oldest.start) : ""} color={T.muted}  accent={T.subtle} />
+          <StatCard label="Nejnovější pozice" value={newest ? newest.name.split("(")[0].trim() : "—"} sub={newest ? String(newest.start) : ""} color={T.muted}  accent={T.subtle} />
+        </div>
+
+        {/* Geo allocation */}
+        <div style={{ ...C, marginBottom: 16 }}>
+          <SectionTitle title="Geografická alokace" sub="Rozložení portfolia podle trhu" />
+          <div style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", gap: 2, marginBottom: 18 }}>
+            {geoEntries.map(e => <div key={e[0]} style={{ flex: e[1]/totalValue, background: GEO_COLOR[e[0]] || T.muted, minWidth: 2 }} />)}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: 14 }}>
+            {geoEntries.map(e => {
+              const pct = (e[1]/totalValue)*100;
+              return (
+                <div key={e[0]} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                  <div style={{ width: 10, height: 10, borderRadius: 3, background: GEO_COLOR[e[0]] || T.muted, flexShrink: 0, marginTop: 2 }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ fontSize: 14, color: T.muted, fontWeight: 500 }}>{e[0]}</span>
+                      <span style={{ fontSize: 14, color: T.text, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{pct.toFixed(1)}%</span>
+                    </div>
+                    <div style={{ height: 3, background: "rgba(255,255,255,0.05)", borderRadius: 2, marginTop: 5, marginBottom: 4 }}>
+                      <div style={{ width: pct+"%", height: "100%", background: GEO_COLOR[e[0]] || T.muted, borderRadius: 2 }} />
+                    </div>
+                    <span style={{ fontSize: 12, color: T.subtle }}>{fmtCZK(e[1])}</span>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Category alloc */}
+        <div style={{ ...C, marginBottom: 16 }}>
+          <SectionTitle title="Alokace podle kategorie" sub="Rozložení hodnoty mezi typy aktiv" />
+          <div style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", gap: 2, marginBottom: 18 }}>
+            {catEntries.map(e => <div key={e[0]} style={{ flex: e[1]/totalValue, background: CAT_COLOR[e[0]] || T.muted, minWidth: 2 }} />)}
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: 14 }}>
+            {catEntries.map(e => {
+              const pct     = (e[1]/totalValue)*100;
+              const catPos  = allRows.filter(p => p.category === e[0]);
+              const catGain = catPos.reduce((s,p) => s+(p.valueCZK-p.investedCZK), 0);
+              const catInv  = catPos.reduce((s,p) => s+p.investedCZK, 0);
+              const gp = catInv > 0 ? (catGain/catInv)*100 : 0;
+              return (
+                <div key={e[0]} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+                  <div style={{ width: 10, height: 10, borderRadius: 3, background: CAT_COLOR[e[0]] || T.muted, flexShrink: 0, marginTop: 2 }} />
+                  <div style={{ flex: 1 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ fontSize: 14, color: T.muted, fontWeight: 500 }}>{e[0]}</span>
+                      <span style={{ fontSize: 14, color: T.text, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{pct.toFixed(1)}%</span>
+                    </div>
+                    <div style={{ height: 3, background: "rgba(255,255,255,0.05)", borderRadius: 2, marginTop: 5, marginBottom: 4 }}>
+                      <div style={{ width: pct+"%", height: "100%", background: CAT_COLOR[e[0]] || T.muted, borderRadius: 2 }} />
+                    </div>
+                    <div style={{ display: "flex", justifyContent: "space-between" }}>
+                      <span style={{ fontSize: 12, color: T.subtle }}>{fmtCZK(e[1])}</span>
+                      <span style={{ fontSize: 12, color: gp >= 0 ? T.green : T.red, fontWeight: 600 }}>{gp >= 0 ? "+" : ""}{gp.toFixed(1)}%</span>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Milestone tracker */}
+        <div style={{ ...C, marginBottom: 16 }}>
+          <SectionTitle title="Milestone tracker" sub={"Odhad při " + STATIC.avgAnnReturnNoCrypto + " % p.a. · aktuálně " + fmtCZK(totalValue)} />
+          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+            {milestones.map((target, i) => {
+              const reached = totalValue >= target;
+              const pct = Math.min((totalValue / target) * 100, 100);
+              const yrs = reached ? null : Math.log(target / totalValue) / Math.log(1 + rate);
+              const c = milColors[i];
+              return (
+                <div key={target}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                      <span style={{ fontSize: 22 }}>{reached ? "✅" : ["🎯","🚀","💎"][i]}</span>
+                      <div>
+                        <div style={{ fontSize: 16, color: T.text, fontWeight: 700 }}>{(target/1000000).toFixed(0)} M CZK</div>
+                        <div style={{ fontSize: 12, color: reached ? T.green : T.muted }}>
+                          {reached ? "Dosaženo ✓" : "za ~" + yrs.toFixed(1) + " let · rok " + Math.ceil(NOW_YEAR + yrs)}
+                        </div>
+                      </div>
+                    </div>
+                    <span style={{ fontSize: 16, color: c, fontWeight: 800, fontFamily: "'DM Mono',monospace" }}>{pct.toFixed(0)}%</span>
+                  </div>
+                  <div style={{ height: 6, background: "rgba(255,255,255,0.05)", borderRadius: 3 }}>
+                    <div style={{ width: pct+"%", height: "100%", background: c, borderRadius: 3 }} />
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+
+        {/* Bar chart */}
+        <div style={{ ...C, marginBottom: 16 }}>
+          <SectionTitle title="Top 12 — investováno vs. hodnota" sub="Porovnání vložené částky a aktuální hodnoty" />
+          <ResponsiveContainer width="100%" height={230}>
+            <BarChart data={barData} barCategoryGap="28%">
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+              <XAxis dataKey="name" tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.muted }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.muted }} axisLine={false} tickLine={false} tickFormatter={v => (v/1000).toFixed(0)+"k"} width={40} />
+              <Tooltip {...ttStyle} formatter={(v, name) => [fmtCZK(v), name]} />
+              <Bar dataKey="Investováno" fill="rgba(107,114,128,0.35)" radius={[3,3,0,0]} />
+              <Bar dataKey="Hodnota" radius={[3,3,0,0]}>
+                {barData.map((d, i) => <Cell key={i} fill={CAT_COLOR[d.cat] || T.green} fillOpacity={0.85} />)}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+    );
+  };
+
+  const TABS = [
+    { id: "portfolio", label: "Přehled" },
+    { id: "positions", label: "Pozice" },
+    { id: "analyza",   label: "Analýza" },
+  ];
+
+  return (
+    <div>
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap');
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #0f0f13; }
+        ::-webkit-scrollbar { width: 4px; height: 4px; }
+        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
+        @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.3} }
+      `}</style>
+
+      <div style={{ minHeight: "100vh", background: T.bg, color: T.text, fontFamily: "'DM Sans', system-ui, sans-serif" }}>
+        {/* HEADER */}
+        <header style={{ height: 56, padding: "0 32px", borderBottom: "1px solid " + T.border, display: "flex", alignItems: "center", position: "sticky", top: 0, background: "rgba(15,15,19,0.92)", backdropFilter: "blur(16px)", zIndex: 100 }}>
+          <div style={{ display: "flex", alignItems: "center", gap: 10, marginRight: 40 }}>
+            <div style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(135deg," + T.green + "," + T.blue + ")", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, color: "#000" }}>i</div>
+            <span style={{ fontSize: 17, fontWeight: 700, color: T.text, letterSpacing: "-0.01em" }}>InvestBook</span>
+          </div>
+          <nav style={{ display: "flex", gap: 2 }}>
+            {TABS.map(tab => (
+              <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+                style={{ padding: "6px 14px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, transition: "all 0.12s",
+                  background: activeTab === tab.id ? "rgba(255,255,255,0.08)" : "transparent",
+                  color: activeTab === tab.id ? T.text : T.muted }}>
+                {tab.label}
+              </button>
+            ))}
+          </nav>
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+              <div style={{ width: 6, height: 6, borderRadius: "50%", background: T.green, animation: "pulse 2.5s infinite", boxShadow: "0 0 6px " + T.green }} />
+              <span style={{ fontSize: 12, color: T.muted, fontFamily: "'DM Mono',monospace" }}>EUR 24,23 · USD 20,57</span>
+            </div>
+            <div style={{ height: 20, width: 1, background: T.border }} />
+            <span style={{ fontSize: 14, fontWeight: 700, color: T.green, fontFamily: "'DM Mono',monospace" }}>{fmtCZK(totalValue)}</span>
+            <div style={{ height: 20, width: 1, background: T.border }} />
+                        <div style={{ height:20, width:1, background:T.border }}/>
+            {gsStatus === "unconfigured" ? (
+              <span style={{ fontSize:11, color:T.amber, padding:"3px 8px", border:"1px solid rgba(245,158,11,0.3)", borderRadius:6 }}>⚠ Sheets nekonfig.</span>
+            ) : (
+              <div style={{ display:"flex", gap:5 }}>
+                <button onClick={handleLoadFromSheets} disabled={!gsApiReady||gsStatus==="loading"||gsStatus==="saving"}
+                  style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:6, color:T.muted, cursor:"pointer", padding:"4px 10px", fontSize:12, fontFamily:"'DM Mono',monospace", opacity:(!gsApiReady||gsStatus==="loading"||gsStatus==="saving")?0.4:1 }}
+                  onMouseEnter={e=>{e.currentTarget.style.borderColor=T.blue;e.currentTarget.style.color=T.blue;}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.1)";e.currentTarget.style.color=T.muted;}}>
+                  {gsStatus==="loading"?"⟳ Načítám…":"↓ Sheets"}
+                </button>
+                <button onClick={handleSaveToSheets} disabled={!gsApiReady||gsStatus==="loading"||gsStatus==="saving"}
+                  style={{ background:"rgba(34,197,94,0.1)", border:"1px solid rgba(34,197,94,0.25)", borderRadius:6, color:T.green, cursor:"pointer", padding:"4px 10px", fontSize:12, fontFamily:"'DM Mono',monospace", opacity:(!gsApiReady||gsStatus==="loading"||gsStatus==="saving")?0.4:1 }}
+                  onMouseEnter={e=>{e.currentTarget.style.background="rgba(34,197,94,0.2)";}} onMouseLeave={e=>{e.currentTarget.style.background="rgba(34,197,94,0.1)";}}>
+                  {gsStatus==="saving"?"⟳ Ukládám…":"↑ Uložit"}
+                </button>
+              </div>
+            )}
+            {saveNotice && <span style={{ fontSize:12, color:T.green, fontFamily:"'DM Mono',monospace", marginLeft:4 }}>{saveNotice}</span>}
+          </div>
+        </header>
+
+        {gsError && <div style={{ padding:"10px 32px", background:"rgba(239,68,68,0.1)", borderBottom:"1px solid rgba(239,68,68,0.2)", display:"flex", justifyContent:"space-between" }}><span style={{ fontSize:13, color:T.red }}>{gsError}</span><button onClick={()=>setGsError("")} style={{ background:"none", border:"none", color:T.muted, cursor:"pointer", fontSize:18 }}>×</button></div>}
+        {csvError && <div style={{ padding:"10px 32px", background:"rgba(239,68,68,0.08)", borderBottom:"1px solid rgba(239,68,68,0.15)" }}><span style={{ fontSize:13, color:T.red }}>{csvError}</span></div>}
+
+        <main style={{ maxWidth: 1360, margin: "0 auto", padding: "28px 32px" }}>
+          {activeTab === "portfolio" && tabPrehled()}
+          {activeTab === "positions" && tabPozice()}
+          {activeTab === "analyza"   && tabAnalyza()}
+        </main>
+      </div>
+    </div>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(InvestBook));
+
+
+</script>
+</body>
+</html  const tabPrehled = () => {
     const brokerMap = {};
     const catMap = {};
     allRows.forEach(p => {
@@ -1067,6 +1292,7 @@ function InvestBook() {
     );
   };
 
+
   // ── POZICE ───────────────────────────────────────────────────────────────────
   const tabPozice = () => {
     const manualTotal   = manualRows.reduce((s, p) => s + toCZK(p), 0);
@@ -1088,39 +1314,7 @@ function InvestBook() {
               style={{ background: "rgba(59,130,246,0.15)", border: "1px solid rgba(59,130,246,0.3)", borderRadius: 8, color: T.blue, cursor: "pointer", padding: "8px 16px", fontSize: 13, fontWeight: 600 }}>
               ↑ Import CSV
             </button>
-            {(priceStatus === "done" || priceStatus === "partial" || priceStatus === "loading") && (
-              <button onClick={handleRefreshPrices} disabled={priceStatus === "loading"}
-                style={{ background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.25)", borderRadius: 8, color: "#10b981", cursor: priceStatus === "loading" ? "default" : "pointer", padding: "8px 14px", fontSize: 13, fontWeight: 600, opacity: priceStatus === "loading" ? 0.6 : 1 }}>
-                {priceStatus === "loading" ? "⟳ Načítám…" : "⟳ Refresh cen"}
-              </button>
-            )}
           </div>
-        </div>
-
-        {/* Price fetch status banner */}
-        {priceStatus !== "idle" && (
-          <div style={{ marginBottom: 14, padding: "12px 18px", borderRadius: 10, display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap",
-            background: priceStatus === "loading" ? "rgba(59,130,246,0.08)" : priceStatus === "done" ? "rgba(16,185,129,0.08)" : priceStatus === "partial" ? "rgba(245,158,11,0.08)" : "rgba(239,68,68,0.08)",
-            border: "1px solid " + (priceStatus === "loading" ? "rgba(59,130,246,0.2)" : priceStatus === "done" ? "rgba(16,185,129,0.2)" : priceStatus === "partial" ? "rgba(245,158,11,0.2)" : "rgba(239,68,68,0.2)") }}>
-            <div style={{ fontSize: 13, fontWeight: 600,
-              color: priceStatus === "loading" ? T.blue : priceStatus === "done" ? "#10b981" : priceStatus === "partial" ? T.amber : T.red }}>
-              {priceStatus === "loading" && "⟳ Načítám ceny z Yahoo Finance…"}
-              {priceStatus === "done" && `✓ Ceny aktualizovány · ${priceLog.filter(l=>l.ok).length} / ${priceLog.length} pozic`}
-              {priceStatus === "partial" && `⚠ Částečně · ${priceLog.filter(l=>l.ok).length} / ${priceLog.length} pozic načteno`}
-              {priceStatus === "error" && "✗ Chyba při načítání cen — zkuste Refresh"}
-            </div>
-            {pricesFetchedAt && priceStatus !== "loading" && (
-              <span style={{ fontSize: 11, color: T.muted }}>
-                {pricesFetchedAt.toLocaleTimeString("cs-CZ", { hour: "2-digit", minute: "2-digit" })}
-              </span>
-            )}
-            {priceStatus === "partial" && priceLog.filter(l=>!l.ok).length > 0 && (
-              <span style={{ fontSize: 11, color: T.subtle }}>
-                Nenačteno: {priceLog.filter(l=>!l.ok).map(l=>l.ticker).join(", ")}
-              </span>
-            )}
-          </div>
-        )}
 
         {/* MANUAL POSITIONS (ČSOB + Portu) */}
         <div style={{ fontSize: 11, color: T.muted, letterSpacing: "0.1em", fontWeight: 600, marginBottom: 8, textTransform: "uppercase" }}>
@@ -1303,264 +1497,5 @@ function InvestBook() {
     );
   };
 
-  // ── ANALÝZA ──────────────────────────────────────────────────────────────────
-  const tabAnalyza = () => {
-    const sorted    = allRows.slice().sort((a,b) => b.valueCZK - a.valueCZK);
-    const posCount  = allRows.length;
-    const profitable = allRows.filter(p => p.valueCZK > p.investedCZK).length;
-    const avgHold   = allRows.reduce((s,p) => s + (NOW_YEAR - p.start), 0) / Math.max(posCount, 1);
-    const oldest    = allRows.slice().sort((a,b) => a.start - b.start)[0];
-    const newest    = allRows.slice().sort((a,b) => b.start - a.start)[0];
 
-    const geoMap = {};
-    allRows.forEach(p => {
-      const nm = p.name.toUpperCase();
-      let geo = "USA";
-      if (p.category === "Crypto") geo = "Crypto";
-      else if (nm.indexOf(".DE") > -1 || nm.indexOf("RHM") > -1 || nm.indexOf("CSG") > -1 || nm.indexOf("BA-.L") > -1 || nm.indexOf("DFND") > -1) geo = "Evropa";
-      else if (p.category === "Fond" || p.category === "Portfolio") geo = "Fond/Portu";
-      geoMap[geo] = (geoMap[geo] || 0) + p.valueCZK;
-    });
-    const GEO_COLOR = { USA: "#3b82f6", Evropa: "#8b5cf6", Crypto: "#ec4899", "Fond/Portu": "#22c55e" };
-    const geoEntries = Object.keys(geoMap).map(k => [k, geoMap[k]]).sort((a,b) => b[1] - a[1]);
-
-    const catMap = {};
-    allRows.forEach(p => { catMap[p.category] = (catMap[p.category] || 0) + p.valueCZK; });
-    const catEntries = Object.keys(catMap).map(k => [k, catMap[k]]).sort((a,b) => b[1] - a[1]);
-
-    const rate = STATIC.avgAnnReturnNoCrypto / 100;
-    const milestones = [3000000, 5000000, 10000000];
-    const milColors  = [T.green, T.amber, "#ec4899"];
-
-    const barData = sorted.slice(0,12).map(p => ({
-      name: p.name.split("(")[0].trim().slice(0,10),
-      Investováno: p.investedCZK,
-      Hodnota: p.valueCZK,
-      cat: p.category,
-    }));
-
-    const C = { background: T.card, border: "1px solid " + T.border, borderRadius: 14, padding: 20 };
-
-    return (
-      <div>
-        <div style={{ marginBottom: 28 }}>
-          <h1 style={{ fontSize: 27, fontWeight: 800, color: T.text, letterSpacing: "-0.02em" }}>Analýza portfolia</h1>
-          <div style={{ fontSize: 14, color: T.muted, marginTop: 4 }}>{posCount} pozic · průměrné držení {avgHold.toFixed(1)} let</div>
-        </div>
-
-        {/* Stats cards row */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 16 }}>
-          <StatCard label="Ziskové pozice"    value={profitable + " / " + posCount}                                        color={T.green}  accent={T.green} />
-          <StatCard label="Průměrné držení"   value={avgHold.toFixed(1) + " let"}                                          color={T.text}   accent={T.blue} />
-          <StatCard label="Nejstarší pozice"  value={oldest ? oldest.name.split("(")[0].trim() : "—"} sub={oldest ? String(oldest.start) : ""} color={T.muted}  accent={T.subtle} />
-          <StatCard label="Nejnovější pozice" value={newest ? newest.name.split("(")[0].trim() : "—"} sub={newest ? String(newest.start) : ""} color={T.muted}  accent={T.subtle} />
-        </div>
-
-        {/* Geo allocation */}
-        <div style={{ ...C, marginBottom: 16 }}>
-          <SectionTitle title="Geografická alokace" sub="Rozložení portfolia podle trhu" />
-          <div style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", gap: 2, marginBottom: 18 }}>
-            {geoEntries.map(e => <div key={e[0]} style={{ flex: e[1]/totalValue, background: GEO_COLOR[e[0]] || T.muted, minWidth: 2 }} />)}
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: 14 }}>
-            {geoEntries.map(e => {
-              const pct = (e[1]/totalValue)*100;
-              return (
-                <div key={e[0]} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                  <div style={{ width: 10, height: 10, borderRadius: 3, background: GEO_COLOR[e[0]] || T.muted, flexShrink: 0, marginTop: 2 }} />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span style={{ fontSize: 14, color: T.muted, fontWeight: 500 }}>{e[0]}</span>
-                      <span style={{ fontSize: 14, color: T.text, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{pct.toFixed(1)}%</span>
-                    </div>
-                    <div style={{ height: 3, background: "rgba(255,255,255,0.05)", borderRadius: 2, marginTop: 5, marginBottom: 4 }}>
-                      <div style={{ width: pct+"%", height: "100%", background: GEO_COLOR[e[0]] || T.muted, borderRadius: 2 }} />
-                    </div>
-                    <span style={{ fontSize: 12, color: T.subtle }}>{fmtCZK(e[1])}</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Category alloc */}
-        <div style={{ ...C, marginBottom: 16 }}>
-          <SectionTitle title="Alokace podle kategorie" sub="Rozložení hodnoty mezi typy aktiv" />
-          <div style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", gap: 2, marginBottom: 18 }}>
-            {catEntries.map(e => <div key={e[0]} style={{ flex: e[1]/totalValue, background: CAT_COLOR[e[0]] || T.muted, minWidth: 2 }} />)}
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: 14 }}>
-            {catEntries.map(e => {
-              const pct     = (e[1]/totalValue)*100;
-              const catPos  = allRows.filter(p => p.category === e[0]);
-              const catGain = catPos.reduce((s,p) => s+(p.valueCZK-p.investedCZK), 0);
-              const catInv  = catPos.reduce((s,p) => s+p.investedCZK, 0);
-              const gp = catInv > 0 ? (catGain/catInv)*100 : 0;
-              return (
-                <div key={e[0]} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                  <div style={{ width: 10, height: 10, borderRadius: 3, background: CAT_COLOR[e[0]] || T.muted, flexShrink: 0, marginTop: 2 }} />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span style={{ fontSize: 14, color: T.muted, fontWeight: 500 }}>{e[0]}</span>
-                      <span style={{ fontSize: 14, color: T.text, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{pct.toFixed(1)}%</span>
-                    </div>
-                    <div style={{ height: 3, background: "rgba(255,255,255,0.05)", borderRadius: 2, marginTop: 5, marginBottom: 4 }}>
-                      <div style={{ width: pct+"%", height: "100%", background: CAT_COLOR[e[0]] || T.muted, borderRadius: 2 }} />
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span style={{ fontSize: 12, color: T.subtle }}>{fmtCZK(e[1])}</span>
-                      <span style={{ fontSize: 12, color: gp >= 0 ? T.green : T.red, fontWeight: 600 }}>{gp >= 0 ? "+" : ""}{gp.toFixed(1)}%</span>
-                    </div>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Milestone tracker */}
-        <div style={{ ...C, marginBottom: 16 }}>
-          <SectionTitle title="Milestone tracker" sub={"Odhad při " + STATIC.avgAnnReturnNoCrypto + " % p.a. · aktuálně " + fmtCZK(totalValue)} />
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            {milestones.map((target, i) => {
-              const reached = totalValue >= target;
-              const pct = Math.min((totalValue / target) * 100, 100);
-              const yrs = reached ? null : Math.log(target / totalValue) / Math.log(1 + rate);
-              const c = milColors[i];
-              return (
-                <div key={target}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <span style={{ fontSize: 22 }}>{reached ? "✅" : ["🎯","🚀","💎"][i]}</span>
-                      <div>
-                        <div style={{ fontSize: 16, color: T.text, fontWeight: 700 }}>{(target/1000000).toFixed(0)} M CZK</div>
-                        <div style={{ fontSize: 12, color: reached ? T.green : T.muted }}>
-                          {reached ? "Dosaženo ✓" : "za ~" + yrs.toFixed(1) + " let · rok " + Math.ceil(NOW_YEAR + yrs)}
-                        </div>
-                      </div>
-                    </div>
-                    <span style={{ fontSize: 16, color: c, fontWeight: 800, fontFamily: "'DM Mono',monospace" }}>{pct.toFixed(0)}%</span>
-                  </div>
-                  <div style={{ height: 6, background: "rgba(255,255,255,0.05)", borderRadius: 3 }}>
-                    <div style={{ width: pct+"%", height: "100%", background: c, borderRadius: 3 }} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        {/* Bar chart */}
-        <div style={{ ...C, marginBottom: 16 }}>
-          <SectionTitle title="Top 12 — investováno vs. hodnota" sub="Porovnání vložené částky a aktuální hodnoty" />
-          <ResponsiveContainer width="100%" height={230}>
-            <BarChart data={barData} barCategoryGap="28%">
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-              <XAxis dataKey="name" tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.muted }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.muted }} axisLine={false} tickLine={false} tickFormatter={v => (v/1000).toFixed(0)+"k"} width={40} />
-              <Tooltip {...ttStyle} formatter={(v, name) => [fmtCZK(v), name]} />
-              <Bar dataKey="Investováno" fill="rgba(107,114,128,0.35)" radius={[3,3,0,0]} />
-              <Bar dataKey="Hodnota" radius={[3,3,0,0]}>
-                {barData.map((d, i) => <Cell key={i} fill={CAT_COLOR[d.cat] || T.green} fillOpacity={0.85} />)}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      </div>
-    );
-  };
-
-  const TABS = [
-    { id: "portfolio", label: "Přehled" },
-    { id: "positions", label: "Pozice" },
-    { id: "analyza",   label: "Analýza" },
-  ];
-
-  return (
-    <div>
-      <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap');
-        * { margin: 0; padding: 0; box-sizing: border-box; }
-        body { background: #0f0f13; }
-        ::-webkit-scrollbar { width: 4px; height: 4px; }
-        ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
-        @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.3} }
-      `}</style>
-
-      <div style={{ minHeight: "100vh", background: T.bg, color: T.text, fontFamily: "'DM Sans', system-ui, sans-serif" }}>
-        {/* HEADER */}
-        <header style={{ height: 56, padding: "0 32px", borderBottom: "1px solid " + T.border, display: "flex", alignItems: "center", position: "sticky", top: 0, background: "rgba(15,15,19,0.92)", backdropFilter: "blur(16px)", zIndex: 100 }}>
-          <div style={{ display: "flex", alignItems: "center", gap: 10, marginRight: 40 }}>
-            <div style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(135deg," + T.green + "," + T.blue + ")", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, color: "#000" }}>i</div>
-            <span style={{ fontSize: 17, fontWeight: 700, color: T.text, letterSpacing: "-0.01em" }}>InvestBook</span>
-          </div>
-          <nav style={{ display: "flex", gap: 2 }}>
-            {TABS.map(tab => (
-              <button key={tab.id} onClick={() => setActiveTab(tab.id)}
-                style={{ padding: "6px 14px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, transition: "all 0.12s",
-                  background: activeTab === tab.id ? "rgba(255,255,255,0.08)" : "transparent",
-                  color: activeTab === tab.id ? T.text : T.muted }}>
-                {tab.label}
-              </button>
-            ))}
-          </nav>
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 16 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <div style={{ width: 6, height: 6, borderRadius: "50%", background: T.green, animation: "pulse 2.5s infinite", boxShadow: "0 0 6px " + T.green }} />
-              <span style={{ fontSize: 12, color: T.muted, fontFamily: "'DM Mono',monospace" }}>EUR 24,23 · USD 20,57</span>
-            </div>
-            <div style={{ height: 20, width: 1, background: T.border }} />
-            <span style={{ fontSize: 14, fontWeight: 700, color: T.green, fontFamily: "'DM Mono',monospace" }}>{fmtCZK(totalValue)}</span>
-            <div style={{ height: 20, width: 1, background: T.border }} />
-            {priceStatus === "loading" ? (
-              <span style={{ fontSize: 12, color: T.blue, fontFamily: "'DM Mono',monospace" }}>⟳ načítám ceny…</span>
-            ) : (
-              <button onClick={handleRefreshPrices}
-                style={{ background: "none", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 6, color: T.muted, cursor: "pointer", padding: "4px 10px", fontSize: 12, fontFamily: "'DM Mono',monospace", transition: "all 0.12s" }}
-                onMouseEnter={e => { e.currentTarget.style.borderColor = T.green; e.currentTarget.style.color = T.green; }}
-                onMouseLeave={e => { e.currentTarget.style.borderColor = "rgba(255,255,255,0.1)"; e.currentTarget.style.color = T.muted; }}
-                title={pricesFetchedAt ? "Naposledy: " + pricesFetchedAt.toLocaleTimeString("cs-CZ") : "Načíst aktuální ceny"}>
-                {pricesFetchedAt ? "⟳ " + pricesFetchedAt.toLocaleTimeString("cs-CZ", {hour:"2-digit",minute:"2-digit"}) : "⟳ ceny"}
-              </button>
-            )}
-            <div style={{ height:20, width:1, background:T.border }}/>
-            {gsStatus === "unconfigured" ? (
-              <span style={{ fontSize:11, color:T.amber, padding:"3px 8px", border:"1px solid rgba(245,158,11,0.3)", borderRadius:6 }}>⚠ Sheets nekonfig.</span>
-            ) : (
-              <div style={{ display:"flex", gap:5 }}>
-                <button onClick={handleLoadFromSheets} disabled={!gsApiReady||gsStatus==="loading"||gsStatus==="saving"}
-                  style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:6, color:T.muted, cursor:"pointer", padding:"4px 10px", fontSize:12, fontFamily:"'DM Mono',monospace", opacity:(!gsApiReady||gsStatus==="loading"||gsStatus==="saving")?0.4:1 }}
-                  onMouseEnter={e=>{e.currentTarget.style.borderColor=T.blue;e.currentTarget.style.color=T.blue;}} onMouseLeave={e=>{e.currentTarget.style.borderColor="rgba(255,255,255,0.1)";e.currentTarget.style.color=T.muted;}}>
-                  {gsStatus==="loading"?"⟳ Načítám…":"↓ Sheets"}
-                </button>
-                <button onClick={handleSaveToSheets} disabled={!gsApiReady||gsStatus==="loading"||gsStatus==="saving"}
-                  style={{ background:"rgba(34,197,94,0.1)", border:"1px solid rgba(34,197,94,0.25)", borderRadius:6, color:T.green, cursor:"pointer", padding:"4px 10px", fontSize:12, fontFamily:"'DM Mono',monospace", opacity:(!gsApiReady||gsStatus==="loading"||gsStatus==="saving")?0.4:1 }}
-                  onMouseEnter={e=>{e.currentTarget.style.background="rgba(34,197,94,0.2)";}} onMouseLeave={e=>{e.currentTarget.style.background="rgba(34,197,94,0.1)";}}>
-                  {gsStatus==="saving"?"⟳ Ukládám…":"↑ Uložit"}
-                </button>
-              </div>
-            )}
-            {saveNotice && <span style={{ fontSize:12, color:T.green, fontFamily:"'DM Mono',monospace", marginLeft:4 }}>{saveNotice}</span>}
-          </div>
-        </header>
-
-        {gsError && <div style={{ padding:"10px 32px", background:"rgba(239,68,68,0.1)", borderBottom:"1px solid rgba(239,68,68,0.2)", display:"flex", justifyContent:"space-between" }}><span style={{ fontSize:13, color:T.red }}>{gsError}</span><button onClick={()=>setGsError("")} style={{ background:"none", border:"none", color:T.muted, cursor:"pointer", fontSize:18 }}>×</button></div>}
-        {csvError && <div style={{ padding:"10px 32px", background:"rgba(239,68,68,0.08)", borderBottom:"1px solid rgba(239,68,68,0.15)" }}><span style={{ fontSize:13, color:T.red }}>{csvError}</span></div>}
-
-        <main style={{ maxWidth: 1360, margin: "0 auto", padding: "28px 32px" }}>
-          {activeTab === "portfolio" && tabPrehled()}
-          {activeTab === "positions" && tabPozice()}
-          {activeTab === "analyza"   && tabAnalyza()}
-        </main>
-      </div>
-    </div>
-  );
-}
-
-ReactDOM.createRoot(document.getElementById("root")).render(React.createElement(InvestBook));
-
-
-</script>
-</body>
-</html>
+>
