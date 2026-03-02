@@ -86,21 +86,23 @@ async function ensureSheets() {
 const PHDR = ["id","name","broker","category","invested","value","currency","fx","start","annReturn","shares","ticker"];
 const PHDR_IMP = ["id","name","broker","category","invested","currency","fx","start","shares","ticker"];
 const posToRowImp = p => [p.id,p.name,p.broker,p.category,p.invested,p.currency,p.fx??"",p.start,p.shares??"",p.ticker??""];
+const pf = s => { if (s==null||s==="") return 0; const n = parseFloat(String(s).replace(/\s/g,"").replace(",",".")); return isFinite(n)?n:0; };
+const pfn = s => { if (s==null||s==="") return null; const n = parseFloat(String(s).replace(/\s/g,"").replace(",",".")); return isFinite(n)?n:null; };
 const rowToImp = r => ({
   id: Number(r[0])||0, name: r[1]||"", broker: r[2]||"", category: r[3]||"Akcie",
-  invested: parseFloat(r[4])||0, value: parseFloat(r[4])||0,
-  currency: r[5]||"USD", fx: r[6]!==""?parseFloat(r[6]):null,
+  invested: pf(r[4]), value: pf(r[4]),
+  currency: r[5]||"USD", fx: pfn(r[6]),
   start: parseInt(r[7])||2024, annReturn: null,
-  shares: r[8]!==""?parseFloat(r[8]):null, ticker: r[9]||undefined,
-  priceCZK: r[10]!==""?parseFloat(r[10]):null,
+  shares: pfn(r[8]), ticker: r[9]||undefined,
+  priceCZK: pfn(r[10]),
 });
 const posToRow = p => [p.id,p.name,p.broker,p.category,p.invested,p.value,p.currency,p.fx??"",p.start,p.annReturn??"",p.shares??"",p.ticker??""];
 const rowToPos = r => ({
-  id: Number(r[0]), name: r[1]||"", broker: r[2]||"", category: r[3]||"Akcie",
-  invested: parseFloat(r[4])||0, value: parseFloat(r[5])||0,
-  currency: r[6]||"CZK", fx: r[7]!==""?parseFloat(r[7]):null,
-  start: parseInt(r[8])||2024, annReturn: r[9]!==""?parseFloat(r[9]):null,
-  shares: r[10]!==""?parseFloat(r[10]):undefined, ticker: r[11]||undefined,
+  id: Number(r[0])||0, name: r[1]||"", broker: r[2]||"", category: r[3]||"Akcie",
+  invested: pf(r[4]), value: pf(r[5]),
+  currency: r[6]||"CZK", fx: pfn(r[7]),
+  start: parseInt(r[8])||2024, annReturn: pfn(r[9]),
+  shares: pfn(r[10]), ticker: r[11]||undefined,
 });
 
 async function clearSheet(name) {
@@ -273,7 +275,7 @@ const CAT_COLOR = { Fond: "#22c55e", ETF: "#3b82f6", Portfolio: "#8b5cf6", Akcie
 const BROKER_COLORS = ["#3b82f6","#22c55e","#8b5cf6","#f59e0b","#ec4899","#06b6d4","#a78bfa"];
 const CATEGORIES = ["Fond","ETF","Portfolio","Akcie","Crypto","Jiné"];
 
-const fmtCZK = (v) => new Intl.NumberFormat("cs-CZ", { style: "currency", currency: "CZK", maximumFractionDigits: 0 }).format(v);
+const fmtCZK = (v) => { const n = Number(v); if (!isFinite(n)) return "— Kč"; return new Intl.NumberFormat("cs-CZ", { style: "currency", currency: "CZK", maximumFractionDigits: 0 }).format(n); };
 const parseFlt = (s) => { const n = parseFloat(String(s).replace(/\s/g,"").replace(",",".")); return isNaN(n) ? 0 : n; };
 
 // Convert position value to CZK
@@ -1021,9 +1023,9 @@ function InvestBook() {
             </thead>
             <tbody>
               {importedRows.map(pos => {
-                const rate     = pos.fx || (pos.currency === 'EUR' ? DEGIRO_FX : pos.currency === 'GBP' ? GBP_FX : ETORO_FX);
-                const invCZK   = (pos.invested || 0) * rate;
-                const hasPrice = pos.priceCZK != null && pos.shares != null;
+                const rate     = (isFinite(pos.fx) && pos.fx > 0) ? pos.fx : (pos.currency === "EUR" ? DEGIRO_FX : pos.currency === "GBP" ? GBP_FX : ETORO_FX);
+                const invCZK   = isFinite(pos.invested) ? pos.invested * rate : 0;
+                const hasPrice = isFinite(pos.priceCZK) && pos.priceCZK > 0 && isFinite(pos.shares) && pos.shares > 0;
                 const valueCZK = hasPrice ? pos.priceCZK * pos.shares : invCZK;
                 const gainCZK  = valueCZK - invCZK;
                 const gainPct  = invCZK > 0 ? (gainCZK / invCZK) * 100 : 0;
