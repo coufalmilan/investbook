@@ -84,6 +84,15 @@ async function ensureSheets() {
 }
 
 const PHDR = ["id","name","broker","category","invested","value","currency","fx","start","annReturn","shares","ticker"];
+const PHDR_IMP = ["id","name","broker","category","invested","currency","fx","start","shares","ticker"];
+const posToRowImp = p => [p.id,p.name,p.broker,p.category,p.invested,p.currency,p.fx??"",p.start,p.shares??"",p.ticker??""];
+const rowToImp = r => ({
+  id: Number(r[0])||0, name: r[1]||"", broker: r[2]||"", category: r[3]||"Akcie",
+  invested: parseFloat(r[4])||0, value: parseFloat(r[4])||0,
+  currency: r[5]||"USD", fx: r[6]!==""?parseFloat(r[6]):null,
+  start: parseInt(r[7])||2024, annReturn: null,
+  shares: r[8]!==""?parseFloat(r[8]):null, ticker: r[9]||undefined,
+});
 const posToRow = p => [p.id,p.name,p.broker,p.category,p.invested,p.value,p.currency,p.fx??"",p.start,p.annReturn??"",p.shares??"",p.ticker??""];
 const rowToPos = r => ({
   id: Number(r[0]), name: r[1]||"", broker: r[2]||"", category: r[3]||"Akcie",
@@ -107,7 +116,7 @@ async function saveToSheets(manual, imported, settings) {
     clearSheet("settings"),
   ]);
   await sheetsSet("manual_positions!A1",   [PHDR, ...manual.map(posToRow)]);
-  await sheetsSet("imported_positions!A1", [PHDR, ...imported.map(posToRow)]);
+  await sheetsSet("imported_positions!A1", [PHDR_IMP, ...imported.map(posToRowImp)]);
   await sheetsSet("settings!A1", [["key","value"], ...Object.entries(settings).map(([k,v])=>[k,v])]);
 }
 
@@ -125,7 +134,7 @@ async function loadFromSheets() {
   }
   return {
     manual:   m.filter(r=>r.length>=6).map(rowToPos),
-    imported: i.filter(r=>r.length>=6).map(rowToPos),
+    imported: i.filter(r=>r.length>=3).map(rowToImp),
     settings: Object.fromEntries((s||[]).map(r=>[r[0],r[1]])),
     prices,
   };
@@ -134,7 +143,7 @@ async function loadFromSheets() {
 // ════════════════════════════════════════════════════════════════════════════
 //  APP SOURCE (transpiled from investbook-new.jsx)
 // ════════════════════════════════════════════════════════════════════════════
-const { useState, useCallback, useRef, useEffect } = React;
+const { useState, useCallback, useEffect } = React;
 const { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis,
         CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } = Recharts;
 
@@ -352,56 +361,9 @@ function StatCard({ label, value, sub, color, accent }) {
 }
 
 // ─── CSV PARSER ───────────────────────────────────────────────────────────────
-function parseCSV(text) {
-  const lines = text.trim().split("\n");
-  const headers = lines[0].split(",").map(h => h.replace(/"/g,"").trim());
-  return lines.slice(1).map(line => {
-    // CSV parse handling quotes
-    const vals = [];
-    let cur = "", inQ = false;
-    for (let i = 0; i < line.length; i++) {
-      const c = line[i];
-      if (c === '"') { inQ = !inQ; continue; }
-      if (c === ',' && !inQ) { vals.push(cur); cur = ""; continue; }
-      cur += c;
-    }
-    vals.push(cur);
-    const obj = {};
-    headers.forEach((h, i) => { obj[h] = vals[i] || ""; });
-    return obj;
-  });
-}
 
-function aggregateCSV(rows) {
-  const positions = {};
-  for (const t of rows) {
-    const way = t["Way"];
-    if (!["BUY","SELL"].includes(way)) continue;
-    const baseType = t["Base type"];
-    if (baseType === "FIAT") continue;
-    const broker = t["Broker"].trim();
-    if (!broker || broker === "DGA") {
-      // DGA = crypto without broker label
-    }
-    const baseCur = t["Base currency (name)"].trim();
-    const ticker = baseCur.split("(")[0].trim();
-    const quoteCur = t["Quote currency"].trim();
-    const baseAmt = parseFloat(t["Base amount"]) || 0;
-    const quoteAmt = parseFloat(t["Quote amount"]) || 0;
-    const brokerKey = broker || "Crypto";
-    const key = brokerKey + "||" + ticker;
-    if (!positions[key]) {
-      positions[key] = { broker: brokerKey, ticker, name: baseCur, currency: quoteCur, baseType, shares: 0, invested: 0, start: 2099 };
-    }
-    const p = positions[key];
-    const year = parseInt(t["Date"].substring(0,4));
-    if (year < p.start) p.start = year;
-    if (way === "BUY") { p.shares += baseAmt; p.invested += quoteAmt; }
-    else { p.shares -= baseAmt; p.invested -= quoteAmt; }
-  }
-  // filter out closed/zero positions
-  return Object.values(positions).filter(p => p.shares > 0.00001 || p.invested > 0.01);
-}
+
+
 
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
 function InvestBook() {
@@ -414,14 +376,11 @@ function InvestBook() {
   const [zustatek, setZustatek] = useState(0);
   const [editingContrib, setEditingContrib] = useState(false);
   const [contribDraft, setContribDraft] = useState("30000");
-  const fileInputRef = useRef(null);
-  const [csvError, setCsvError] = useState("");
 
   // Manual positions (ČSOB + Portu)
   const [manualRows, setManualRows] = useState([...INITIAL_CSOB, ...INITIAL_MANUAL_EXTRA]);
   // Imported positions (DEGIRO + eToro + Crypto)
   const [importedRows, setImportedRows] = useState([...DEGIRO_POSITIONS_INIT, ...ETORO_POSITIONS_INIT, ...CRYPTO_POSITIONS_INIT]);
-  const [csvLoaded, setCsvLoaded] = useState(false);
   const [gsStatus, setGsStatus] = useState("idle"); // idle | loading | saving | saved | error
   const [gsMsg, setGsMsg] = useState("");
 
@@ -466,55 +425,7 @@ function InvestBook() {
   const deleteManual = (id) => setManualRows(prev => prev.filter(p => p.id !== id));
 
   // ── CSV IMPORT + AUTO PRICE FETCH ───────────────────────────────────────────
-  const handleFileChange = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (evt) => {
-      try {
-        const rows = parseCSV(evt.target.result);
-        const aggregated = aggregateCSV(rows);
-        if (aggregated.length === 0) { setCsvError("CSV neobsahuje žádné platné transakce."); return; }
-
-        // Build base positions (value = invested as fallback)
-        let nextId = 500;
-        const newPositions = aggregated.map(p => {
-          const cat = p.baseType === "CRYPTO" ? "Crypto" : (p.baseType === "FUND" ? "ETF" : "Akcie");
-          const fx = p.currency === "EUR" ? DEGIRO_FX : (p.currency === "USD" ? ETORO_FX : (p.currency === "GBP" ? GBP_FX : 1));
-          return {
-            id: nextId++,
-            name: p.name,
-            broker: p.broker === "DGA" ? "Crypto" : p.broker,
-            invested: p.invested,
-            value: p.invested, // temporary fallback
-            currency: p.currency,
-            fx,
-            start: p.start,
-            annReturn: null,
-            category: cat,
-            shares: p.shares,
-            ticker: p.ticker,
-            fromCSV: true,
-          };
-        });
-
-        setImportedRows(newPositions);
-        setCsvLoaded(true);
-        setCsvError("");
-
-        // ── AUTO FETCH PRICES ─────────────────────────────────────────────────
-        setPriceStatus("loading");
-        setPriceLog([]);
-        try {        } catch (err) {
-          setPriceStatus("error");
-          setPriceLog([]);
-        }
-      } catch (err) {
-        setCsvError("Chyba při parsování CSV: " + err.message);
-      }
-    };
-    reader.readAsText(file);
-  };
+  
 
   // ── REFRESH PRICES (re-fetch without re-parsing CSV) ─────────────────────────
 
@@ -538,14 +449,14 @@ function InvestBook() {
       if (data.manual && data.manual.length)   setManualRows(data.manual);
       if (data.imported && data.imported.length) {
         const priced = data.imported.map(pos => {
-          if (pos.ticker && data.prices && data.prices[pos.ticker]) {
-            const priceUSD = data.prices[pos.ticker];
-            // prices sheet is in USD — convert to position currency then to CZK
-            let priceInCurrency = priceUSD;
-            if (pos.currency === "EUR") priceInCurrency = priceUSD * (FX_USD / FX_EUR);
-            else if (pos.currency === "GBP") priceInCurrency = priceUSD * (FX_USD / FX_GBP);
-            const newValue = Math.round(priceInCurrency * (pos.shares || 1));
-            return { ...pos, value: newValue };
+          const price = pos.ticker && data.prices ? data.prices[pos.ticker] : null;
+          if (price && pos.shares) {
+            // prices sheet stores price in position's native currency (USD/EUR/GBP)
+            const newValue = Math.round(price * pos.shares * 100) / 100;
+            const annR = pos.invested > 0 && pos.start
+              ? (Math.pow(newValue / pos.invested, 1 / Math.max(1, new Date().getFullYear() - pos.start)) - 1) * 100
+              : null;
+            return { ...pos, value: newValue, annReturn: annR !== null ? Math.round(annR * 100) / 100 : null };
           }
           return pos;
         });
@@ -1032,20 +943,11 @@ function InvestBook() {
         </div>
 
         {/* IMPORTED POSITIONS (DEGIRO + eToro + Crypto) */}
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-          <div style={{ fontSize: 11, color: T.muted, letterSpacing: "0.1em", fontWeight: 600, textTransform: "uppercase" }}>
-            Importované pozice — DEGIRO · eToro · Crypto
-            {csvLoaded && <span style={{ marginLeft: 8, color: T.green }}>✓ CSV načteno</span>}
-          </div>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <input ref={fileInputRef} type="file" accept=".csv" style={{ display: "none" }} onChange={handleFileChange} />
-            <button onClick={() => fileInputRef.current?.click()}
-              style={{ background: "rgba(59,130,246,0.15)", border: "1px solid rgba(59,130,246,0.3)", borderRadius: 8, color: T.blue, cursor: "pointer", padding: "6px 14px", fontSize: 12, fontWeight: 600 }}>
-              ↑ Import CSV
-            </button>
-          </div>
+        <div style={{ fontSize: 11, color: T.muted, letterSpacing: "0.1em", fontWeight: 600, marginBottom: 8, textTransform: "uppercase" }}>
+          Importované pozice — DEGIRO · eToro · Crypto
         </div>
-        {csvError && <div style={{ color: T.red, fontSize: 12, marginBottom: 8 }}>{csvError}</div>}
+
+        </div>
 
         <div style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 14, overflow: "hidden", marginBottom: 20 }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
