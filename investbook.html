@@ -296,6 +296,58 @@ const investedCZK = (pos) => {
   return pos.invested * fxRate(pos);
 };
 
+// ─── CSV PARSER ──────────────────────────────────────────────────────────────
+function parseCSV(text) {
+  const lines = text.split(/\r?\n/).filter(l => l.trim());
+  if (!lines.length) return [];
+  // Parse header
+  const parseRow = line => {
+    const cols = []; let cur = ''; let inQ = false;
+    for (let i = 0; i < line.length; i++) {
+      const c = line[i];
+      if (c === '"') { inQ = !inQ; }
+      else if (c === ',' && !inQ) { cols.push(cur.trim()); cur = ''; }
+      else { cur += c; }
+    }
+    cols.push(cur.trim());
+    return cols;
+  };
+  const headers = parseRow(lines[0]);
+  return lines.slice(1).map(l => {
+    const vals = parseRow(l);
+    return Object.fromEntries(headers.map((h, i) => [h, vals[i] || '']));
+  });
+}
+
+function aggregateCSV(rows) {
+  const positions = {};
+  for (const r of rows) {
+    const way = r['Way'];
+    if (!['BUY','SELL'].includes(way)) continue;
+    const baseType = r['Base type'];
+    if (baseType === 'FIAT') continue;
+    const baseCur = (r['Base currency (name)'] || '').trim();
+    const ticker  = baseCur.split(' ')[0].trim();
+    const name    = baseCur;
+    const quoteCur = (r['Quote currency'] || 'USD').trim();
+    const baseAmt  = parseFloat(r['Base amount'])  || 0;
+    const quoteAmt = parseFloat(r['Quote amount']) || 0;
+    let broker = (r['Broker'] || '').trim();
+    if (!broker || broker === 'DGA') broker = 'Crypto';
+    const year = parseInt((r['Date'] || '2024').substring(0, 4));
+    const key  = broker + '||' + ticker;
+    if (!positions[key]) {
+      const cat = baseType === 'CRYPTO' ? 'Crypto' : (baseType === 'FUND' ? 'ETF' : 'Akcie');
+      positions[key] = { ticker, name, broker, category: cat, currency: quoteCur, shares: 0, invested: 0, start: year };
+    }
+    const p = positions[key];
+    if (year < p.start) p.start = year;
+    if (way === 'BUY')  { p.shares += baseAmt; p.invested += quoteAmt; }
+    else                { p.shares -= baseAmt; p.invested -= quoteAmt; }
+  }
+  return Object.values(positions).filter(p => p.shares > 0.00001);
+}
+
 // ─── EDIT CELL ────────────────────────────────────────────────────────────────
 function EditCell({ value, onSave, align, suffix, color, type, isSelect, options, locked }) {
   align = align || "right"; suffix = suffix || ""; type = type || "number"; isSelect = isSelect || false; options = options || [];
@@ -947,8 +999,6 @@ function InvestBook() {
           Importované pozice — DEGIRO · eToro · Crypto
         </div>
 
-        </div>
-
         <div style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 14, overflow: "hidden", marginBottom: 20 }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
@@ -1266,6 +1316,38 @@ function InvestBook() {
             <div style={{ height: 20, width: 1, background: T.border }} />
             <span style={{ fontSize: 14, fontWeight: 700, color: T.green, fontFamily: "'DM Mono',monospace" }}>{fmtCZK(totalValue)}</span>
             <div style={{ height: 20, width: 1, background: T.border }} />
+            <input ref={React.useRef(null)} id="csvFileInput" type="file" accept=".csv" style={{ display:"none" }}
+              onChange={e => {
+                const file = e.target.files[0]; if (!file) return;
+                const reader = new FileReader();
+                reader.onload = async (evt) => {
+                  try {
+                    const rows = parseCSV(evt.target.result);
+                    const agg  = aggregateCSV(rows);
+                    if (!agg.length) { setGsMsg("✗ CSV neobsahuje platné transakce"); return; }
+                    let id = 500;
+                    const newPos = agg.map(p => ({
+                      id: id++, name: p.name, broker: p.broker, category: p.category,
+                      invested: Math.round(p.invested * 100) / 100,
+                      value:    Math.round(p.invested * 100) / 100,
+                      currency: p.currency,
+                      fx: p.currency === 'EUR' ? DEGIRO_FX : p.currency === 'GBP' ? GBP_FX : ETORO_FX,
+                      start: p.start, annReturn: null,
+                      shares: Math.round(p.shares * 1000000) / 1000000,
+                      ticker: p.ticker,
+                    }));
+                    setImportedRows(newPos);
+                    setGsMsg("✓ CSV načteno — " + newPos.length + " pozic. Ulož do Sheets.");
+                    setTimeout(() => setGsMsg(""), 5000);
+                  } catch(err) { setGsMsg("✗ Chyba při čtení CSV: " + err.message); }
+                };
+                reader.readAsText(file, 'utf-8');
+                e.target.value = '';
+              }} />
+            <button onClick={() => document.getElementById('csvFileInput').click()}
+              style={{ background:"rgba(59,130,246,0.15)", border:"1px solid rgba(59,130,246,0.3)", borderRadius:8, color:T.blue, cursor:"pointer", padding:"6px 14px", fontSize:13, fontWeight:600 }}>
+              ↑ CSV
+            </button>
             <button onClick={handleLoad} disabled={gsStatus === "loading"}
               style={{ background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.3)", borderRadius: 8, color: "#a5b4fc", cursor: gsStatus === "loading" ? "default" : "pointer", padding: "6px 14px", fontSize: 13, fontWeight: 600, opacity: gsStatus === "loading" ? 0.6 : 1 }}>
               {gsStatus === "loading" ? "⟳ Načítám…" : "↺ Refresh"}
