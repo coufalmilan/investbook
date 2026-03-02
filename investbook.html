@@ -144,8 +144,6 @@ const { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis,
         CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } = Recharts;
 
 
-// ─── PORTFOLIO HISTORY ────────────────────────────────────────────────────────
-// ─── EDIT CELL ────────────────────────────────────────────────────────────────
 
 // ─── PORTFOLIO HISTORY ────────────────────────────────────────────────────────
 const PORTFOLIO_HISTORY = [
@@ -416,7 +414,7 @@ function InvestBook() {
   const [manualRows, setManualRows] = useState([...INITIAL_CSOB, ...INITIAL_MANUAL_EXTRA]);
   // Imported positions (DEGIRO + eToro + Crypto)
   const [importedRows, setImportedRows] = useState([...DEGIRO_POSITIONS_INIT, ...ETORO_POSITIONS_INIT, ...CRYPTO_POSITIONS_INIT]);
-  const [csvLoaded, setCsvLoaded] = useState(false); // idle | loading | done | partial | error // {ticker, price, currency, ok}
+  const [csvLoaded, setCsvLoaded] = useState(false);
 
   // All rows combined (in CZK)
   const allRows = [
@@ -496,8 +494,11 @@ function InvestBook() {
         setCsvError("");
 
         // ── AUTO FETCH PRICES ─────────────────────────────────────────────────
-        try {
-        } catch (err) {
+        setPriceStatus("loading");
+        setPriceLog([]);
+        try {        } catch (err) {
+          setPriceStatus("error");
+          setPriceLog([]);
         }
       } catch (err) {
         setCsvError("Chyba při parsování CSV: " + err.message);
@@ -899,6 +900,10 @@ function InvestBook() {
               style={{ background: "rgba(59,130,246,0.15)", border: "1px solid rgba(59,130,246,0.3)", borderRadius: 8, color: T.blue, cursor: "pointer", padding: "8px 16px", fontSize: 13, fontWeight: 600 }}>
               ↑ Import CSV
             </button>
+          </div>
+        </div>
+
+        {/* Price fetch status banner */}
                       </div>
         )}
 
@@ -1291,7 +1296,7 @@ function InvestBook() {
             <div style={{ height: 20, width: 1, background: T.border }} />
             <span style={{ fontSize: 14, fontWeight: 700, color: T.green, fontFamily: "'DM Mono',monospace" }}>{fmtCZK(totalValue)}</span>
             <div style={{ height: 20, width: 1, background: T.border }} />
-                      </div>
+          </div>
         </header>
 
         <main style={{ maxWidth: 1360, margin: "0 auto", padding: "28px 32px" }}>
@@ -1303,7 +1308,6 @@ function InvestBook() {
     </div>
   );
 }
-
 
 ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(InvestBook));
 </script>
