@@ -14,8 +14,8 @@
   -->
   <script>
     window.INVESTBOOK_CONFIG = {
-      CLIENT_ID:       "179998619875-2da4rpordmtcuaranatvbrufjqtp2vi9.apps.googleusercontent.com",
-      SPREADSHEET_ID:  "1z83S5c7DRB3DY8GlVNFmKybM0Rn_PRQ0EUFRBxYO-xk",
+      CLIENT_ID:       "VLOZ_SVUJ_CLIENT_ID_ZDE",
+      SPREADSHEET_ID:  "VLOZ_ID_SPREADSHEETU_ZDE",
     };
   </script>
 
@@ -117,15 +117,22 @@ async function saveToSheets(manual, imported, settings) {
 }
 
 async function loadFromSheets() {
-  const [m, i, s] = await Promise.all([
+  const [m, i, s, p] = await Promise.all([
     sheetsGet("manual_positions!A2:L1000"),
     sheetsGet("imported_positions!A2:L1000"),
     sheetsGet("settings!A2:B100"),
+    sheetsGet("prices!A2:B1000"),
   ]);
+  // Build price map: ticker -> price_usd
+  const prices = {};
+  for (const row of (p||[])) {
+    if (row[0] && row[1]) prices[row[0].trim()] = parseFloat(row[1]) || 0;
+  }
   return {
     manual:   m.filter(r=>r.length>=6).map(rowToPos),
     imported: i.filter(r=>r.length>=6).map(rowToPos),
     settings: Object.fromEntries((s||[]).map(r=>[r[0],r[1]])),
+    prices,
   };
 }
 
@@ -464,6 +471,8 @@ function InvestBook() {
   const [monthlyContrib, setMonthlyContrib] = useState(30000);
   const [editingContrib, setEditingContrib] = useState(false);
   const [contribDraft, setContribDraft] = useState("30000");
+  const [hypoteka, setHypoteka] = useState(1821963);
+  const [zustatek, setZustatek] = useState(0);
   const fileInputRef = useRef(null);
   const [csvError, setCsvError] = useState("");
 
@@ -518,8 +527,8 @@ function InvestBook() {
     setImportedRows(prev => prev.map(p => {
       if (p.id !== id) return p;
       const up = { ...p };
-      const n = parseFlt(raw);
-      up[field] = isNaN(n) ? null : n;
+      if (["category","name","broker","currency","ticker"].includes(field)) up[field] = raw;
+      else { const n = parseFlt(raw); up[field] = isNaN(n) ? null : n; }
       return up;
     }));
   }, []);
@@ -536,10 +545,31 @@ function InvestBook() {
     withAuth(async () => {
       setGsStatus("loading");
       try {
-        const { manual, imported, settings } = await loadFromSheets();
-        if (manual.length > 0)   setManualRows(manual);
-        if (imported.length > 0) setImportedRows(imported);
+        const { manual, imported, settings, prices } = await loadFromSheets();
+        if (manual.length > 0) setManualRows(manual);
+
+        // Apply prices from prices sheet to imported positions
+        if (imported.length > 0) {
+          const USD_FX = 20.57, EUR_FX = 24.23, GBP_FX = 25.80;
+          const updated = imported.map(pos => {
+            const ticker = pos.ticker || pos.name.split("(")[0].trim();
+            const priceUSD = prices[ticker];
+            if (!priceUSD || !pos.shares) return pos;
+            // Convert USD price to position currency
+            let priceInCurrency = priceUSD;
+            if (pos.currency === "EUR") priceInCurrency = priceUSD * (USD_FX / EUR_FX);
+            else if (pos.currency === "GBP") priceInCurrency = priceUSD * (USD_FX / GBP_FX);
+            const newValue = priceInCurrency * pos.shares;
+            const years = Math.max(new Date().getFullYear() - pos.start, 1);
+            const annRet = pos.invested > 0 ? (Math.pow(newValue / pos.invested, 1 / years) - 1) * 100 : null;
+            return { ...pos, value: Math.round(newValue * 100) / 100, annReturn: annRet !== null ? Math.round(annRet * 100) / 100 : null };
+          });
+          setImportedRows(updated);
+        }
+
         if (settings.monthlyContrib) setMonthlyContrib(parseFloat(settings.monthlyContrib));
+        if (settings.hypoteka) setHypoteka(parseFloat(settings.hypoteka));
+        if (settings.zustatek) setZustatek(parseFloat(settings.zustatek));
         setGsStatus("ready");
         setSaveNotice("✓ Data načtena ze Sheets");
         setTimeout(() => setSaveNotice(""), 3000);
@@ -554,7 +584,7 @@ function InvestBook() {
     withAuth(async () => {
       setGsStatus("saving");
       try {
-        await saveToSheets(manualRows, importedRows, { monthlyContrib: String(monthlyContrib) });
+        await saveToSheets(manualRows, importedRows, { monthlyContrib: String(monthlyContrib), hypoteka: String(hypoteka), zustatek: String(zustatek) });
         setGsStatus("ready");
         setSaveNotice("✓ Uloženo  " + new Date().toLocaleTimeString("cs-CZ",{hour:"2-digit",minute:"2-digit"}));
         setTimeout(() => setSaveNotice(""), 4000);
@@ -1117,7 +1147,7 @@ function InvestBook() {
                     onMouseLeave={e => e.currentTarget.style.background = ""}>
                     <EditCell value={pos.name}     type="text" align="left" color={CAT_COLOR[pos.category] || T.text} onSave={v => updateManual(pos.id,"name",v)} />
                     <EditCell value={pos.broker}   type="text" align="left" color={T.muted}                           onSave={v => updateManual(pos.id,"broker",v)} />
-                    <td style={{ padding: "10px 12px" }}><Badge label={pos.category} color={CAT_COLOR[pos.category] || T.muted} /></td>
+                    <EditCell value={pos.category} isSelect options={CATEGORIES} align="left" color={CAT_COLOR[pos.category]||T.muted} onSave={v=>updateManual(pos.id,"category",v)}/>
                     <EditCell value={pos.invested} color={T.muted} onSave={v => updateManual(pos.id,"invested",v)} />
                     <EditCell value={pos.value}    color={T.text}  onSave={v => updateManual(pos.id,"value",v)} />
                     <td style={nc(gc)}>{gain >= 0 ? "+" : ""}{fmtCZK(gain)}</td>
@@ -1222,13 +1252,53 @@ function InvestBook() {
           </table>
         </div>
 
-        {/* Grand total cards */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12 }}>
-          <StatCard label="Suma celkem"               value={fmtCZK(totalValue)}                           color={T.text}  accent={T.blue}  sub={"investováno " + fmtCZK(totalInvested)} />
-          <StatCard label="Nerealizovaný zisk od 2021" value={fmtCZK(STATIC.gainCZK)}                     color={T.green} accent={T.green} />
-          <StatCard label="Průměrný roční výnos"       value={"+" + STATIC.avgAnnReturn + " %"}            color={T.amber} accent={T.amber} />
-          <StatCard label="Výnos mimo crypto"          value={"+" + STATIC.avgAnnReturnNoCrypto + " %"}    color={T.blue}  accent={T.blue} />
-        </div>
+        {/* Majetek a závazky */}
+        {(() => {
+          const hodnotaMajetku = totalValue + zustatek;
+          const cistyMajetek   = hodnotaMajetku - hypoteka;
+          return (
+            <div style={{ background:T.card, border:"1px solid "+T.border, borderRadius:16, overflow:"hidden" }}>
+              <div style={{ padding:"14px 20px", borderBottom:"1px solid "+T.border, fontSize:12, fontWeight:600, color:T.muted, letterSpacing:"0.08em" }}>MAJETEK A ZÁVAZKY</div>
+              <table style={{ width:"100%", borderCollapse:"collapse" }}>
+                <tbody>
+                  <tr style={{ borderBottom:"1px solid rgba(255,255,255,0.04)" }}>
+                    <td style={{ padding:"13px 20px", fontSize:13, color:T.muted, width:"35%" }}>Hodnota portfolia</td>
+                    <td style={{ padding:"13px 20px", fontSize:15, fontWeight:700, color:T.green, fontFamily:"'DM Mono',monospace", textAlign:"right" }}>{fmtCZK(totalValue)}</td>
+                    <td style={{ padding:"13px 20px", fontSize:12, color:T.muted, textAlign:"right" }}>investováno {fmtCZK(totalInvested)}</td>
+                  </tr>
+                  <tr style={{ borderBottom:"1px solid rgba(255,255,255,0.04)" }}>
+                    <td style={{ padding:"13px 20px", fontSize:13, color:T.muted }}>Zůstatek na účtu</td>
+                    <td style={{ padding:"4px 12px", textAlign:"right" }}>
+                      <input type="text" defaultValue={zustatek} onBlur={e=>{ const n=parseFlt(e.target.value); if(n>=0) setZustatek(n); }}
+                        style={{ background:"transparent", border:"1px dashed rgba(255,255,255,0.15)", borderRadius:6, color:T.text, fontFamily:"'DM Mono',monospace", fontSize:15, fontWeight:700, padding:"4px 10px", textAlign:"right", outline:"none", width:200 }}
+                        onFocus={e=>e.target.style.borderColor=T.blue} onBlur2={e=>e.target.style.borderColor="rgba(255,255,255,0.15)"} />
+                    </td>
+                    <td style={{ padding:"13px 20px", fontSize:12, color:T.muted, textAlign:"right" }}>hotovost a spořicí účty</td>
+                  </tr>
+                  <tr style={{ borderBottom:"1px solid rgba(255,255,255,0.04)" }}>
+                    <td style={{ padding:"13px 20px", fontSize:13, color:T.muted }}>Zůstatek hypotéky</td>
+                    <td style={{ padding:"4px 12px", textAlign:"right" }}>
+                      <input type="text" defaultValue={hypoteka} onBlur={e=>{ const n=parseFlt(e.target.value); if(n>=0) setHypoteka(n); }}
+                        style={{ background:"transparent", border:"1px dashed rgba(255,255,255,0.15)", borderRadius:6, color:T.red, fontFamily:"'DM Mono',monospace", fontSize:15, fontWeight:700, padding:"4px 10px", textAlign:"right", outline:"none", width:200 }}
+                        onFocus={e=>e.target.style.borderColor=T.red} />
+                    </td>
+                    <td style={{ padding:"13px 20px", fontSize:12, color:T.muted, textAlign:"right" }}>aktuální dluh</td>
+                  </tr>
+                  <tr style={{ borderBottom:"1px solid rgba(255,255,255,0.04)", background:"rgba(255,255,255,0.015)" }}>
+                    <td style={{ padding:"13px 20px", fontSize:13, color:T.muted }}>Hodnota majetku celkem</td>
+                    <td style={{ padding:"13px 20px", fontSize:15, fontWeight:700, color:T.text, fontFamily:"'DM Mono',monospace", textAlign:"right" }}>{fmtCZK(hodnotaMajetku)}</td>
+                    <td style={{ padding:"13px 20px", fontSize:12, color:T.muted, textAlign:"right" }}>portfolio + hotovost</td>
+                  </tr>
+                  <tr style={{ background:"rgba(34,197,94,0.04)" }}>
+                    <td style={{ padding:"14px 20px", fontSize:14, fontWeight:700, color:T.text }}>Čistý majetek</td>
+                    <td style={{ padding:"14px 20px", fontSize:20, fontWeight:800, color:cistyMajetek>=0?T.green:T.red, fontFamily:"'DM Mono',monospace", textAlign:"right" }}>{fmtCZK(cistyMajetek)}</td>
+                    <td style={{ padding:"14px 20px", fontSize:12, color:T.muted, textAlign:"right" }}>majetek − hypotéka</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+          );
+        })()}
       </div>
     );
   };
