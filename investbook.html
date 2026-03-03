@@ -730,7 +730,7 @@ function InvestBook() {
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
             <div>
               <div style={{ fontSize: 15, fontWeight: 600, color: T.text, marginBottom: 2 }}>Vývoj portfolia</div>
-              <div style={{ fontSize: 13, color: T.muted }}>hodnota vs. investovaná částka</div>
+              <div style={{ fontSize: 13, color: T.muted }}>historický vývoj hodnoty portfolia</div>
             </div>
             <div style={{ display: "flex", gap: 4 }}>
               {["1M","YTD","1R","3R","MAX"].map(p => (
@@ -750,10 +750,6 @@ function InvestBook() {
                   <stop offset="0%" stopColor={T.green} stopOpacity={0.2} />
                   <stop offset="100%" stopColor={T.green} stopOpacity={0} />
                 </linearGradient>
-                <linearGradient id="gI" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={T.blue} stopOpacity={0.1} />
-                  <stop offset="100%" stopColor={T.blue} stopOpacity={0} />
-                </linearGradient>
               </defs>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
               <XAxis dataKey="d" tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.muted }} axisLine={false} tickLine={false}
@@ -764,21 +760,47 @@ function InvestBook() {
                   dataMax => Math.ceil(dataMax * 1.03 / 100000) * 100000,
                 ]}
                 tickFormatter={v => v >= 1000000 ? (v/1000000).toFixed(1)+"M" : (v/1000).toFixed(0)+"k"} />
-              <Tooltip {...ttStyle} formatter={(v, name) => [fmtCZK(v), name === "v" ? "Hodnota" : "Investováno"]} labelFormatter={d => d} />
-              <Area type="monotone" dataKey="i" stroke={T.blue} strokeWidth={1.5} fill="url(#gI)" dot={false} strokeDasharray="4 3" />
+              <Tooltip {...ttStyle} formatter={(v) => [fmtCZK(v), "Hodnota portfolia"]} labelFormatter={d => d} />
               <Area type="monotone" dataKey="v" stroke={T.green} strokeWidth={2.5} fill="url(#gV)" dot={false} activeDot={{ r: 4, fill: T.green, strokeWidth: 0 }} />
             </AreaChart>
           </ResponsiveContainer>
-          <div style={{ display: "flex", gap: 18, marginTop: 10, justifyContent: "flex-end" }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <div style={{ width: 14, height: 2, background: T.green, borderRadius: 1 }} />
-              <span style={{ fontSize: 12, color: T.muted }}>Hodnota portfolia</span>
+        </div>
+
+        {/* Broker + Category pies */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 }}>
+          {[
+            { title: "Podle brokera",    data: brokerData, colorFn: (_, i) => BROKER_COLORS[i % BROKER_COLORS.length] },
+            { title: "Podle kategorie",  data: catData,    colorFn: (d)    => CAT_COLOR[d.name] || T.muted },
+          ].map(cfg => (
+            <div key={cfg.title} style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 16, padding: 22 }}>
+              <div style={{ fontSize: 15, fontWeight: 600, color: T.text, marginBottom: 18 }}>{cfg.title}</div>
+              <ResponsiveContainer width="100%" height={140}>
+                <PieChart>
+                  <Pie data={cfg.data} dataKey="value" cx="50%" cy="50%" innerRadius={40} outerRadius={62} paddingAngle={2}>
+                    {cfg.data.map((d, i) => <Cell key={i} fill={cfg.colorFn(d, i)} />)}
+                  </Pie>
+                  <Tooltip content={<DTooltip />} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12 }}>
+                {cfg.data.map((d, i) => {
+                  const c = cfg.colorFn(d, i);
+                  return (
+                    <div key={d.name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        <div style={{ width: 8, height: 8, borderRadius: 2, background: c, flexShrink: 0 }} />
+                        <span style={{ fontSize: 14, color: T.muted }}>{d.name}</span>
+                      </div>
+                      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                        <span style={{ fontSize: 13, color: T.subtle }}>{fmtCZK(d.value)}</span>
+                        <span style={{ fontSize: 14, fontWeight: 600, color: T.text, fontFamily: "'DM Mono',monospace", minWidth: 38, textAlign: "right" }}>{((d.value/totalValue)*100).toFixed(1)}%</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
             </div>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
-              <div style={{ width: 14, height: 0, borderTop: "2px dashed " + T.blue }} />
-              <span style={{ fontSize: 12, color: T.muted }}>Investováno</span>
-            </div>
-          </div>
+          ))}
         </div>
 
         {/* Sortable all-positions table */}
@@ -861,64 +883,10 @@ function InvestBook() {
           );
         })()}
 
-        {/* Broker + Category pies */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 }}>
-          {[
-            { title: "Podle brokera",    data: brokerData, colorFn: (_, i) => BROKER_COLORS[i % BROKER_COLORS.length] },
-            { title: "Podle kategorie",  data: catData,    colorFn: (d)    => CAT_COLOR[d.name] || T.muted },
-          ].map(cfg => (
-            <div key={cfg.title} style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 16, padding: 22 }}>
-              <div style={{ fontSize: 15, fontWeight: 600, color: T.text, marginBottom: 18 }}>{cfg.title}</div>
-              <ResponsiveContainer width="100%" height={140}>
-                <PieChart>
-                  <Pie data={cfg.data} dataKey="value" cx="50%" cy="50%" innerRadius={40} outerRadius={62} paddingAngle={2}>
-                    {cfg.data.map((d, i) => <Cell key={i} fill={cfg.colorFn(d, i)} />)}
-                  </Pie>
-                  <Tooltip content={<DTooltip />} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12 }}>
-                {cfg.data.map((d, i) => {
-                  const c = cfg.colorFn(d, i);
-                  return (
-                    <div key={d.name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                        <div style={{ width: 8, height: 8, borderRadius: 2, background: c, flexShrink: 0 }} />
-                        <span style={{ fontSize: 14, color: T.muted }}>{d.name}</span>
-                      </div>
-                      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                        <span style={{ fontSize: 13, color: T.subtle }}>{fmtCZK(d.value)}</span>
-                        <span style={{ fontSize: 14, fontWeight: 600, color: T.text, fontFamily: "'DM Mono',monospace", minWidth: 38, textAlign: "right" }}>{((d.value/totalValue)*100).toFixed(1)}%</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-
-        {/* Annual return bar */}
-        <div style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 16, padding: 22, marginBottom: 20 }}>
-          <div style={{ fontSize: 15, fontWeight: 600, color: T.text, marginBottom: 4 }}>Roční výnos podle pozice</div>
-          <div style={{ fontSize: 13, color: T.muted, marginBottom: 18 }}>p.a. za dobu držení</div>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={returnData} margin={{ left: -4 }}>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-              <XAxis dataKey="name" tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.muted }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.muted }} axisLine={false} tickLine={false} tickFormatter={v => v + "%"} />
-              <Tooltip {...ttStyle} formatter={v => [v.toFixed(2) + " %", "Roční výnos"]} />
-              <Bar dataKey="ret" radius={[4,4,0,0]}>
-                {returnData.map((d, i) => <Cell key={i} fill={d.ret >= 0 ? T.green : T.red} fillOpacity={0.9} />)}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-
         {/* Projections */}
         {(() => {
           const base    = totalValue;
-          const rateAvg = STATIC.avgAnnReturnNoCrypto / 100;
+          const rateAvg = avgAnnReturnNoCrypto / 100;
           const rate10  = 0.10;
           const annual  = monthlyContrib * 12;
           const years   = [2026,2027,2028,2029,2030,2031,2032];
@@ -941,7 +909,7 @@ function InvestBook() {
             <div>
               {/* Contrib row */}
               <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 14, padding: "14px 20px", background: T.card, border: "1px solid " + T.border, borderRadius: 12 }}>
-                <div style={{ fontSize: 13, color: T.muted, fontWeight: 500, letterSpacing: "0.06em", textTransform: "uppercase" }}>Měsíční příkop vlastního kapitálu</div>
+                <div style={{ fontSize: 13, color: T.muted, fontWeight: 500, letterSpacing: "0.06em", textTransform: "uppercase" }}>Měsíční příkup vlastního kapitálu</div>
                 <div style={{ flex: 1 }} />
                 {editingContrib ? (
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
@@ -965,7 +933,7 @@ function InvestBook() {
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                 {[
-                  { label: "Predikce · " + STATIC.avgAnnReturnNoCrypto + " % p.a.", sub: "průměrný výnos bez crypto", key: "avg", baseKey: "avgBase", color: T.green, grad: "gPA" },
+                  { label: "Predikce · " + avgAnnReturnNoCrypto.toFixed(2) + " % p.a.", sub: "průměrný výnos bez crypto", key: "avg", baseKey: "avgBase", color: T.green, grad: "gPA" },
                   { label: "Predikce · 10 % p.a.", sub: "konzervativní scénář S&P 500", key: "r10", baseKey: "r10Base", color: T.blue, grad: "gP10" },
                 ].map(cfg => {
                   const finalVal    = projData[projData.length - 1][cfg.key];
@@ -981,7 +949,7 @@ function InvestBook() {
                       </div>
                       {monthlyContrib > 0 && (
                         <div style={{ fontSize: 13, color: T.muted, marginBottom: 16 }}>
-                          z toho příkopem <span style={{ color: cfg.color, fontWeight: 600 }}>{fmtCZK(contribGain)}</span>
+                          z toho příkupem <span style={{ color: cfg.color, fontWeight: 600 }}>{fmtCZK(contribGain)}</span>
                         </div>
                       )}
                       {monthlyContrib === 0 && <div style={{ marginBottom: 16 }} />}
@@ -1005,18 +973,24 @@ function InvestBook() {
                               dataMax => Math.ceil(dataMax * 1.05 / 100000) * 100000,
                             ]}
                             tickFormatter={v => v >= 1000000 ? (v/1000000).toFixed(1)+"M" : (v/1000).toFixed(0)+"k"} />
-                          <Tooltip {...ttStyle} formatter={(v, name) => [fmtCZK(v), name === cfg.key ? "S příkopem" : "Bez příkopu"]} />
+                          <Tooltip {...ttStyle} formatter={(v, name) => [fmtCZK(v), name === cfg.key ? "S příkupem" : "Bez příkopu"]} />
                           <Area type="monotone" dataKey={cfg.baseKey} stroke={cfg.color} strokeWidth={1} strokeDasharray="4 3" fill={"url(#"+cfg.grad+"b)"} dot={false} />
                           <Area type="monotone" dataKey={cfg.key} stroke={cfg.color} strokeWidth={2.5} fill={"url(#"+cfg.grad+")"} dot={{ r: 3, fill: cfg.color, strokeWidth: 0 }} activeDot={{ r: 5, fill: cfg.color, strokeWidth: 0 }} />
                         </AreaChart>
                       </ResponsiveContainer>
                       <div style={{ display: "flex", justifyContent: "space-between", marginTop: 14, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-                        {projData.filter((_, i) => i > 0).map(pt => (
-                          <div key={pt.rok} style={{ textAlign: "center" }}>
-                            <div style={{ fontSize: 12, color: T.muted, marginBottom: 3 }}>{pt.rok}</div>
-                            <div style={{ fontSize: 12, color: cfg.color, fontFamily: "'DM Mono',monospace", fontWeight: 600 }}>{fmt(pt[cfg.key])}</div>
-                          </div>
-                        ))}
+                        {projData.filter((_, i) => i > 0).map((pt, idx) => {
+                          const prev = projData.filter((_, i) => i > 0)[idx - 1];
+                          const prevVal = prev ? prev[cfg.key] : projData[0][cfg.key];
+                          const yoyGrowth = prevVal > 0 ? ((pt[cfg.key] - prevVal) / prevVal * 100) : 0;
+                          return (
+                            <div key={pt.rok} style={{ textAlign: "center" }}>
+                              <div style={{ fontSize: 12, color: T.muted, marginBottom: 3 }}>{pt.rok}</div>
+                              <div style={{ fontSize: 12, color: cfg.color, fontFamily: "'DM Mono',monospace", fontWeight: 600 }}>{fmt(pt[cfg.key])}</div>
+                              <div style={{ fontSize: 10, color: T.subtle, marginTop: 2 }}>+{fmt(pt[cfg.key] - prevVal)}</div>
+                            </div>
+                          );
+                        })}
                       </div>
                     </div>
                   );
