@@ -193,29 +193,30 @@ const { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis,
 
 
 // ─── PORTFOLIO HISTORY ────────────────────────────────────────────────────────
+// v = celkem, fond = Fondy+ETF, akcie = Akcie, crypto = Crypto
 const PORTFOLIO_HISTORY = [
-  { d: "2021-01", v: 650000,  i: 620000  },
-  { d: "2021-04", v: 820000,  i: 720000  },
-  { d: "2021-07", v: 980000,  i: 790000  },
-  { d: "2021-10", v: 1150000, i: 850000  },
-  { d: "2022-01", v: 1050000, i: 920000  },
-  { d: "2022-04", v: 950000,  i: 970000  },
-  { d: "2022-07", v: 880000,  i: 990000  },
-  { d: "2022-10", v: 1020000, i: 1010000 },
-  { d: "2023-01", v: 1150000, i: 1040000 },
-  { d: "2023-04", v: 1280000, i: 1070000 },
-  { d: "2023-07", v: 1420000, i: 1100000 },
-  { d: "2023-10", v: 1380000, i: 1130000 },
-  { d: "2024-01", v: 1580000, i: 1200000 },
-  { d: "2024-04", v: 1750000, i: 1280000 },
-  { d: "2024-07", v: 1920000, i: 1360000 },
-  { d: "2024-10", v: 2100000, i: 1430000 },
-  { d: "2025-01", v: 2280000, i: 1490000 },
-  { d: "2025-04", v: 2050000, i: 1530000 },
-  { d: "2025-07", v: 2320000, i: 1560000 },
-  { d: "2025-10", v: 2480000, i: 1590000 },
-  { d: "2026-01", v: 2650000, i: 1620000 },
-  { d: "2026-02", v: 2722295, i: 1635000 },
+  { d: "2021-01", v: 650000,  fond: 520000,  akcie: 110000,  crypto: 20000  },
+  { d: "2021-04", v: 820000,  fond: 630000,  akcie: 140000,  crypto: 50000  },
+  { d: "2021-07", v: 980000,  fond: 710000,  akcie: 170000,  crypto: 100000 },
+  { d: "2021-10", v: 1150000, fond: 790000,  akcie: 200000,  crypto: 160000 },
+  { d: "2022-01", v: 1050000, fond: 740000,  akcie: 190000,  crypto: 120000 },
+  { d: "2022-04", v: 950000,  fond: 700000,  akcie: 170000,  crypto: 80000  },
+  { d: "2022-07", v: 880000,  fond: 670000,  akcie: 155000,  crypto: 55000  },
+  { d: "2022-10", v: 1020000, fond: 760000,  akcie: 180000,  crypto: 80000  },
+  { d: "2023-01", v: 1150000, fond: 840000,  akcie: 210000,  crypto: 100000 },
+  { d: "2023-04", v: 1280000, fond: 920000,  akcie: 240000,  crypto: 120000 },
+  { d: "2023-07", v: 1420000, fond: 1000000, akcie: 270000,  crypto: 150000 },
+  { d: "2023-10", v: 1380000, fond: 980000,  akcie: 255000,  crypto: 145000 },
+  { d: "2024-01", v: 1580000, fond: 1090000, akcie: 320000,  crypto: 170000 },
+  { d: "2024-04", v: 1750000, fond: 1180000, akcie: 380000,  crypto: 190000 },
+  { d: "2024-07", v: 1920000, fond: 1270000, akcie: 430000,  crypto: 220000 },
+  { d: "2024-10", v: 2100000, fond: 1350000, akcie: 530000,  crypto: 220000 },
+  { d: "2025-01", v: 2280000, fond: 1430000, akcie: 620000,  crypto: 230000 },
+  { d: "2025-04", v: 2050000, fond: 1320000, akcie: 530000,  crypto: 200000 },
+  { d: "2025-07", v: 2320000, fond: 1470000, akcie: 620000,  crypto: 230000 },
+  { d: "2025-10", v: 2480000, fond: 1560000, akcie: 680000,  crypto: 240000 },
+  { d: "2026-01", v: 2650000, fond: 1660000, akcie: 750000,  crypto: 240000 },
+  { d: "2026-02", v: 2722295, fond: 1700000, akcie: 806000,  crypto: 216000 },
 ];
 
 function filterHistory(period) {
@@ -467,6 +468,8 @@ function InvestBook() {
   const [period, setPeriod] = useState("YTD");
   const [tblSort, setTblSort] = useState("value");
   const [tblDir, setTblDir] = useState("desc");
+  const [chartCat, setChartCat] = useState("vse");
+  const [tblCat, setTblCat] = useState("vse");
   const [monthlyContrib, setMonthlyContrib] = useState(30000);
   const [hypoteka, setHypoteka] = useState(1821963);
   const [zustatek, setZustatek] = useState(0);
@@ -506,16 +509,29 @@ function InvestBook() {
   const ttStyle = { contentStyle: { background: T.card, border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, fontFamily: "'DM Mono',monospace", fontSize: 13, boxShadow: "0 8px 32px rgba(0,0,0,0.5)" } };
   const nc = (color) => ({ padding: "10px 12px", textAlign: "right", fontFamily: "'DM Mono',monospace", fontSize: 13, color: color || T.muted });
 
-  // Průměrný roční výnos — vážený průměr podle investované CZK hodnoty
+  // Průměrný roční výnos — vážený průměr p.a., počítáno v původní měně pozice
+  // valueOrig/invested jsou obojí ve stejné měně → žádné zkreslení FX
+  // Váha = investedCZK (proporce v portfoliu)
   const calcWeightedAnnReturn = (rows) => {
     let weightedSum = 0, totalWeight = 0;
     for (const p of rows) {
-      if (!p.investedCZK || p.investedCZK <= 0 || !p.valueCZK || p.valueCZK <= 0) continue;
+      if (!p.invested || p.invested <= 0 || !p.investedCZK || p.investedCZK <= 0) continue;
       const years = Math.max(1, NOW_YEAR - (p.start || NOW_YEAR));
-      const annR  = (Math.pow(p.valueCZK / p.investedCZK, 1 / years) - 1) * 100;
+      let valueOrig;
+      if (p.currency === "CZK") {
+        valueOrig = p.value || p.invested;
+      } else {
+        const fx = p.fx || (p.currency==="EUR" ? DEGIRO_FX : p.currency==="GBP" ? GBP_FX : ETORO_FX);
+        valueOrig = (p.priceCZK && p.shares && fx > 0)
+          ? (p.priceCZK * p.shares) / fx
+          : p.invested;
+      }
+      const ratio = valueOrig / p.invested;
+      if (!isFinite(ratio) || ratio <= 0) continue;
+      const annR = (Math.pow(ratio, 1 / years) - 1) * 100;
       if (!isFinite(annR)) continue;
-      weightedSum  += annR * p.investedCZK;
-      totalWeight  += p.investedCZK;
+      weightedSum += annR * p.investedCZK;
+      totalWeight += p.investedCZK;
     }
     return totalWeight > 0 ? weightedSum / totalWeight : 0;
   };
@@ -714,45 +730,70 @@ function InvestBook() {
         })()}
 
         {/* Portfolio history chart */}
-        <div style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 16, padding: 22, marginBottom: 20 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
-            <div>
-              <div style={{ fontSize: 15, fontWeight: 600, color: T.text, marginBottom: 2 }}>Vývoj portfolia</div>
-              <div style={{ fontSize: 13, color: T.muted }}>historický vývoj hodnoty portfolia</div>
+        {(() => {
+          const CHART_CATS = [
+            { id: "vse",    label: "Vše",       dataKey: "v",      color: T.green  },
+            { id: "fond",   label: "Fondy+ETF", dataKey: "fond",   color: T.blue   },
+            { id: "akcie",  label: "Akcie",     dataKey: "akcie",  color: T.amber  },
+            { id: "crypto", label: "Crypto",    dataKey: "crypto", color: "#ec4899" },
+          ];
+          const activeCat = CHART_CATS.find(c => c.id === chartCat) || CHART_CATS[0];
+          const chartData = histData;
+          return (
+            <div style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 16, padding: 22, marginBottom: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                <div>
+                  <div style={{ fontSize: 15, fontWeight: 600, color: T.text, marginBottom: 2 }}>Vývoj portfolia</div>
+                  <div style={{ fontSize: 13, color: T.muted }}>historický vývoj hodnoty</div>
+                </div>
+                <div style={{ display: "flex", gap: 4 }}>
+                  {["1M","YTD","1R","3R","MAX"].map(p => (
+                    <button key={p} onClick={() => setPeriod(p)}
+                      style={{ padding: "4px 10px", borderRadius: 6, border: "none", cursor: "pointer", fontFamily: "'DM Mono',monospace", fontSize: 12, fontWeight: 600, transition: "all 0.12s",
+                        background: period === p ? T.blue : "rgba(255,255,255,0.05)",
+                        color: period === p ? "#fff" : T.muted }}>
+                      {p}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              {/* Category filter */}
+              <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
+                {CHART_CATS.map(cat => (
+                  <button key={cat.id} onClick={() => setChartCat(cat.id)}
+                    style={{ padding: "4px 12px", borderRadius: 20, border: "1px solid " + (chartCat === cat.id ? cat.color : "rgba(255,255,255,0.08)"),
+                      cursor: "pointer", fontSize: 12, fontWeight: 600, transition: "all 0.12s",
+                      background: chartCat === cat.id ? cat.color + "22" : "transparent",
+                      color: chartCat === cat.id ? cat.color : T.muted }}>
+                    {cat.label}
+                  </button>
+                ))}
+              </div>
+              <ResponsiveContainer width="100%" height={220}>
+                <AreaChart data={chartData} margin={{ left: 4, right: 4, top: 4, bottom: 0 }}>
+                  <defs>
+                    <linearGradient id="gChart" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor={activeCat.color} stopOpacity={0.25} />
+                      <stop offset="100%" stopColor={activeCat.color} stopOpacity={0} />
+                    </linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+                  <XAxis dataKey="d" tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.muted }} axisLine={false} tickLine={false}
+                    tickFormatter={d => { const [y,m] = d.split("-"); return m === "01" ? y : m + "/" + y.slice(2); }} />
+                  <YAxis tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.muted }} axisLine={false} tickLine={false} width={52}
+                    domain={[
+                      dataMin => Math.floor(dataMin * 0.95 / 50000) * 50000,
+                      dataMax => Math.ceil(dataMax * 1.05 / 50000) * 50000,
+                    ]}
+                    tickFormatter={v => v >= 1000000 ? (v/1000000).toFixed(1)+"M" : (v/1000).toFixed(0)+"k"} />
+                  <Tooltip {...ttStyle} formatter={(v) => [fmtCZK(v), activeCat.label]} labelFormatter={d => d} />
+                  <Area type="monotone" dataKey={activeCat.dataKey} stroke={activeCat.color} strokeWidth={2.5} fill="url(#gChart)" dot={false}
+                    activeDot={{ r: 4, fill: activeCat.color, strokeWidth: 0 }} />
+                </AreaChart>
+              </ResponsiveContainer>
             </div>
-            <div style={{ display: "flex", gap: 4 }}>
-              {["1M","YTD","1R","3R","MAX"].map(p => (
-                <button key={p} onClick={() => setPeriod(p)}
-                  style={{ padding: "4px 12px", borderRadius: 6, border: "none", cursor: "pointer", fontFamily: "'DM Mono',monospace", fontSize: 13, fontWeight: 600, transition: "all 0.12s",
-                    background: period === p ? T.blue : "rgba(255,255,255,0.05)",
-                    color: period === p ? "#fff" : T.muted }}>
-                  {p}
-                </button>
-              ))}
-            </div>
-          </div>
-          <ResponsiveContainer width="100%" height={220}>
-            <AreaChart data={histData} margin={{ left: 4, right: 4, top: 4, bottom: 0 }}>
-              <defs>
-                <linearGradient id="gV" x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={T.green} stopOpacity={0.2} />
-                  <stop offset="100%" stopColor={T.green} stopOpacity={0} />
-                </linearGradient>
-              </defs>
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-              <XAxis dataKey="d" tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.muted }} axisLine={false} tickLine={false}
-                tickFormatter={d => { const [y,m] = d.split("-"); return m === "01" ? y : m + "/" + y.slice(2); }} />
-              <YAxis tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.muted }} axisLine={false} tickLine={false} width={52}
-                domain={[
-                  dataMin => Math.floor(dataMin * 0.97 / 100000) * 100000,
-                  dataMax => Math.ceil(dataMax * 1.03 / 100000) * 100000,
-                ]}
-                tickFormatter={v => v >= 1000000 ? (v/1000000).toFixed(1)+"M" : (v/1000).toFixed(0)+"k"} />
-              <Tooltip {...ttStyle} formatter={(v) => [fmtCZK(v), "Hodnota portfolia"]} labelFormatter={d => d} />
-              <Area type="monotone" dataKey="v" stroke={T.green} strokeWidth={2.5} fill="url(#gV)" dot={false} activeDot={{ r: 4, fill: T.green, strokeWidth: 0 }} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
+          );
+        })()}
 
         {/* Sortable all-positions table */}
         {(() => {
@@ -766,7 +807,8 @@ function InvestBook() {
             { key: "start",     label: "Od",          align: "right", sortFn: (a,b) => a.start - b.start },
           ];
           const col = COLS.find(c => c.key === tblSort) || COLS[3];
-          const sortedRows = allRows.slice().sort((a,b) => tblDir === "asc" ? col.sortFn(a,b) : col.sortFn(b,a));
+          const filteredRows = tblCat === "vse" ? allRows : allRows.filter(p => p.category === tblCat);
+          const sortedRows = filteredRows.slice().sort((a,b) => tblDir === "asc" ? col.sortFn(a,b) : col.sortFn(b,a));
           const onSort = (key) => {
             if (tblSort === key) setTblDir(d => d === "asc" ? "desc" : "asc");
             else { setTblSort(key); setTblDir("desc"); }
@@ -774,8 +816,30 @@ function InvestBook() {
           const arrow = (key) => tblSort === key ? (tblDir === "asc" ? " ↑" : " ↓") : "";
           return (
             <div style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 16, padding: 20, marginBottom: 20 }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: T.text, marginBottom: 4 }}>Přehled všech investic</div>
-              <div style={{ fontSize: 13, color: T.muted, marginBottom: 16 }}>Klikni na hlavičku pro seřazení</div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                <div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: T.text, marginBottom: 2 }}>Přehled všech investic</div>
+                  <div style={{ fontSize: 13, color: T.muted }}>Klikni na hlavičku pro seřazení</div>
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+                {[
+                  { id: "vse",       label: "Vše",       color: T.text   },
+                  { id: "Fond",      label: "Fondy",     color: CAT_COLOR["Fond"]      },
+                  { id: "ETF",       label: "ETF",       color: CAT_COLOR["ETF"]       },
+                  { id: "Portfolio", label: "Portfolio", color: CAT_COLOR["Portfolio"] },
+                  { id: "Akcie",     label: "Akcie",     color: CAT_COLOR["Akcie"]     },
+                  { id: "Crypto",    label: "Crypto",    color: CAT_COLOR["Crypto"]    },
+                ].map(cat => (
+                  <button key={cat.id} onClick={() => setTblCat(cat.id)}
+                    style={{ padding: "4px 12px", borderRadius: 20, border: "1px solid " + (tblCat === cat.id ? cat.color : "rgba(255,255,255,0.08)"),
+                      cursor: "pointer", fontSize: 12, fontWeight: 600, transition: "all 0.12s",
+                      background: tblCat === cat.id ? cat.color + "22" : "transparent",
+                      color: tblCat === cat.id ? cat.color : T.muted }}>
+                    {cat.label}
+                  </button>
+                ))}
+              </div>
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 700 }}>
                   <thead>
@@ -820,11 +884,17 @@ function InvestBook() {
                   </tbody>
                   <tfoot>
                     <tr style={{ borderTop: "1px solid rgba(34,197,94,0.2)", background: "rgba(34,197,94,0.03)" }}>
-                      <td colSpan={2} style={{ padding: "10px 12px", fontSize: 13, color: T.green, fontWeight: 700, letterSpacing: "0.06em" }}>CELKEM · {allRows.length} POZIC</td>
-                      <td style={{ ...nc(T.muted), padding: "10px 12px" }}>{fmtCZK(totalInvested)}</td>
-                      <td style={{ ...nc(T.text), padding: "10px 12px", fontSize: 16, fontWeight: 800 }}>{fmtCZK(totalValue)}</td>
-                      <td style={{ ...nc(T.green), padding: "10px 12px" }}>+{fmtCZK(totalValue - totalInvested)}</td>
-                      <td style={{ ...nc(T.green), padding: "10px 12px", fontWeight: 700 }}>+{totalInvested > 0 ? (((totalValue-totalInvested)/totalInvested)*100).toFixed(2) : "0.00"}%</td>
+                      <td colSpan={2} style={{ padding: "10px 12px", fontSize: 13, color: T.green, fontWeight: 700, letterSpacing: "0.06em" }}>CELKEM · {sortedRows.length} POZIC</td>
+                      {(() => {
+                        const fInv = sortedRows.reduce((s,p) => s+p.investedCZK, 0);
+                        const fVal = sortedRows.reduce((s,p) => s+p.valueCZK, 0);
+                        return (<>
+                          <td style={{ ...nc(T.muted), padding: "10px 12px" }}>{fmtCZK(fInv)}</td>
+                          <td style={{ ...nc(T.text), padding: "10px 12px", fontSize: 16, fontWeight: 800 }}>{fmtCZK(fVal)}</td>
+                          <td style={{ ...nc(T.green), padding: "10px 12px" }}>+{fmtCZK(fVal - fInv)}</td>
+                          <td style={{ ...nc(T.green), padding: "10px 12px", fontWeight: 700 }}>+{fInv > 0 ? (((fVal-fInv)/fInv)*100).toFixed(2) : "0.00"}%</td>
+                        </>);
+                      })()}
                       <td colSpan={2} />
                     </tr>
                   </tfoot>
