@@ -766,43 +766,6 @@ function InvestBook() {
           </ResponsiveContainer>
         </div>
 
-        {/* Broker + Category pies */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 20 }}>
-          {[
-            { title: "Podle brokera",    data: brokerData, colorFn: (_, i) => BROKER_COLORS[i % BROKER_COLORS.length] },
-            { title: "Podle kategorie",  data: catData,    colorFn: (d)    => CAT_COLOR[d.name] || T.muted },
-          ].map(cfg => (
-            <div key={cfg.title} style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 16, padding: 22 }}>
-              <div style={{ fontSize: 15, fontWeight: 600, color: T.text, marginBottom: 18 }}>{cfg.title}</div>
-              <ResponsiveContainer width="100%" height={140}>
-                <PieChart>
-                  <Pie data={cfg.data} dataKey="value" cx="50%" cy="50%" innerRadius={40} outerRadius={62} paddingAngle={2}>
-                    {cfg.data.map((d, i) => <Cell key={i} fill={cfg.colorFn(d, i)} />)}
-                  </Pie>
-                  <Tooltip content={<DTooltip />} />
-                </PieChart>
-              </ResponsiveContainer>
-              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12 }}>
-                {cfg.data.map((d, i) => {
-                  const c = cfg.colorFn(d, i);
-                  return (
-                    <div key={d.name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-                        <div style={{ width: 8, height: 8, borderRadius: 2, background: c, flexShrink: 0 }} />
-                        <span style={{ fontSize: 14, color: T.muted }}>{d.name}</span>
-                      </div>
-                      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                        <span style={{ fontSize: 13, color: T.subtle }}>{fmtCZK(d.value)}</span>
-                        <span style={{ fontSize: 14, fontWeight: 600, color: T.text, fontFamily: "'DM Mono',monospace", minWidth: 38, textAlign: "right" }}>{((d.value/totalValue)*100).toFixed(1)}%</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          ))}
-        </div>
-
         {/* Sortable all-positions table */}
         {(() => {
           const COLS = [
@@ -1271,7 +1234,7 @@ function InvestBook() {
     allRows.forEach(p => { catMap[p.category] = (catMap[p.category] || 0) + p.valueCZK; });
     const catEntries = Object.keys(catMap).map(k => [k, catMap[k]]).sort((a,b) => b[1] - a[1]);
 
-    const rate = STATIC.avgAnnReturnNoCrypto / 100;
+    const rate = avgAnnReturnNoCrypto / 100;
     const milestones = [3000000, 5000000, 10000000];
     const milColors  = [T.green, T.amber, "#ec4899"];
 
@@ -1284,6 +1247,32 @@ function InvestBook() {
 
     const C = { background: T.card, border: "1px solid " + T.border, borderRadius: 14, padding: 20 };
 
+    // Koláče – broker + kategorie (stejná data jako v tabPrehled)
+    const brokerMap2 = {};
+    const catMap2 = {};
+    allRows.forEach(p => {
+      brokerMap2[p.broker] = (brokerMap2[p.broker] || 0) + p.valueCZK;
+      catMap2[p.category]  = (catMap2[p.category]  || 0) + p.valueCZK;
+    });
+    const brokerData2 = Object.keys(brokerMap2).map(k => ({ name: k, value: brokerMap2[k] })).sort((a,b) => b.value - a.value);
+    const catData2    = Object.keys(catMap2).map(k => ({ name: k, value: catMap2[k] })).sort((a,b) => b.value - a.value);
+
+    const PieTooltip2 = ({ active, payload }) => {
+      if (!active || !payload || !payload.length) return null;
+      const d = payload[0];
+      return (
+        <div style={{ background: T.card, border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "10px 14px", fontFamily: "'DM Mono',monospace", fontSize: 13 }}>
+          <div style={{ color: T.text, marginBottom: 3, fontWeight: 600 }}>{d.name}</div>
+          <div style={{ color: T.green }}>{fmtCZK(d.value)}</div>
+          <div style={{ color: T.muted, marginTop: 2 }}>{((d.value / totalValue) * 100).toFixed(1)} %</div>
+        </div>
+      );
+    };
+
+    // Největší a nejmenší pozice
+    const biggest  = sorted[0];
+    const smallest = sorted[sorted.length - 1];
+
     return (
       <div>
         <div style={{ marginBottom: 28 }}>
@@ -1293,38 +1282,53 @@ function InvestBook() {
 
         {/* Stats cards row */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 16 }}>
-          <StatCard label="Ziskové pozice"    value={profitable + " / " + posCount}                                        color={T.green}  accent={T.green} />
-          <StatCard label="Průměrné držení"   value={avgHold.toFixed(1) + " let"}                                          color={T.text}   accent={T.blue} />
-          <StatCard label="Nejstarší pozice"  value={oldest ? oldest.name.split("(")[0].trim() : "—"} sub={oldest ? String(oldest.start) : ""} color={T.muted}  accent={T.subtle} />
-          <StatCard label="Nejnovější pozice" value={newest ? newest.name.split("(")[0].trim() : "—"} sub={newest ? String(newest.start) : ""} color={T.muted}  accent={T.subtle} />
+          <StatCard label="Největší pozice"
+            value={biggest ? biggest.name.split("(")[0].trim() : "—"}
+            sub={biggest ? fmtCZK(biggest.valueCZK) + " · " + ((biggest.valueCZK/totalValue)*100).toFixed(1) + "%" : ""}
+            color={T.green} accent={T.green} />
+          <StatCard label="Nejmenší pozice"
+            value={smallest ? smallest.name.split("(")[0].trim() : "—"}
+            sub={smallest ? fmtCZK(smallest.valueCZK) + " · " + ((smallest.valueCZK/totalValue)*100).toFixed(1) + "%" : ""}
+            color={T.muted} accent={T.subtle} />
+          <StatCard label="Nejstarší pozice"  value={oldest ? oldest.name.split("(")[0].trim() : "—"} sub={oldest ? String(oldest.start) : ""} color={T.muted} accent={T.subtle} />
+          <StatCard label="Nejnovější pozice" value={newest ? newest.name.split("(")[0].trim() : "—"} sub={newest ? String(newest.start) : ""} color={T.muted} accent={T.subtle} />
         </div>
 
-        {/* Geo allocation */}
-        <div style={{ ...C, marginBottom: 16 }}>
-          <SectionTitle title="Geografická alokace" sub="Rozložení portfolia podle trhu" />
-          <div style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", gap: 2, marginBottom: 18 }}>
-            {geoEntries.map(e => <div key={e[0]} style={{ flex: e[1]/totalValue, background: GEO_COLOR[e[0]] || T.muted, minWidth: 2 }} />)}
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: 14 }}>
-            {geoEntries.map(e => {
-              const pct = (e[1]/totalValue)*100;
-              return (
-                <div key={e[0]} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                  <div style={{ width: 10, height: 10, borderRadius: 3, background: GEO_COLOR[e[0]] || T.muted, flexShrink: 0, marginTop: 2 }} />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span style={{ fontSize: 14, color: T.muted, fontWeight: 500 }}>{e[0]}</span>
-                      <span style={{ fontSize: 14, color: T.text, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{pct.toFixed(1)}%</span>
+        {/* Koláče Podle brokera + Podle kategorie */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+          {[
+            { title: "Podle brokera",   data: brokerData2, colorFn: (_, i) => BROKER_COLORS[i % BROKER_COLORS.length] },
+            { title: "Podle kategorie", data: catData2,    colorFn: (d)    => CAT_COLOR[d.name] || T.muted },
+          ].map(cfg => (
+            <div key={cfg.title} style={{ ...C }}>
+              <div style={{ fontSize: 15, fontWeight: 600, color: T.text, marginBottom: 16 }}>{cfg.title}</div>
+              <ResponsiveContainer width="100%" height={140}>
+                <PieChart>
+                  <Pie data={cfg.data} dataKey="value" cx="50%" cy="50%" innerRadius={40} outerRadius={62} paddingAngle={2}>
+                    {cfg.data.map((d, i) => <Cell key={i} fill={cfg.colorFn(d, i)} />)}
+                  </Pie>
+                  <Tooltip content={<PieTooltip2 />} />
+                </PieChart>
+              </ResponsiveContainer>
+              <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 12 }}>
+                {cfg.data.map((d, i) => {
+                  const c = cfg.colorFn(d, i);
+                  return (
+                    <div key={d.name} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                        <div style={{ width: 8, height: 8, borderRadius: 2, background: c, flexShrink: 0 }} />
+                        <span style={{ fontSize: 14, color: T.muted }}>{d.name}</span>
+                      </div>
+                      <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
+                        <span style={{ fontSize: 13, color: T.subtle }}>{fmtCZK(d.value)}</span>
+                        <span style={{ fontSize: 14, fontWeight: 600, color: T.text, fontFamily: "'DM Mono',monospace", minWidth: 38, textAlign: "right" }}>{((d.value/totalValue)*100).toFixed(1)}%</span>
+                      </div>
                     </div>
-                    <div style={{ height: 3, background: "rgba(255,255,255,0.05)", borderRadius: 2, marginTop: 5, marginBottom: 4 }}>
-                      <div style={{ width: pct+"%", height: "100%", background: GEO_COLOR[e[0]] || T.muted, borderRadius: 2 }} />
-                    </div>
-                    <span style={{ fontSize: 12, color: T.subtle }}>{fmtCZK(e[1])}</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
         </div>
 
         {/* Category alloc */}
@@ -1364,7 +1368,7 @@ function InvestBook() {
 
         {/* Milestone tracker */}
         <div style={{ ...C, marginBottom: 16 }}>
-          <SectionTitle title="Milestone tracker" sub={"Odhad při " + STATIC.avgAnnReturnNoCrypto + " % p.a. · aktuálně " + fmtCZK(totalValue)} />
+          <SectionTitle title="Milestone tracker" sub={"Odhad při " + avgAnnReturnNoCrypto.toFixed(2) + " % p.a. · aktuálně " + fmtCZK(totalValue)} />
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             {milestones.map((target, i) => {
               const reached = totalValue >= target;
@@ -1416,8 +1420,8 @@ function InvestBook() {
 
   const TABS = [
     { id: "portfolio", label: "Přehled" },
-    { id: "positions", label: "Pozice" },
     { id: "analyza",   label: "Analýza" },
+    { id: "positions", label: "Pozice" },
   ];
 
   return (
