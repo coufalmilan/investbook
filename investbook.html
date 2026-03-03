@@ -649,7 +649,6 @@ function InvestBook() {
     });
     const brokerData = Object.keys(brokerMap).map(k => ({ name: k, value: brokerMap[k] })).sort((a,b) => b.value - a.value);
     const catData    = Object.keys(catMap).map(k => ({ name: k, value: catMap[k] }));
-    const returnData = allRows.filter(p => p.annReturn != null).map(p => ({ name: p.name.length > 14 ? p.name.slice(0,14)+"…" : p.name, ret: p.annReturn }));
     const gain    = totalValue - totalInvested;
     const gainPct = totalInvested > 0 ? (gain / totalInvested) * 100 : 0;
     const histData = filterHistory(period);
@@ -670,18 +669,6 @@ function InvestBook() {
     };
     const avgAnnReturn       = calcWeightedAnnReturn(allRows);
     const avgAnnReturnNoCrypto = calcWeightedAnnReturn(allRows.filter(p => p.category !== "Crypto"));
-
-    const DTooltip = ({ active, payload }) => {
-      if (!active || !payload || !payload.length) return null;
-      const d = payload[0];
-      return (
-        <div style={{ background: T.card, border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "10px 14px", fontFamily: "'DM Mono',monospace", fontSize: 13, boxShadow: "0 8px 32px rgba(0,0,0,0.4)" }}>
-          <div style={{ color: T.text, marginBottom: 3, fontWeight: 600 }}>{d.name}</div>
-          <div style={{ color: T.green }}>{fmtCZK(d.value)}</div>
-          <div style={{ color: T.muted, marginTop: 2 }}>{((d.value / totalValue) * 100).toFixed(1)} %</div>
-        </div>
-      );
-    };
 
     return (
       <div>
@@ -1217,18 +1204,6 @@ function InvestBook() {
     const avgHold   = allRows.reduce((s,p) => s + (NOW_YEAR - p.start), 0) / Math.max(posCount, 1);
     const oldest    = allRows.slice().sort((a,b) => a.start - b.start)[0];
     const newest    = allRows.slice().sort((a,b) => b.start - a.start)[0];
-
-    const geoMap = {};
-    allRows.forEach(p => {
-      const nm = p.name.toUpperCase();
-      let geo = "USA";
-      if (p.category === "Crypto") geo = "Crypto";
-      else if (nm.indexOf(".DE") > -1 || nm.indexOf("RHM") > -1 || nm.indexOf("CSG") > -1 || nm.indexOf("BA-.L") > -1 || nm.indexOf("DFND") > -1) geo = "Evropa";
-      else if (p.category === "Fond" || p.category === "Portfolio") geo = "Fond/Portu";
-      geoMap[geo] = (geoMap[geo] || 0) + p.valueCZK;
-    });
-    const GEO_COLOR = { USA: "#3b82f6", Evropa: "#8b5cf6", Crypto: "#ec4899", "Fond/Portu": "#22c55e" };
-    const geoEntries = Object.keys(geoMap).map(k => [k, geoMap[k]]).sort((a,b) => b[1] - a[1]);
 
     const catMap = {};
     allRows.forEach(p => { catMap[p.category] = (catMap[p.category] || 0) + p.valueCZK; });
