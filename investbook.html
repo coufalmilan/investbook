@@ -506,6 +506,22 @@ function InvestBook() {
   const ttStyle = { contentStyle: { background: T.card, border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, fontFamily: "'DM Mono',monospace", fontSize: 13, boxShadow: "0 8px 32px rgba(0,0,0,0.5)" } };
   const nc = (color) => ({ padding: "10px 12px", textAlign: "right", fontFamily: "'DM Mono',monospace", fontSize: 13, color: color || T.muted });
 
+  // Průměrný roční výnos — vážený průměr podle investované CZK hodnoty
+  const calcWeightedAnnReturn = (rows) => {
+    let weightedSum = 0, totalWeight = 0;
+    for (const p of rows) {
+      if (!p.investedCZK || p.investedCZK <= 0 || !p.valueCZK || p.valueCZK <= 0) continue;
+      const years = Math.max(1, NOW_YEAR - (p.start || NOW_YEAR));
+      const annR  = (Math.pow(p.valueCZK / p.investedCZK, 1 / years) - 1) * 100;
+      if (!isFinite(annR)) continue;
+      weightedSum  += annR * p.investedCZK;
+      totalWeight  += p.investedCZK;
+    }
+    return totalWeight > 0 ? weightedSum / totalWeight : 0;
+  };
+  const avgAnnReturn         = calcWeightedAnnReturn(allRows);
+  const avgAnnReturnNoCrypto = calcWeightedAnnReturn(allRows.filter(p => p.category !== "Crypto"));
+
   // Update manual row
   const updateManual = useCallback((id, field, raw) => {
     setManualRows(prev => prev.map(p => {
@@ -653,22 +669,7 @@ function InvestBook() {
     const gainPct = totalInvested > 0 ? (gain / totalInvested) * 100 : 0;
     const histData = filterHistory(period);
 
-    // Průměrný roční výnos — vážený průměr podle investované CZK hodnoty
-    // Roční výnos pozice = (value/invested)^(1/years) - 1, kde years = NOW_YEAR - start (min 1)
-    const calcWeightedAnnReturn = (rows) => {
-      let weightedSum = 0, totalWeight = 0;
-      for (const p of rows) {
-        if (!p.investedCZK || p.investedCZK <= 0 || !p.valueCZK || p.valueCZK <= 0) continue;
-        const years = Math.max(1, NOW_YEAR - (p.start || NOW_YEAR));
-        const annR  = (Math.pow(p.valueCZK / p.investedCZK, 1 / years) - 1) * 100;
-        if (!isFinite(annR)) continue;
-        weightedSum  += annR * p.investedCZK;
-        totalWeight  += p.investedCZK;
-      }
-      return totalWeight > 0 ? weightedSum / totalWeight : 0;
-    };
-    const avgAnnReturn       = calcWeightedAnnReturn(allRows);
-    const avgAnnReturnNoCrypto = calcWeightedAnnReturn(allRows.filter(p => p.category !== "Crypto"));
+
 
     return (
       <div>
