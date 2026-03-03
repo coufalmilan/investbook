@@ -123,22 +123,56 @@ async function saveToSheets(manual, imported, settings) {
   await sheetsSet("settings!A1", [["key","value"], ...Object.entries(settings).map(([k,v])=>[k,v])]);
 }
 
+async function ensurePricesHeader() {
+  // Ensure prices sheet has header row A1:C1 with formula column
+  try {
+    const hdr = await gapi.client.sheets.spreadsheets.values.get({
+      spreadsheetId: window.INVESTBOOK_CONFIG.SPREADSHEET_ID, range: "prices!A1:C1"
+    });
+    const row = (hdr.result.values || [])[0] || [];
+    if (row[2] !== "priceCZK") {
+      // Write header with formula column
+      await gapi.client.sheets.spreadsheets.values.update({
+        spreadsheetId: window.INVESTBOOK_CONFIG.SPREADSHEET_ID,
+        range: "prices!A1:C1", valueInputOption: "USER_ENTERED",
+        resource: { values: [["ticker", "priceUSD", "priceCZK"]] }
+      });
+      // Write formula for existing rows (up to 1000)
+      await gapi.client.sheets.spreadsheets.values.update({
+        spreadsheetId: window.INVESTBOOK_CONFIG.SPREADSHEET_ID,
+        range: "prices!C2:C1000", valueInputOption: "USER_ENTERED",
+        resource: { values: Array.from({length: 999}, (_, i) => [`=IF(B${i+2}<>"",B${i+2}*20.57,"")`]) }
+      });
+    }
+  } catch(e) { /* prices sheet may not exist yet */ }
+}
+
 async function loadFromSheets() {
   const [m, i, s, p] = await Promise.all([
     sheetsGet("manual_positions!A2:L1000"),
     sheetsGet("imported_positions!A2:L1000"),
     sheetsGet("settings!A2:B100"),
-    sheetsGet("prices!A2:B1000"),
+    sheetsGet("prices!A1:C1000"),  // A=ticker, B=priceUSD, C=priceCZK (formula)
   ]);
-  // Build price map: ticker -> price_usd (raw USD from sheet)
+  // First row is header (A1:C1), data starts at row index 1
+  const priceRows = (p||[]).slice(1);
+  // Build price map: ticker -> priceCZK
+  // Column C = priceCZK (=B*20.57 formula), fallback to B*20.57 if C missing
   const prices = {};
-  for (const row of (p||[])) {
-    if (!row[0] || !row[1]) continue;
+  for (const row of priceRows) {
+    if (!row[0]) continue;
     const ticker = row[0].trim();
-    // Clean value: remove $, spaces, convert comma decimal to dot
-    const raw = String(row[1]).replace(/[$\s]/g,"").replace(",",".");
-    const price = parseFloat(raw);
-    if (ticker && isFinite(price) && price > 0) prices[ticker] = price;
+    // Prefer column C (priceCZK), fallback to column B * USD rate
+    let priceCZK = null;
+    if (row[2] && row[2] !== "") {
+      const raw = String(row[2]).replace(/[$\s]/g,"").replace(",",".");
+      priceCZK = parseFloat(raw);
+    } else if (row[1] && row[1] !== "") {
+      const raw = String(row[1]).replace(/[$\s]/g,"").replace(",",".");
+      const priceUSD = parseFloat(raw);
+      if (isFinite(priceUSD)) priceCZK = priceUSD * 20.57;
+    }
+    if (ticker && priceCZK && isFinite(priceCZK) && priceCZK > 0) prices[ticker] = priceCZK;
   }
   return {
     manual:   m.filter(r=>r.length>=6).map(rowToPos),
@@ -510,18 +544,14 @@ function InvestBook() {
     if (data.manual && data.manual.length) setManualRows(data.manual);
     if (data.imported && data.imported.length) {
       const priced = data.imported.map(pos => {
+        // prices mapa obsahuje přímo priceCZK (z column C v prices sheetu, vzorec =B*20.57)
         let priceCZK = pos.priceCZK || null;
         if (pos.ticker && data.prices) {
           const t = pos.ticker;
           const tClean = t.replace(/[*]/g, "");
-          const candidates = [t, t+"-USD", tClean, tClean+"-USD", t.replace(/-(USD|EUR|GBP)$/, "")];
-          let priceNative = null;
-          for (const c of candidates) { if (data.prices[c] > 0) { priceNative = data.prices[c]; break; } }
-          if (priceNative != null) {
-            // prices sheet stores price in native currency (USD for US stocks, EUR for EU stocks)
-            // priceCZK = cena za 1 akcii v CZK
-            const positionFx = pos.fx || (pos.currency === "EUR" ? DEGIRO_FX : pos.currency === "GBP" ? GBP_FX : ETORO_FX);
-            priceCZK = priceNative * positionFx;
+          const candidates = [t, tClean, t.replace(/-(USD|EUR|GBP)$/, ""), tClean.replace(/-(USD|EUR|GBP)$/, "")];
+          for (const c of candidates) {
+            if (data.prices[c] > 0) { priceCZK = data.prices[c]; break; }
           }
         }
         return { ...pos, priceCZK };
@@ -560,6 +590,8 @@ function InvestBook() {
     setGsStatus("loading");
     setGsMsg("");
     try {
+      // Zajistí header + vzorec priceCZK v prices sheetu (=B*20.57)
+      await withAuthPromise(ensurePricesHeader);
       const data = await withAuthPromise(loadFromSheets);
       applyLoadedData(data);
       setGsStatus("idle");
