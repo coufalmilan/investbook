@@ -230,6 +230,8 @@ const INITIAL_CSOB = [
   { id: 2, name: "ČSOB Akciový Amerika", broker: "ČSOB", invested: 415564, value: 493162, currency: "CZK", fx: null, start: 2021, annReturn: 4.85,  category: "Fond" },
   { id: 3, name: "ČSOB Premium VOZ",     broker: "ČSOB", invested: 11673,  value: 12102,  currency: "CZK", fx: null, start: 2025, annReturn: null,  category: "Fond" },
 ];
+// Ensure all manual rows have invested = value - (gain if stored), for backward compat
+// gain is derived: value - invested, so no extra field needed — updateManual handles it
 
 // ─── PARSED CSV DATA (from delta_Rotčíld_25022026.csv) ─────────────────────
 // These are the imported positions from CSV with their invested amounts in original currency.
@@ -509,8 +511,23 @@ function InvestBook() {
     setManualRows(prev => prev.map(p => {
       if (p.id !== id) return p;
       const up = { ...p };
-      if (["name","broker","category","currency"].includes(field)) up[field] = raw;
-      else { const n = parseFlt(raw); up[field] = isNaN(n) ? null : n; }
+      if (["name","broker","category","currency"].includes(field)) {
+        up[field] = raw;
+      } else if (field === "gain") {
+        // Výnos zadán ručně → investováno = hodnota - výnos
+        const n = parseFlt(raw);
+        up.gain = isNaN(n) ? 0 : n;
+        up.invested = (up.value || 0) - (up.gain || 0);
+      } else if (field === "value") {
+        // Hodnota zadána ručně → přepočítej investováno = hodnota - výnos
+        const n = parseFlt(raw);
+        up.value = isNaN(n) ? 0 : n;
+        const currentGain = (p.value || 0) - (p.invested || 0);
+        up.invested = up.value - currentGain;
+      } else {
+        const n = parseFlt(raw);
+        up[field] = isNaN(n) ? null : n;
+      }
       return up;
     }));
   }, []);
@@ -635,8 +652,24 @@ function InvestBook() {
     const returnData = allRows.filter(p => p.annReturn != null).map(p => ({ name: p.name.length > 14 ? p.name.slice(0,14)+"…" : p.name, ret: p.annReturn }));
     const gain    = totalValue - totalInvested;
     const gainPct = totalInvested > 0 ? (gain / totalInvested) * 100 : 0;
-    const cisty   = STATIC.majetekHodnota - STATIC.hypoteka;
     const histData = filterHistory(period);
+
+    // Průměrný roční výnos — vážený průměr podle investované CZK hodnoty
+    // Roční výnos pozice = (value/invested)^(1/years) - 1, kde years = NOW_YEAR - start (min 1)
+    const calcWeightedAnnReturn = (rows) => {
+      let weightedSum = 0, totalWeight = 0;
+      for (const p of rows) {
+        if (!p.investedCZK || p.investedCZK <= 0 || !p.valueCZK || p.valueCZK <= 0) continue;
+        const years = Math.max(1, NOW_YEAR - (p.start || NOW_YEAR));
+        const annR  = (Math.pow(p.valueCZK / p.investedCZK, 1 / years) - 1) * 100;
+        if (!isFinite(annR)) continue;
+        weightedSum  += annR * p.investedCZK;
+        totalWeight  += p.investedCZK;
+      }
+      return totalWeight > 0 ? weightedSum / totalWeight : 0;
+    };
+    const avgAnnReturn       = calcWeightedAnnReturn(allRows);
+    const avgAnnReturnNoCrypto = calcWeightedAnnReturn(allRows.filter(p => p.category !== "Crypto"));
 
     const DTooltip = ({ active, payload }) => {
       if (!active || !payload || !payload.length) return null;
@@ -664,27 +697,33 @@ function InvestBook() {
               </div>
             </div>
             <div style={{ paddingBottom: 4 }}>
-              <div style={{ fontSize: 31, fontWeight: 700, color: T.green, letterSpacing: "-0.02em" }}>{fmtCZK(STATIC.gainCZK)}</div>
-              <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>nerealizovaný zisk od 2021</div>
+              <div style={{ fontSize: 31, fontWeight: 700, color: T.green, letterSpacing: "-0.02em" }}>{gain >= 0 ? "+" : ""}{fmtCZK(gain)}</div>
+              <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>nerealizovaný zisk celkem</div>
             </div>
             <div style={{ paddingBottom: 4 }}>
-              <div style={{ fontSize: 31, fontWeight: 700, color: T.amber, letterSpacing: "-0.02em" }}>+{STATIC.avgAnnReturn} %</div>
+              <div style={{ fontSize: 31, fontWeight: 700, color: T.amber, letterSpacing: "-0.02em" }}>{avgAnnReturn >= 0 ? "+" : ""}{avgAnnReturn.toFixed(2)} %</div>
               <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>prům. roční výnos celkem</div>
             </div>
             <div style={{ paddingBottom: 4 }}>
-              <div style={{ fontSize: 31, fontWeight: 700, color: T.blue, letterSpacing: "-0.02em" }}>+{STATIC.avgAnnReturnNoCrypto} %</div>
+              <div style={{ fontSize: 31, fontWeight: 700, color: T.blue, letterSpacing: "-0.02em" }}>{avgAnnReturnNoCrypto >= 0 ? "+" : ""}{avgAnnReturnNoCrypto.toFixed(2)} %</div>
               <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>prům. výnos bez crypto</div>
             </div>
           </div>
         </div>
 
         {/* 4 stat cards */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 20 }}>
-          <StatCard label="Investováno celkem"       value={fmtCZK(totalInvested)}          color={T.muted}  accent={T.subtle} />
-          <StatCard label="Výnos celkem"             value={fmtCZK(gain)}                   color={T.green}  accent={T.green}  sub={"+" + gainPct.toFixed(2) + " %"} />
-          <StatCard label="Hodnota majetku"          value={fmtCZK(STATIC.majetekHodnota)} color={T.text}   accent={T.blue} />
-          <StatCard label="Čistý majetek −hypotéka"  value={fmtCZK(cisty)}                  color={T.amber}  accent={T.amber}  sub={"hypotéka " + fmtCZK(STATIC.hypoteka)} />
-        </div>
+        {(() => {
+          const hodnotaMajetku = totalValue + zustatek;
+          const cistyMajetek   = hodnotaMajetku - hypoteka;
+          return (
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 20 }}>
+              <StatCard label="Investováno celkem"      value={fmtCZK(totalInvested)}   color={T.muted}  accent={T.subtle} />
+              <StatCard label="Výnos celkem"            value={fmtCZK(gain)}            color={T.green}  accent={T.green}  sub={"+" + gainPct.toFixed(2) + " %"} />
+              <StatCard label="Hodnota majetku"         value={fmtCZK(hodnotaMajetku)}  color={T.text}   accent={T.blue}   sub={zustatek > 0 ? "vč. hotovosti " + fmtCZK(zustatek) : null} />
+              <StatCard label="Čistý majetek −hypotéka" value={fmtCZK(cistyMajetek)}    color={T.amber}  accent={T.amber}  sub={"hypotéka " + fmtCZK(hypoteka)} />
+            </div>
+          );
+        })()}
 
         {/* Portfolio history chart */}
         <div style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 16, padding: 22, marginBottom: 20 }}>
@@ -752,7 +791,6 @@ function InvestBook() {
             { key: "gainPct",   label: "Výnos %",     align: "right", sortFn: (a,b) => (a.gainPctOrig||0) - (b.gainPctOrig||0) },
             { key: "share",     label: "Podíl %",     align: "right", sortFn: (a,b) => a.valueCZK - b.valueCZK },
             { key: "start",     label: "Od",          align: "right", sortFn: (a,b) => a.start - b.start },
-            { key: "annReturn", label: "Roční %",     align: "right", sortFn: (a,b) => (a.annReturn || 0) - (b.annReturn || 0) },
           ];
           const col = COLS.find(c => c.key === tblSort) || COLS[3];
           const sortedRows = allRows.slice().sort((a,b) => tblDir === "asc" ? col.sortFn(a,b) : col.sortFn(b,a));
@@ -802,9 +840,7 @@ function InvestBook() {
                           <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: gc, fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>{gainPct >= 0 ? "+" : ""}{gainPct.toFixed(2)}%</td>
                           <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 13, color: T.muted, fontFamily: "'DM Mono',monospace" }}>{share.toFixed(2)}%</td>
                           <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 13, color: T.subtle }}>{p.start}</td>
-                          <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: p.annReturn != null ? (p.annReturn >= 0 ? T.green : T.red) : T.subtle, fontFamily: "'DM Mono',monospace", fontWeight: p.annReturn != null ? 600 : 400 }}>
-                            {p.annReturn != null ? (p.annReturn >= 0 ? "+" : "") + p.annReturn.toFixed(2) + "%" : "—"}
-                          </td>
+
                         </tr>
                       );
                     })}
@@ -816,7 +852,7 @@ function InvestBook() {
                       <td style={{ ...nc(T.text), padding: "10px 12px", fontSize: 16, fontWeight: 800 }}>{fmtCZK(totalValue)}</td>
                       <td style={{ ...nc(T.green), padding: "10px 12px" }}>+{fmtCZK(totalValue - totalInvested)}</td>
                       <td style={{ ...nc(T.green), padding: "10px 12px", fontWeight: 700 }}>+{totalInvested > 0 ? (((totalValue-totalInvested)/totalInvested)*100).toFixed(2) : "0.00"}%</td>
-                      <td colSpan={3} />
+                      <td colSpan={2} />
                     </tr>
                   </tfoot>
                 </table>
@@ -1030,8 +1066,8 @@ function InvestBook() {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ borderBottom: "1px solid " + T.border }}>
-                {["Název","Broker","Kategorie","Investováno (CZK)","Hodnota (CZK)","Výnos CZK","Výnos %","Start",""].map((h, i) => (
-                  <th key={i} style={{ padding: "9px 12px", textAlign: i <= 2 ? "left" : i === 8 ? "center" : "right", fontSize: 11, color: T.muted, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
+                {["Název","Broker","Kategorie","Hodnota (CZK)","Výnos CZK","Výnos %","Investováno (CZK)","Start",""].map((h, i) => (
+                  <th key={i} style={{ padding: "9px 12px", textAlign: i <= 2 ? "left" : i === 8 ? "center" : "right", fontSize: 11, color: i === 6 ? T.subtle : T.muted, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -1047,10 +1083,10 @@ function InvestBook() {
                     <EditCell value={pos.name}     type="text" align="left" color={CAT_COLOR[pos.category] || T.text} onSave={v => updateManual(pos.id,"name",v)} />
                     <EditCell value={pos.broker}   type="text" align="left" color={T.muted} onSave={v => updateManual(pos.id,"broker",v)} />
                     <EditCell value={pos.category} isSelect options={CATEGORIES} align="left" color={CAT_COLOR[pos.category]||T.muted} onSave={v => updateManual(pos.id,"category",v)}/>
-                    <EditCell value={pos.invested} color={T.muted} onSave={v => updateManual(pos.id,"invested",v)} />
                     <EditCell value={pos.value}    color={T.text}  onSave={v => updateManual(pos.id,"value",v)} />
-                    <td style={nc(gc)}>{gain >= 0 ? "+" : ""}{fmtCZK(gain)}</td>
+                    <EditCell value={Math.round(gain)} color={gc} onSave={v => updateManual(pos.id,"gain",v)} />
                     <td style={{ ...nc(gc), fontWeight: 700 }}>{gainPct >= 0 ? "+" : ""}{gainPct.toFixed(2)}%</td>
+                    <td style={nc(T.subtle)} title="Vypočítáno: Hodnota − Výnos">{fmtCZK(pos.invested)}</td>
                     <EditCell value={pos.start} color={T.muted} onSave={v => updateManual(pos.id,"start",v)} />
                     <td style={{ padding: "0 8px", textAlign: "center" }}>
                       <button onClick={() => deleteManual(pos.id)} style={{ background: "none", border: "none", color: T.subtle, cursor: "pointer", fontSize: 18, padding: "4px 6px", borderRadius: 4 }}
@@ -1064,10 +1100,10 @@ function InvestBook() {
             <tfoot>
               <tr style={{ borderTop: "1px solid rgba(34,197,94,0.15)", background: "rgba(34,197,94,0.03)" }}>
                 <td colSpan={3} style={{ padding: "10px 12px", fontSize: 12, color: T.green, fontWeight: 700 }}>SOUČET</td>
-                <td style={nc(T.muted)}>{fmtCZK(manualInvested)}</td>
                 <td style={{ ...nc(T.text), fontSize: 15, fontWeight: 800 }}>{fmtCZK(manualTotal)}</td>
                 <td style={nc(T.green)}>{fmtCZK(manualTotal - manualInvested)}</td>
                 <td style={{ ...nc(T.green), fontWeight: 700 }}>{manualInvested > 0 ? "+" + (((manualTotal-manualInvested)/manualInvested)*100).toFixed(2)+"%" : "—"}</td>
+                <td style={nc(T.muted)}>{fmtCZK(manualInvested)}</td>
                 <td colSpan={2} />
               </tr>
             </tfoot>
