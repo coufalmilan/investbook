@@ -1380,40 +1380,48 @@ function InvestBook() {
           ))}
         </div>
 
-        {/* Category alloc */}
-        <div style={{ ...C, marginBottom: 16 }}>
-          <SectionTitle title="Alokace podle kategorie" sub="Rozložení hodnoty mezi typy aktiv" />
-          <div style={{ display: "flex", height: 8, borderRadius: 4, overflow: "hidden", gap: 2, marginBottom: 18 }}>
-            {catEntries.map(e => <div key={e[0]} style={{ flex: e[1]/totalValue, background: CAT_COLOR[e[0]] || T.muted, minWidth: 2 }} />)}
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill,minmax(160px,1fr))", gap: 14 }}>
-            {catEntries.map(e => {
-              const pct     = (e[1]/totalValue)*100;
-              const catPos  = allRows.filter(p => p.category === e[0]);
-              const catGain = catPos.reduce((s,p) => s+(p.valueCZK-p.investedCZK), 0);
-              const catInv  = catPos.reduce((s,p) => s+p.investedCZK, 0);
-              const gp = catInv > 0 ? (catGain/catInv)*100 : 0;
-              return (
-                <div key={e[0]} style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
-                  <div style={{ width: 10, height: 10, borderRadius: 3, background: CAT_COLOR[e[0]] || T.muted, flexShrink: 0, marginTop: 2 }} />
-                  <div style={{ flex: 1 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span style={{ fontSize: 14, color: T.muted, fontWeight: 500 }}>{e[0]}</span>
-                      <span style={{ fontSize: 14, color: T.text, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{pct.toFixed(1)}%</span>
-                    </div>
-                    <div style={{ height: 3, background: "rgba(255,255,255,0.05)", borderRadius: 2, marginTop: 5, marginBottom: 4 }}>
-                      <div style={{ width: pct+"%", height: "100%", background: CAT_COLOR[e[0]] || T.muted, borderRadius: 2 }} />
-                    </div>
-                    <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span style={{ fontSize: 12, color: T.subtle }}>{fmt(e[1])}</span>
-                      <span style={{ fontSize: 12, color: gp >= 0 ? T.green : T.red, fontWeight: 600 }}>{gp >= 0 ? "+" : ""}{gp.toFixed(1)}%</span>
-                    </div>
-                  </div>
+        {/* Nejlepší vs. nejhorší pozice */}
+        {(() => {
+          const byGain = allRows.slice().sort((a,b) => b.gainPctOrig - a.gainPctOrig);
+          const top3   = byGain.slice(0, 3);
+          const bot3   = byGain.slice(-3).reverse();
+          const Row = ({ p, rank, isTop }) => {
+            const gp = p.gainPctOrig || 0;
+            const yrs = Math.max(1, NOW_YEAR - (p.start || NOW_YEAR));
+            const ratio = gp / 100 + 1;
+            const cagr = ratio > 0 ? (Math.pow(ratio, 1 / yrs) - 1) * 100 : 0;
+            const gc = isTop ? T.green : T.red;
+            return (
+              <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "10px 14px", borderRadius: 10, background: isTop ? "rgba(34,197,94,0.04)" : "rgba(239,68,68,0.04)", border: "1px solid " + (isTop ? "rgba(34,197,94,0.1)" : "rgba(239,68,68,0.1)"), marginBottom: 8 }}>
+                <div style={{ fontSize: 18, fontWeight: 800, color: gc, opacity: 0.5, minWidth: 24, textAlign: "center" }}>{rank}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ fontSize: 14, color: T.text, fontWeight: 600, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{p.name.split("(")[0].trim()}</div>
+                  <div style={{ fontSize: 12, color: T.muted, marginTop: 1 }}>{p.category} · {p.broker} · od {p.start}</div>
                 </div>
-              );
-            })}
-          </div>
-        </div>
+                <div style={{ textAlign: "right", flexShrink: 0 }}>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: gc, fontFamily: "'DM Mono',monospace" }}>{gp >= 0 ? "+" : ""}{gp.toFixed(1)}%</div>
+                  <div style={{ fontSize: 12, color: T.muted, fontFamily: "'DM Mono',monospace" }}>{cagr >= 0 ? "+" : ""}{cagr.toFixed(1)}% p.a.</div>
+                </div>
+                <div style={{ textAlign: "right", flexShrink: 0, minWidth: 80 }}>
+                  <div style={{ fontSize: 14, color: T.text, fontFamily: "'DM Mono',monospace" }}>{fmt(p.valueCZK)}</div>
+                  <div style={{ fontSize: 12, color: gc, fontFamily: "'DM Mono',monospace" }}>{gp >= 0 ? "+" : ""}{fmt(p.valueCZK - p.investedCZK)}</div>
+                </div>
+              </div>
+            );
+          };
+          return (
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+              <div style={{ ...C }}>
+                <SectionTitle title="🏆 Top 3 — nejlepší výnos" sub="Podle celkového výnosu %" />
+                {top3.map((p, i) => <Row key={p.id} p={p} rank={i + 1} isTop={true} />)}
+              </div>
+              <div style={{ ...C }}>
+                <SectionTitle title="📉 Bottom 3 — nejhorší výnos" sub="Podle celkového výnosu %" />
+                {bot3.map((p, i) => <Row key={p.id} p={p} rank={i + 1} isTop={false} />)}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Milestone tracker */}
         <div style={{ ...C, marginBottom: 16 }}>
