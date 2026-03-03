@@ -468,8 +468,7 @@ function InvestBook() {
   const [period, setPeriod] = useState("YTD");
   const [tblSort, setTblSort] = useState("value");
   const [tblDir, setTblDir] = useState("desc");
-  const [chartCat, setChartCat] = useState("vse");
-  const [tblCat, setTblCat] = useState("vse");
+  const [activeCat, setActiveCat] = useState("vse");
   const [monthlyContrib, setMonthlyContrib] = useState(30000);
   const [hypoteka, setHypoteka] = useState(1821963);
   const [zustatek, setZustatek] = useState(0);
@@ -729,21 +728,60 @@ function InvestBook() {
           );
         })()}
 
-        {/* Portfolio history chart */}
+        {/* Sdílený filtr kategorií pro graf i tabulku */}
         {(() => {
-          const CHART_CATS = [
-            { id: "vse",    label: "Vše",       dataKey: "v",      color: T.green  },
-            { id: "fond",   label: "Fondy+ETF", dataKey: "fond",   color: T.blue   },
-            { id: "akcie",  label: "Akcie",     dataKey: "akcie",  color: T.amber  },
-            { id: "crypto", label: "Crypto",    dataKey: "crypto", color: "#ec4899" },
+          // Kategorie: id grafu → { label, chartKey, color, tblCategories }
+          const CATS = [
+            { id: "vse",    label: "Vše",       chartKey: "v",      color: T.green,   tblFilter: null },
+            { id: "fond",   label: "Fondy+ETF", chartKey: "fond",   color: T.blue,    tblFilter: ["Fond","ETF","Portfolio"] },
+            { id: "akcie",  label: "Akcie",     chartKey: "akcie",  color: T.amber,   tblFilter: ["Akcie"] },
+            { id: "crypto", label: "Crypto",    chartKey: "crypto", color: "#ec4899", tblFilter: ["Crypto"] },
           ];
-          const activeCat = CHART_CATS.find(c => c.id === chartCat) || CHART_CATS[0];
-          const chartData = histData;
-          return (
-            <div style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 16, padding: 22, marginBottom: 20 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+          const cat = CATS.find(c => c.id === activeCat) || CATS[0];
+
+          // Filtrované řádky tabulky
+          const filteredRows = cat.tblFilter
+            ? allRows.filter(p => cat.tblFilter.includes(p.category))
+            : allRows;
+
+          const COLS = [
+            { key: "name",    label: "Název",       align: "left",  sortFn: (a,b) => a.name.localeCompare(b.name) },
+            { key: "invested",label: "Investováno", align: "right", sortFn: (a,b) => a.investedCZK - b.investedCZK },
+            { key: "value",   label: "Hodnota",     align: "right", sortFn: (a,b) => a.valueCZK - b.valueCZK },
+            { key: "gain",    label: "Výnos",       align: "right", sortFn: (a,b) => (a.valueCZK-a.investedCZK) - (b.valueCZK-b.investedCZK) },
+            { key: "gainPct", label: "Výnos %",     align: "right", sortFn: (a,b) => (a.gainPctOrig||0) - (b.gainPctOrig||0) },
+            { key: "share",   label: "Podíl %",     align: "right", sortFn: (a,b) => a.valueCZK - b.valueCZK },
+            { key: "start",   label: "Od",          align: "right", sortFn: (a,b) => a.start - b.start },
+          ];
+          const col = COLS.find(c => c.key === tblSort) || COLS[2];
+          const sortedRows = filteredRows.slice().sort((a,b) => tblDir === "asc" ? col.sortFn(a,b) : col.sortFn(b,a));
+          const onSort = (key) => {
+            if (tblSort === key) setTblDir(d => d === "asc" ? "desc" : "asc");
+            else { setTblSort(key); setTblDir("desc"); }
+          };
+          const arrow = (key) => tblSort === key ? (tblDir === "asc" ? " ↑" : " ↓") : "";
+
+          return (<>
+            {/* Sdílené pill filtry */}
+            <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+              {CATS.map(c => (
+                <button key={c.id} onClick={() => setActiveCat(c.id)}
+                  style={{ padding: "6px 16px", borderRadius: 22, border: "1px solid " + (activeCat === c.id ? c.color : "rgba(255,255,255,0.08)"),
+                    cursor: "pointer", fontSize: 13, fontWeight: 600, transition: "all 0.15s",
+                    background: activeCat === c.id ? c.color + "22" : "transparent",
+                    color: activeCat === c.id ? c.color : T.muted }}>
+                  {c.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Graf */}
+            <div style={{ background: T.card, border: "1px solid " + (activeCat !== "vse" ? cat.color + "40" : T.border), borderRadius: 16, padding: 22, marginBottom: 16, transition: "border-color 0.2s" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
                 <div>
-                  <div style={{ fontSize: 15, fontWeight: 600, color: T.text, marginBottom: 2 }}>Vývoj portfolia</div>
+                  <div style={{ fontSize: 15, fontWeight: 600, color: T.text, marginBottom: 2 }}>Vývoj portfolia
+                    {activeCat !== "vse" && <span style={{ marginLeft: 8, fontSize: 13, color: cat.color, fontWeight: 700 }}>· {cat.label}</span>}
+                  </div>
                   <div style={{ fontSize: 13, color: T.muted }}>historický vývoj hodnoty</div>
                 </div>
                 <div style={{ display: "flex", gap: 4 }}>
@@ -757,88 +795,36 @@ function InvestBook() {
                   ))}
                 </div>
               </div>
-              {/* Category filter */}
-              <div style={{ display: "flex", gap: 6, marginBottom: 16 }}>
-                {CHART_CATS.map(cat => (
-                  <button key={cat.id} onClick={() => setChartCat(cat.id)}
-                    style={{ padding: "4px 12px", borderRadius: 20, border: "1px solid " + (chartCat === cat.id ? cat.color : "rgba(255,255,255,0.08)"),
-                      cursor: "pointer", fontSize: 12, fontWeight: 600, transition: "all 0.12s",
-                      background: chartCat === cat.id ? cat.color + "22" : "transparent",
-                      color: chartCat === cat.id ? cat.color : T.muted }}>
-                    {cat.label}
-                  </button>
-                ))}
-              </div>
               <ResponsiveContainer width="100%" height={220}>
-                <AreaChart data={chartData} margin={{ left: 4, right: 4, top: 4, bottom: 0 }}>
+                <AreaChart data={histData} margin={{ left: 4, right: 4, top: 4, bottom: 0 }}>
                   <defs>
                     <linearGradient id="gChart" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={activeCat.color} stopOpacity={0.25} />
-                      <stop offset="100%" stopColor={activeCat.color} stopOpacity={0} />
+                      <stop offset="0%" stopColor={cat.color} stopOpacity={0.25} />
+                      <stop offset="100%" stopColor={cat.color} stopOpacity={0} />
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
                   <XAxis dataKey="d" tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.muted }} axisLine={false} tickLine={false}
                     tickFormatter={d => { const [y,m] = d.split("-"); return m === "01" ? y : m + "/" + y.slice(2); }} />
                   <YAxis tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.muted }} axisLine={false} tickLine={false} width={52}
-                    domain={[
-                      dataMin => Math.floor(dataMin * 0.95 / 50000) * 50000,
-                      dataMax => Math.ceil(dataMax * 1.05 / 50000) * 50000,
-                    ]}
+                    domain={[ dataMin => Math.floor(dataMin * 0.95 / 50000) * 50000, dataMax => Math.ceil(dataMax * 1.05 / 50000) * 50000 ]}
                     tickFormatter={v => v >= 1000000 ? (v/1000000).toFixed(1)+"M" : (v/1000).toFixed(0)+"k"} />
-                  <Tooltip {...ttStyle} formatter={(v) => [fmtCZK(v), activeCat.label]} labelFormatter={d => d} />
-                  <Area type="monotone" dataKey={activeCat.dataKey} stroke={activeCat.color} strokeWidth={2.5} fill="url(#gChart)" dot={false}
-                    activeDot={{ r: 4, fill: activeCat.color, strokeWidth: 0 }} />
+                  <Tooltip {...ttStyle} formatter={(v) => [fmtCZK(v), cat.label]} labelFormatter={d => d} />
+                  <Area type="monotone" dataKey={cat.chartKey} stroke={cat.color} strokeWidth={2.5} fill="url(#gChart)" dot={false}
+                    activeDot={{ r: 4, fill: cat.color, strokeWidth: 0 }} />
                 </AreaChart>
               </ResponsiveContainer>
             </div>
-          );
-        })()}
 
-        {/* Sortable all-positions table */}
-        {(() => {
-          const COLS = [
-            { key: "name",      label: "Název",       align: "left",  sortFn: (a,b) => a.name.localeCompare(b.name) },
-            { key: "invested",  label: "Investováno", align: "right", sortFn: (a,b) => a.investedCZK - b.investedCZK },
-            { key: "value",     label: "Hodnota",     align: "right", sortFn: (a,b) => a.valueCZK - b.valueCZK },
-            { key: "gain",      label: "Výnos",       align: "right", sortFn: (a,b) => (a.valueCZK-a.investedCZK) - (b.valueCZK-b.investedCZK) },
-            { key: "gainPct",   label: "Výnos %",     align: "right", sortFn: (a,b) => (a.gainPctOrig||0) - (b.gainPctOrig||0) },
-            { key: "share",     label: "Podíl %",     align: "right", sortFn: (a,b) => a.valueCZK - b.valueCZK },
-            { key: "start",     label: "Od",          align: "right", sortFn: (a,b) => a.start - b.start },
-          ];
-          const col = COLS.find(c => c.key === tblSort) || COLS[3];
-          const filteredRows = tblCat === "vse" ? allRows : allRows.filter(p => p.category === tblCat);
-          const sortedRows = filteredRows.slice().sort((a,b) => tblDir === "asc" ? col.sortFn(a,b) : col.sortFn(b,a));
-          const onSort = (key) => {
-            if (tblSort === key) setTblDir(d => d === "asc" ? "desc" : "asc");
-            else { setTblSort(key); setTblDir("desc"); }
-          };
-          const arrow = (key) => tblSort === key ? (tblDir === "asc" ? " ↑" : " ↓") : "";
-          return (
-            <div style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 16, padding: 20, marginBottom: 20 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            {/* Tabulka */}
+            <div style={{ background: T.card, border: "1px solid " + (activeCat !== "vse" ? cat.color + "40" : T.border), borderRadius: 16, padding: 20, marginBottom: 20, transition: "border-color 0.2s" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
                 <div>
-                  <div style={{ fontSize: 15, fontWeight: 700, color: T.text, marginBottom: 2 }}>Přehled všech investic</div>
-                  <div style={{ fontSize: 13, color: T.muted }}>Klikni na hlavičku pro seřazení</div>
+                  <div style={{ fontSize: 15, fontWeight: 700, color: T.text, marginBottom: 2 }}>Přehled investic
+                    {activeCat !== "vse" && <span style={{ marginLeft: 8, fontSize: 13, color: cat.color, fontWeight: 700 }}>· {cat.label}</span>}
+                  </div>
+                  <div style={{ fontSize: 13, color: T.muted }}>Klikni na hlavičku pro seřazení · {sortedRows.length} pozic</div>
                 </div>
-              </div>
-              <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
-                {[
-                  { id: "vse",       label: "Vše",       color: T.text   },
-                  { id: "Fond",      label: "Fondy",     color: CAT_COLOR["Fond"]      },
-                  { id: "ETF",       label: "ETF",       color: CAT_COLOR["ETF"]       },
-                  { id: "Portfolio", label: "Portfolio", color: CAT_COLOR["Portfolio"] },
-                  { id: "Akcie",     label: "Akcie",     color: CAT_COLOR["Akcie"]     },
-                  { id: "Crypto",    label: "Crypto",    color: CAT_COLOR["Crypto"]    },
-                ].map(cat => (
-                  <button key={cat.id} onClick={() => setTblCat(cat.id)}
-                    style={{ padding: "4px 12px", borderRadius: 20, border: "1px solid " + (tblCat === cat.id ? cat.color : "rgba(255,255,255,0.08)"),
-                      cursor: "pointer", fontSize: 12, fontWeight: 600, transition: "all 0.12s",
-                      background: tblCat === cat.id ? cat.color + "22" : "transparent",
-                      color: tblCat === cat.id ? cat.color : T.muted }}>
-                    {cat.label}
-                  </button>
-                ))}
               </div>
               <div style={{ overflowX: "auto" }}>
                 <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 700 }}>
@@ -901,7 +887,7 @@ function InvestBook() {
                 </table>
               </div>
             </div>
-          );
+          </>);
         })()}
 
         {/* Projections */}
