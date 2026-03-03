@@ -325,6 +325,12 @@ const FX_EUR = 24.23;
 const FX_USD = 20.57;
 const FX_GBP = 25.80;
 
+const DISP_CFG = {
+  CZK: { div: 1,      symbol: "Kč", locale: "cs-CZ", cur: "CZK" },
+  EUR: { div: FX_EUR, symbol: "€",  locale: "de-DE", cur: "EUR" },
+  USD: { div: FX_USD, symbol: "$",  locale: "en-US", cur: "USD" },
+};
+
 const fxRate = (pos) => {
   if (pos.fx) return pos.fx;
   if (pos.currency === "EUR") return FX_EUR;
@@ -469,6 +475,7 @@ function InvestBook() {
   const [tblSort, setTblSort] = useState("value");
   const [tblDir, setTblDir] = useState("desc");
   const [activeCat, setActiveCat] = useState("vse");
+  const [dispCurrency, setDispCurrency] = useState("CZK");
   const [monthlyContrib, setMonthlyContrib] = useState(30000);
   const [hypoteka, setHypoteka] = useState(1821963);
   const [zustatek, setZustatek] = useState(0);
@@ -507,6 +514,15 @@ function InvestBook() {
 
   const ttStyle = { contentStyle: { background: T.card, border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, fontFamily: "'DM Mono',monospace", fontSize: 13, boxShadow: "0 8px 32px rgba(0,0,0,0.5)" } };
   const nc = (color) => ({ padding: "10px 12px", textAlign: "right", fontFamily: "'DM Mono',monospace", fontSize: 13, color: color || T.muted });
+
+  // fmt() = formátuje CZK hodnotu v aktuální zobrazovací měně
+  const dcfg = DISP_CFG[dispCurrency] || DISP_CFG.CZK;
+  const fmt = (v) => {
+    const n = Number(v);
+    if (!isFinite(n)) return "—";
+    const converted = n / dcfg.div;
+    return new Intl.NumberFormat(dcfg.locale, { style: "currency", currency: dcfg.cur, maximumFractionDigits: 0 }).format(converted);
+  };
 
   // Průměrný roční výnos — vážený průměr p.a., počítáno v původní měně pozice
   // valueOrig/invested jsou obojí ve stejné měně → žádné zkreslení FX
@@ -693,14 +709,14 @@ function InvestBook() {
           <div style={{ fontSize: 13, color: T.muted, letterSpacing: "0.1em", marginBottom: 8, fontWeight: 500 }}>CELKOVÉ PORTFOLIO · 2018–2026</div>
           <div style={{ display: "flex", gap: 40, alignItems: "flex-end", flexWrap: "wrap" }}>
             <div>
-              <div style={{ fontSize: 56, fontWeight: 800, color: T.text, letterSpacing: "-0.03em", lineHeight: 1 }}>{fmtCZK(totalValue)}</div>
+              <div style={{ fontSize: 56, fontWeight: 800, color: T.text, letterSpacing: "-0.03em", lineHeight: 1 }}>{fmt(totalValue)}</div>
               <div style={{ display: "flex", gap: 12, marginTop: 6, alignItems: "center" }}>
                 <span style={{ fontSize: 14, color: T.muted }}>{"≈ $" + Math.round(totalValue / 20.57).toLocaleString("en-US")}</span>
                 <span style={{ fontSize: 13, color: T.muted }}>celková hodnota</span>
               </div>
             </div>
             <div style={{ paddingBottom: 4 }}>
-              <div style={{ fontSize: 31, fontWeight: 700, color: T.green, letterSpacing: "-0.02em" }}>{gain >= 0 ? "+" : ""}{fmtCZK(gain)}</div>
+              <div style={{ fontSize: 31, fontWeight: 700, color: T.green, letterSpacing: "-0.02em" }}>{gain >= 0 ? "+" : ""}{fmt(gain)}</div>
               <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>nerealizovaný zisk celkem</div>
             </div>
             <div style={{ paddingBottom: 4 }}>
@@ -720,10 +736,10 @@ function InvestBook() {
           const cistyMajetek   = hodnotaMajetku - hypoteka;
           return (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 20 }}>
-              <StatCard label="Investováno celkem"      value={fmtCZK(totalInvested)}   color={T.muted}  accent={T.subtle} />
-              <StatCard label="Výnos celkem"            value={fmtCZK(gain)}            color={T.green}  accent={T.green}  sub={"+" + gainPct.toFixed(2) + " %"} />
-              <StatCard label="Hodnota majetku"         value={fmtCZK(hodnotaMajetku)}  color={T.text}   accent={T.blue}   sub={zustatek > 0 ? "vč. hotovosti " + fmtCZK(zustatek) : null} />
-              <StatCard label="Čistý majetek −hypotéka" value={fmtCZK(cistyMajetek)}    color={T.amber}  accent={T.amber}  sub={"hypotéka " + fmtCZK(hypoteka)} />
+              <StatCard label="Investováno celkem"      value={fmt(totalInvested)}   color={T.muted}  accent={T.subtle} />
+              <StatCard label="Výnos celkem"            value={fmt(gain)}            color={T.green}  accent={T.green}  sub={"+" + gainPct.toFixed(2) + " %"} />
+              <StatCard label="Hodnota majetku"         value={fmt(hodnotaMajetku)}  color={T.text}   accent={T.blue}   sub={zustatek > 0 ? "vč. hotovosti " + fmt(zustatek) : null} />
+              <StatCard label="Čistý majetek −hypotéka" value={fmt(cistyMajetek)}    color={T.amber}  accent={T.amber}  sub={"hypotéka " + fmt(hypoteka)} />
             </div>
           );
         })()}
@@ -809,7 +825,7 @@ function InvestBook() {
                   <YAxis tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.muted }} axisLine={false} tickLine={false} width={52}
                     domain={[ dataMin => Math.floor(dataMin * 0.95 / 50000) * 50000, dataMax => Math.ceil(dataMax * 1.05 / 50000) * 50000 ]}
                     tickFormatter={v => v >= 1000000 ? (v/1000000).toFixed(1)+"M" : (v/1000).toFixed(0)+"k"} />
-                  <Tooltip {...ttStyle} formatter={(v) => [fmtCZK(v), cat.label]} labelFormatter={d => d} />
+                  <Tooltip {...ttStyle} formatter={(v) => [fmt(v), cat.label]} labelFormatter={d => d} />
                   <Area type="monotone" dataKey={cat.chartKey} stroke={cat.color} strokeWidth={2.5} fill="url(#gChart)" dot={false}
                     activeDot={{ r: 4, fill: cat.color, strokeWidth: 0 }} />
                 </AreaChart>
@@ -857,9 +873,9 @@ function InvestBook() {
                               <span style={{ fontSize: 15, color: T.text, fontWeight: 600 }}>{p.name.split("(")[0].trim()}</span>
                             </div>
                           </td>
-                          <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: T.muted, fontFamily: "'DM Mono',monospace" }}>{fmtCZK(p.investedCZK)}</td>
-                          <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: T.text, fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>{fmtCZK(p.valueCZK)}</td>
-                          <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: gc, fontFamily: "'DM Mono',monospace" }}>{gain >= 0 ? "+" : ""}{fmtCZK(gain)}</td>
+                          <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: T.muted, fontFamily: "'DM Mono',monospace" }}>{fmt(p.investedCZK)}</td>
+                          <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: T.text, fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>{fmt(p.valueCZK)}</td>
+                          <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: gc, fontFamily: "'DM Mono',monospace" }}>{gain >= 0 ? "+" : ""}{fmt(gain)}</td>
                           <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: gc, fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>{gainPct >= 0 ? "+" : ""}{gainPct.toFixed(2)}%</td>
                           {(() => { const yrs = Math.max(1, NOW_YEAR - (p.start || NOW_YEAR)); const ratio = gainPct / 100 + 1; const cagr = ratio > 0 ? (Math.pow(ratio, 1 / yrs) - 1) * 100 : 0; return <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: gc, fontFamily: "'DM Mono',monospace" }}>{cagr >= 0 ? "+" : ""}{cagr.toFixed(2)}%</td>; })()}
                           <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 13, color: T.muted, fontFamily: "'DM Mono',monospace" }}>{share.toFixed(2)}%</td>
@@ -875,9 +891,9 @@ function InvestBook() {
                         const fInv = sortedRows.reduce((s,p) => s+p.investedCZK, 0);
                         const fVal = sortedRows.reduce((s,p) => s+p.valueCZK, 0);
                         return (<>
-                          <td style={{ ...nc(T.muted), padding: "10px 12px" }}>{fmtCZK(fInv)}</td>
-                          <td style={{ ...nc(T.text), padding: "10px 12px", fontSize: 16, fontWeight: 800 }}>{fmtCZK(fVal)}</td>
-                          <td style={{ ...nc(T.green), padding: "10px 12px" }}>+{fmtCZK(fVal - fInv)}</td>
+                          <td style={{ ...nc(T.muted), padding: "10px 12px" }}>{fmt(fInv)}</td>
+                          <td style={{ ...nc(T.text), padding: "10px 12px", fontSize: 16, fontWeight: 800 }}>{fmt(fVal)}</td>
+                          <td style={{ ...nc(T.green), padding: "10px 12px" }}>+{fmt(fVal - fInv)}</td>
                           <td style={{ ...nc(T.green), padding: "10px 12px", fontWeight: 700 }}>+{fInv > 0 ? (((fVal-fInv)/fInv)*100).toFixed(2) : "0.00"}%</td>
                           <td style={{ padding: "10px 12px" }} />
                         </>);
@@ -931,12 +947,12 @@ function InvestBook() {
                 ) : (
                   <div onClick={() => { setContribDraft(String(monthlyContrib)); setEditingContrib(true); }}
                     style={{ display: "flex", alignItems: "center", gap: 10, cursor: "text", padding: "7px 16px", background: "rgba(59,130,246,0.08)", border: "1px solid rgba(59,130,246,0.2)", borderRadius: 8, transition: "all 0.12s" }}>
-                    <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 18, color: T.blue, fontWeight: 700 }}>{fmtCZK(monthlyContrib)}</span>
+                    <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 18, color: T.blue, fontWeight: 700 }}>{fmt(monthlyContrib)}</span>
                     <span style={{ fontSize: 13, color: T.muted }}>/ měs</span>
                     <span style={{ fontSize: 13, color: T.subtle, marginLeft: 2 }}>✎</span>
                   </div>
                 )}
-                <div style={{ fontSize: 13, color: T.muted }}>= {fmtCZK(monthlyContrib * 12)} ročně</div>
+                <div style={{ fontSize: 13, color: T.muted }}>= {fmt(monthlyContrib * 12)} ročně</div>
               </div>
 
               <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
@@ -952,12 +968,12 @@ function InvestBook() {
                       <div style={{ fontSize: 15, fontWeight: 600, color: T.text, marginBottom: 2 }}>{cfg.label}</div>
                       <div style={{ fontSize: 13, color: T.muted, marginBottom: 10 }}>{cfg.sub}</div>
                       <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: monthlyContrib > 0 ? 2 : 16 }}>
-                        <span style={{ fontSize: 31, fontWeight: 800, color: cfg.color, letterSpacing: "-0.02em" }}>{fmtCZK(finalVal)}</span>
+                        <span style={{ fontSize: 31, fontWeight: 800, color: cfg.color, letterSpacing: "-0.02em" }}>{fmt(finalVal)}</span>
                         <span style={{ fontSize: 13, color: T.muted }}>v roce 2032</span>
                       </div>
                       {monthlyContrib > 0 && (
                         <div style={{ fontSize: 13, color: T.muted, marginBottom: 16 }}>
-                          z toho příkupem <span style={{ color: cfg.color, fontWeight: 600 }}>{fmtCZK(contribGain)}</span>
+                          z toho příkupem <span style={{ color: cfg.color, fontWeight: 600 }}>{fmt(contribGain)}</span>
                         </div>
                       )}
                       {monthlyContrib === 0 && <div style={{ marginBottom: 16 }} />}
@@ -981,7 +997,7 @@ function InvestBook() {
                               dataMax => Math.ceil(dataMax * 1.05 / 100000) * 100000,
                             ]}
                             tickFormatter={v => v >= 1000000 ? (v/1000000).toFixed(1)+"M" : (v/1000).toFixed(0)+"k"} />
-                          <Tooltip {...ttStyle} formatter={(v, name) => [fmtCZK(v), name === cfg.key ? "S příkupem" : "Bez příkopu"]} />
+                          <Tooltip {...ttStyle} formatter={(v, name) => [fmt(v), name === cfg.key ? "S příkupem" : "Bez příkopu"]} />
                           <Area type="monotone" dataKey={cfg.baseKey} stroke={cfg.color} strokeWidth={1} strokeDasharray="4 3" fill={"url(#"+cfg.grad+"b)"} dot={false} />
                           <Area type="monotone" dataKey={cfg.key} stroke={cfg.color} strokeWidth={2.5} fill={"url(#"+cfg.grad+")"} dot={{ r: 3, fill: cfg.color, strokeWidth: 0 }} activeDot={{ r: 5, fill: cfg.color, strokeWidth: 0 }} />
                         </AreaChart>
@@ -1029,7 +1045,7 @@ function InvestBook() {
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
           <div>
             <h1 style={{ fontSize: 26, fontWeight: 800, color: T.text, letterSpacing: "-0.02em" }}>Pozice portfolia</h1>
-            <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>{allRows.length} pozic · {fmtCZK(totalValue)}</div>
+            <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>{allRows.length} pozic · {fmt(totalValue)}</div>
           </div>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <span style={{ fontSize: 12, color: T.muted, padding: "6px 12px", background: "rgba(255,255,255,0.04)", borderRadius: 8 }}>✎ klikni pro editaci</span>
@@ -1068,7 +1084,7 @@ function InvestBook() {
                     <EditCell value={pos.value}    color={T.text}  onSave={v => updateManual(pos.id,"value",v)} />
                     <EditCell value={Math.round(gain)} color={gc} onSave={v => updateManual(pos.id,"gain",v)} />
                     <td style={{ ...nc(gc), fontWeight: 700 }}>{gainPct >= 0 ? "+" : ""}{gainPct.toFixed(2)}%</td>
-                    <td style={nc(T.subtle)} title="Vypočítáno: Hodnota − Výnos">{fmtCZK(pos.invested)}</td>
+                    <td style={nc(T.subtle)} title="Vypočítáno: Hodnota − Výnos">{fmt(pos.invested)}</td>
                     <EditCell value={pos.start} color={T.muted} onSave={v => updateManual(pos.id,"start",v)} />
                     <td style={{ padding: "0 8px", textAlign: "center" }}>
                       <button onClick={() => deleteManual(pos.id)} style={{ background: "none", border: "none", color: T.subtle, cursor: "pointer", fontSize: 18, padding: "4px 6px", borderRadius: 4 }}
@@ -1082,10 +1098,10 @@ function InvestBook() {
             <tfoot>
               <tr style={{ borderTop: "1px solid rgba(34,197,94,0.15)", background: "rgba(34,197,94,0.03)" }}>
                 <td colSpan={3} style={{ padding: "10px 12px", fontSize: 12, color: T.green, fontWeight: 700 }}>SOUČET</td>
-                <td style={{ ...nc(T.text), fontSize: 15, fontWeight: 800 }}>{fmtCZK(manualTotal)}</td>
-                <td style={nc(T.green)}>{fmtCZK(manualTotal - manualInvested)}</td>
+                <td style={{ ...nc(T.text), fontSize: 15, fontWeight: 800 }}>{fmt(manualTotal)}</td>
+                <td style={nc(T.green)}>{fmt(manualTotal - manualInvested)}</td>
                 <td style={{ ...nc(T.green), fontWeight: 700 }}>{manualInvested > 0 ? "+" + (((manualTotal-manualInvested)/manualInvested)*100).toFixed(2)+"%" : "—"}</td>
-                <td style={nc(T.muted)}>{fmtCZK(manualInvested)}</td>
+                <td style={nc(T.muted)}>{fmt(manualInvested)}</td>
                 <td colSpan={2} />
               </tr>
             </tfoot>
@@ -1182,11 +1198,11 @@ function InvestBook() {
                     <EditCell value={pos.category} isSelect options={CATEGORIES} align="left" color={CAT_COLOR[pos.category]||T.muted} onSave={v=>updateImported(pos.id,"category",v)}/>
                     <td style={nc(T.subtle)}>{pos.shares != null ? pos.shares.toLocaleString("cs-CZ",{maximumFractionDigits:6}) : "—"}</td>
                     <td style={nc(T.muted)}>{(pos.invested||0).toLocaleString("cs-CZ",{maximumFractionDigits:2})} {pos.currency}</td>
-                    <td style={nc(T.muted)}>{fmtCZK(invCZK)}</td>
+                    <td style={nc(T.muted)}>{fmt(invCZK)}</td>
                     <td style={{ ...nc(hasPrice ? T.text : "#f59e0b"), fontWeight: hasPrice ? 700 : 400 }}>
-                      {hasPrice ? fmtCZK(valueCZK) : "doplň cenu"}
+                      {hasPrice ? fmt(valueCZK) : "doplň cenu"}
                     </td>
-                    <td style={nc(hasPrice ? gc : T.subtle)}>{hasPrice ? (gainCZK>=0?"+":"")+fmtCZK(gainCZK) : "—"}</td>
+                    <td style={nc(hasPrice ? gc : T.subtle)}>{hasPrice ? (gainCZK>=0?"+":"")+fmt(gainCZK) : "—"}</td>
                     <td style={{...nc(hasPrice ? gc : T.subtle), fontWeight:700}}>{hasPrice ? (gainPct>=0?"+":"")+gainPct.toFixed(2)+"%" : "—"}</td>
                   </tr>
                 );
@@ -1196,9 +1212,9 @@ function InvestBook() {
               <tr style={{ borderTop:"1px solid rgba(59,130,246,0.2)", background:"rgba(59,130,246,0.03)" }}>
                 <td colSpan={3} style={{ padding:"10px 12px", fontSize:12, color:T.blue, fontWeight:700 }}>SOUČET</td>
                 <td colSpan={2} style={nc(T.muted)}>—</td>
-                <td style={nc(T.muted)}>{fmtCZK(importedInvested)}</td>
-                <td style={{ ...nc(T.text), fontSize:14, fontWeight:800 }}>{fmtCZK(importedTotal)}</td>
-                <td style={nc(T.green)}>{fmtCZK(importedTotal - importedInvested)}</td>
+                <td style={nc(T.muted)}>{fmt(importedInvested)}</td>
+                <td style={{ ...nc(T.text), fontSize:14, fontWeight:800 }}>{fmt(importedTotal)}</td>
+                <td style={nc(T.green)}>{fmt(importedTotal - importedInvested)}</td>
                 <td style={{ ...nc(T.green), fontWeight:700 }}>{importedInvested > 0 ? "+"+(((importedTotal-importedInvested)/importedInvested)*100).toFixed(2)+"%" : "—"}</td>
               </tr>
             </tfoot>
@@ -1216,8 +1232,8 @@ function InvestBook() {
                 <tbody>
                   <tr style={{ borderBottom:"1px solid rgba(255,255,255,0.04)" }}>
                     <td style={{ padding:"13px 20px", fontSize:13, color:T.muted, width:"35%" }}>Hodnota portfolia</td>
-                    <td style={{ padding:"13px 20px", fontSize:15, fontWeight:700, color:T.green, fontFamily:"'DM Mono',monospace", textAlign:"right" }}>{fmtCZK(totalValue)}</td>
-                    <td style={{ padding:"13px 20px", fontSize:12, color:T.muted, textAlign:"right" }}>investováno {fmtCZK(totalInvested)}</td>
+                    <td style={{ padding:"13px 20px", fontSize:15, fontWeight:700, color:T.green, fontFamily:"'DM Mono',monospace", textAlign:"right" }}>{fmt(totalValue)}</td>
+                    <td style={{ padding:"13px 20px", fontSize:12, color:T.muted, textAlign:"right" }}>investováno {fmt(totalInvested)}</td>
                   </tr>
                   <tr style={{ borderBottom:"1px solid rgba(255,255,255,0.04)" }}>
                     <td style={{ padding:"13px 20px", fontSize:13, color:T.muted }}>Zůstatek na účtu</td>
@@ -1237,12 +1253,12 @@ function InvestBook() {
                   </tr>
                   <tr style={{ borderBottom:"1px solid rgba(255,255,255,0.04)", background:"rgba(255,255,255,0.015)" }}>
                     <td style={{ padding:"13px 20px", fontSize:13, color:T.muted }}>Hodnota majetku celkem</td>
-                    <td style={{ padding:"13px 20px", fontSize:15, fontWeight:700, color:T.text, fontFamily:"'DM Mono',monospace", textAlign:"right" }}>{fmtCZK(hodnotaMajetku)}</td>
+                    <td style={{ padding:"13px 20px", fontSize:15, fontWeight:700, color:T.text, fontFamily:"'DM Mono',monospace", textAlign:"right" }}>{fmt(hodnotaMajetku)}</td>
                     <td style={{ padding:"13px 20px", fontSize:12, color:T.muted, textAlign:"right" }}>portfolio + hotovost</td>
                   </tr>
                   <tr style={{ background:"rgba(34,197,94,0.04)" }}>
                     <td style={{ padding:"14px 20px", fontSize:14, fontWeight:700, color:T.text }}>Čistý majetek</td>
-                    <td style={{ padding:"14px 20px", fontSize:20, fontWeight:800, color:cistyMajetek>=0?T.green:T.red, fontFamily:"'DM Mono',monospace", textAlign:"right" }}>{fmtCZK(cistyMajetek)}</td>
+                    <td style={{ padding:"14px 20px", fontSize:20, fontWeight:800, color:cistyMajetek>=0?T.green:T.red, fontFamily:"'DM Mono',monospace", textAlign:"right" }}>{fmt(cistyMajetek)}</td>
                     <td style={{ padding:"14px 20px", fontSize:12, color:T.muted, textAlign:"right" }}>majetek − hypotéka</td>
                   </tr>
                 </tbody>
@@ -1296,7 +1312,7 @@ function InvestBook() {
       return (
         <div style={{ background: T.card, border: "1px solid rgba(255,255,255,0.1)", borderRadius: 10, padding: "10px 14px", fontFamily: "'DM Mono',monospace", fontSize: 13 }}>
           <div style={{ color: T.text, marginBottom: 3, fontWeight: 600 }}>{d.name}</div>
-          <div style={{ color: T.green }}>{fmtCZK(d.value)}</div>
+          <div style={{ color: T.green }}>{fmt(d.value)}</div>
           <div style={{ color: T.muted, marginTop: 2 }}>{((d.value / totalValue) * 100).toFixed(1)} %</div>
         </div>
       );
@@ -1317,11 +1333,11 @@ function InvestBook() {
         <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 16 }}>
           <StatCard label="Největší pozice"
             value={biggest ? biggest.name.split("(")[0].trim() : "—"}
-            sub={biggest ? fmtCZK(biggest.valueCZK) + " · " + ((biggest.valueCZK/totalValue)*100).toFixed(1) + "%" : ""}
+            sub={biggest ? fmt(biggest.valueCZK) + " · " + ((biggest.valueCZK/totalValue)*100).toFixed(1) + "%" : ""}
             color={T.green} accent={T.green} />
           <StatCard label="Nejmenší pozice"
             value={smallest ? smallest.name.split("(")[0].trim() : "—"}
-            sub={smallest ? fmtCZK(smallest.valueCZK) + " · " + ((smallest.valueCZK/totalValue)*100).toFixed(1) + "%" : ""}
+            sub={smallest ? fmt(smallest.valueCZK) + " · " + ((smallest.valueCZK/totalValue)*100).toFixed(1) + "%" : ""}
             color={T.muted} accent={T.subtle} />
           <StatCard label="Nejstarší pozice"  value={oldest ? oldest.name.split("(")[0].trim() : "—"} sub={oldest ? String(oldest.start) : ""} color={T.muted} accent={T.subtle} />
           <StatCard label="Nejnovější pozice" value={newest ? newest.name.split("(")[0].trim() : "—"} sub={newest ? String(newest.start) : ""} color={T.muted} accent={T.subtle} />
@@ -1353,7 +1369,7 @@ function InvestBook() {
                         <span style={{ fontSize: 14, color: T.muted }}>{d.name}</span>
                       </div>
                       <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                        <span style={{ fontSize: 13, color: T.subtle }}>{fmtCZK(d.value)}</span>
+                        <span style={{ fontSize: 13, color: T.subtle }}>{fmt(d.value)}</span>
                         <span style={{ fontSize: 14, fontWeight: 600, color: T.text, fontFamily: "'DM Mono',monospace", minWidth: 38, textAlign: "right" }}>{((d.value/totalValue)*100).toFixed(1)}%</span>
                       </div>
                     </div>
@@ -1389,7 +1405,7 @@ function InvestBook() {
                       <div style={{ width: pct+"%", height: "100%", background: CAT_COLOR[e[0]] || T.muted, borderRadius: 2 }} />
                     </div>
                     <div style={{ display: "flex", justifyContent: "space-between" }}>
-                      <span style={{ fontSize: 12, color: T.subtle }}>{fmtCZK(e[1])}</span>
+                      <span style={{ fontSize: 12, color: T.subtle }}>{fmt(e[1])}</span>
                       <span style={{ fontSize: 12, color: gp >= 0 ? T.green : T.red, fontWeight: 600 }}>{gp >= 0 ? "+" : ""}{gp.toFixed(1)}%</span>
                     </div>
                   </div>
@@ -1401,7 +1417,7 @@ function InvestBook() {
 
         {/* Milestone tracker */}
         <div style={{ ...C, marginBottom: 16 }}>
-          <SectionTitle title="Milestone tracker" sub={"Odhad při " + avgAnnReturnNoCrypto.toFixed(2) + " % p.a. · aktuálně " + fmtCZK(totalValue)} />
+          <SectionTitle title="Milestone tracker" sub={"Odhad při " + avgAnnReturnNoCrypto.toFixed(2) + " % p.a. · aktuálně " + fmt(totalValue)} />
           <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
             {milestones.map((target, i) => {
               const reached = totalValue >= target;
@@ -1439,7 +1455,7 @@ function InvestBook() {
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
               <XAxis dataKey="name" tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.muted }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.muted }} axisLine={false} tickLine={false} tickFormatter={v => (v/1000).toFixed(0)+"k"} width={40} />
-              <Tooltip {...ttStyle} formatter={(v, name) => [fmtCZK(v), name]} />
+              <Tooltip {...ttStyle} formatter={(v, name) => [fmt(v), name]} />
               <Bar dataKey="Investováno" fill="rgba(107,114,128,0.35)" radius={[3,3,0,0]} />
               <Bar dataKey="Hodnota" radius={[3,3,0,0]}>
                 {barData.map((d, i) => <Cell key={i} fill={CAT_COLOR[d.cat] || T.green} fillOpacity={0.85} />)}
@@ -1485,15 +1501,25 @@ function InvestBook() {
               </button>
             ))}
           </nav>
-          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 16 }}>
+          <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
             <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <div style={{ width: 6, height: 6, borderRadius: "50%", background: T.green, animation: "pulse 2.5s infinite", boxShadow: "0 0 6px " + T.green }} />
               <span style={{ fontSize: 12, color: T.muted, fontFamily: "'DM Mono',monospace" }}>EUR 24,23 · USD 20,57</span>
             </div>
             <div style={{ height: 20, width: 1, background: T.border }} />
-            <span style={{ fontSize: 14, fontWeight: 700, color: T.green, fontFamily: "'DM Mono',monospace" }}>{fmtCZK(totalValue)}</span>
+            <div style={{ display: "flex", gap: 2, background: "rgba(255,255,255,0.04)", borderRadius: 8, padding: 3 }}>
+              {["CZK","EUR","USD"].map(cur => (
+                <button key={cur} onClick={() => setDispCurrency(cur)}
+                  style={{ padding: "3px 10px", borderRadius: 6, border: "none", cursor: "pointer",
+                    fontFamily: "'DM Mono',monospace", fontSize: 12, fontWeight: 700, transition: "all 0.12s",
+                    background: dispCurrency === cur ? T.blue : "transparent",
+                    color: dispCurrency === cur ? "#fff" : T.muted }}>
+                  {cur}
+                </button>
+              ))}
+            </div>
             <div style={{ height: 20, width: 1, background: T.border }} />
-
+            <span style={{ fontSize: 14, fontWeight: 700, color: T.green, fontFamily: "'DM Mono',monospace" }}>{fmt(totalValue)}</span>
           </div>
         </header>
 
