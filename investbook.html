@@ -549,9 +549,11 @@ function InvestBook() {
         if (pos.ticker && data.prices) {
           const t = pos.ticker;
           const tClean = t.replace(/[*]/g, "");
-          const candidates = [t, tClean, t.replace(/-(USD|EUR|GBP)$/, ""), tClean.replace(/-(USD|EUR|GBP)$/, "")];
+          const tBase  = tClean.replace(/-(USD|EUR|GBP|L)$/i, ""); // BTC-USD → BTC
+          const candidates = [t, tClean, tBase, t.toUpperCase(), tClean.toUpperCase(), tBase.toUpperCase(),
+                               tBase + "-USD", tBase + "-EUR", tClean + ".L"];
           for (const c of candidates) {
-            if (data.prices[c] > 0) { priceCZK = data.prices[c]; break; }
+            if (data.prices[c] != null && data.prices[c] > 0) { priceCZK = data.prices[c]; break; }
           }
         }
         return { ...pos, priceCZK };
@@ -1073,8 +1075,52 @@ function InvestBook() {
         </div>
 
         {/* IMPORTED POSITIONS (DEGIRO + eToro + Crypto) */}
-        <div style={{ fontSize: 11, color: T.muted, letterSpacing: "0.1em", fontWeight: 600, marginBottom: 8, textTransform: "uppercase" }}>
-          Importované pozice — DEGIRO · eToro · Crypto
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <div style={{ fontSize: 11, color: T.muted, letterSpacing: "0.1em", fontWeight: 600, textTransform: "uppercase" }}>
+            Importované pozice — DEGIRO · eToro · Crypto
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <input id="csvFileInput" type="file" accept=".csv" style={{ display:"none" }}
+              onChange={e => {
+                const file = e.target.files[0]; if (!file) return;
+                const reader = new FileReader();
+                reader.onload = async (evt) => {
+                  try {
+                    const rows = parseCSV(evt.target.result);
+                    const agg  = aggregateCSV(rows);
+                    if (!agg.length) { setGsMsg("✗ CSV neobsahuje platné transakce"); return; }
+                    let id = 500;
+                    const newPos = agg.map(p => ({
+                      id: id++, name: p.name, broker: p.broker, category: p.category,
+                      invested: Math.round(p.invested * 100) / 100,
+                      value:    Math.round(p.invested * 100) / 100,
+                      currency: p.currency,
+                      fx: p.currency === 'EUR' ? DEGIRO_FX : p.currency === 'GBP' ? GBP_FX : ETORO_FX,
+                      start: p.start, annReturn: null,
+                      shares: Math.round(p.shares * 1000000) / 1000000,
+                      ticker: p.ticker,
+                    }));
+                    setImportedRows(newPos);
+                    setGsMsg("✓ CSV načteno — " + newPos.length + " pozic. Ulož do Sheets.");
+                    setTimeout(() => setGsMsg(""), 5000);
+                  } catch(err) { setGsMsg("✗ Chyba při čtení CSV: " + err.message); }
+                };
+                reader.readAsText(file, 'utf-8');
+                e.target.value = '';
+              }} />
+            <button onClick={() => document.getElementById('csvFileInput').click()}
+              style={{ background:"rgba(59,130,246,0.12)", border:"1px solid rgba(59,130,246,0.25)", borderRadius:7, color:T.blue, cursor:"pointer", padding:"5px 12px", fontSize:12, fontWeight:600 }}>
+              ↑ CSV import
+            </button>
+            <button onClick={handleLoad} disabled={gsStatus === "loading"}
+              style={{ background:"rgba(99,102,241,0.12)", border:"1px solid rgba(99,102,241,0.25)", borderRadius:7, color:"#a5b4fc", cursor: gsStatus==="loading"?"default":"pointer", padding:"5px 12px", fontSize:12, fontWeight:600, opacity: gsStatus==="loading"?0.6:1 }}>
+              {gsStatus === "loading" ? "⟳ Načítám…" : "↺ Refresh ze Sheets"}
+            </button>
+            <button onClick={handleSave} disabled={gsStatus === "saving" || gsStatus === "loading"}
+              style={{ background:"rgba(16,185,129,0.12)", border:"1px solid rgba(16,185,129,0.25)", borderRadius:7, color:"#6ee7b7", cursor:"pointer", padding:"5px 12px", fontSize:12, fontWeight:600, opacity: gsStatus==="saving"?0.6:1 }}>
+              {gsStatus === "saving" ? "⟳ Ukládám…" : gsStatus === "saved" ? "✓ Uloženo" : "↑ Uložit do Sheets"}
+            </button>
+          </div>
         </div>
 
         <div style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 14, overflow: "hidden", marginBottom: 20 }}>
@@ -1400,46 +1446,7 @@ function InvestBook() {
             <div style={{ height: 20, width: 1, background: T.border }} />
             <span style={{ fontSize: 14, fontWeight: 700, color: T.green, fontFamily: "'DM Mono',monospace" }}>{fmtCZK(totalValue)}</span>
             <div style={{ height: 20, width: 1, background: T.border }} />
-            <input ref={React.useRef(null)} id="csvFileInput" type="file" accept=".csv" style={{ display:"none" }}
-              onChange={e => {
-                const file = e.target.files[0]; if (!file) return;
-                const reader = new FileReader();
-                reader.onload = async (evt) => {
-                  try {
-                    const rows = parseCSV(evt.target.result);
-                    const agg  = aggregateCSV(rows);
-                    if (!agg.length) { setGsMsg("✗ CSV neobsahuje platné transakce"); return; }
-                    let id = 500;
-                    const newPos = agg.map(p => ({
-                      id: id++, name: p.name, broker: p.broker, category: p.category,
-                      invested: Math.round(p.invested * 100) / 100,
-                      value:    Math.round(p.invested * 100) / 100,
-                      currency: p.currency,
-                      fx: p.currency === 'EUR' ? DEGIRO_FX : p.currency === 'GBP' ? GBP_FX : ETORO_FX,
-                      start: p.start, annReturn: null,
-                      shares: Math.round(p.shares * 1000000) / 1000000,
-                      ticker: p.ticker,
-                    }));
-                    setImportedRows(newPos);
-                    setGsMsg("✓ CSV načteno — " + newPos.length + " pozic. Ulož do Sheets.");
-                    setTimeout(() => setGsMsg(""), 5000);
-                  } catch(err) { setGsMsg("✗ Chyba při čtení CSV: " + err.message); }
-                };
-                reader.readAsText(file, 'utf-8');
-                e.target.value = '';
-              }} />
-            <button onClick={() => document.getElementById('csvFileInput').click()}
-              style={{ background:"rgba(59,130,246,0.15)", border:"1px solid rgba(59,130,246,0.3)", borderRadius:8, color:T.blue, cursor:"pointer", padding:"6px 14px", fontSize:13, fontWeight:600 }}>
-              ↑ CSV
-            </button>
-            <button onClick={handleLoad} disabled={gsStatus === "loading"}
-              style={{ background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.3)", borderRadius: 8, color: "#a5b4fc", cursor: gsStatus === "loading" ? "default" : "pointer", padding: "6px 14px", fontSize: 13, fontWeight: 600, opacity: gsStatus === "loading" ? 0.6 : 1 }}>
-              {gsStatus === "loading" ? "⟳ Načítám…" : "↺ Refresh"}
-            </button>
-            <button onClick={handleSave} disabled={gsStatus === "saving" || gsStatus === "loading"}
-              style={{ background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.3)", borderRadius: 8, color: "#6ee7b7", cursor: "pointer", padding: "6px 14px", fontSize: 13, fontWeight: 600, opacity: gsStatus === "saving" ? 0.6 : 1 }}>
-              {gsStatus === "saving" ? "⟳ Ukládám…" : gsStatus === "saved" ? "✓ Uloženo" : "↑ Uložit"}
-            </button>
+
           </div>
         </header>
 
