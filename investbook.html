@@ -141,7 +141,7 @@ async function ensurePricesHeader() {
       await gapi.client.sheets.spreadsheets.values.update({
         spreadsheetId: window.INVESTBOOK_CONFIG.SPREADSHEET_ID,
         range: "prices!C2:C1000", valueInputOption: "USER_ENTERED",
-        resource: { values: Array.from({length: 999}, (_, i) => [`=IF(B${i+2}<>"",B${i+2}*20.57,"")`]) }
+        resource: { values: Array.from({length: 999}, (_, i) => [`=B${i+2}*20,57`]) }
       });
     }
   } catch(e) { /* prices sheet may not exist yet */ }
