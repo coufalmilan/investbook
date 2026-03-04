@@ -522,6 +522,9 @@ function InvestBook() {
   const [customRate10, setCustomRate10] = useState(10);
   const [editingRate10, setEditingRate10] = useState(false);
   const [rate10Draft, setRate10Draft] = useState("10");
+  const [projYears, setProjYears] = useState(5);
+  const [editingProjYears, setEditingProjYears] = useState(false);
+  const [projYearsDraft, setProjYearsDraft] = useState("5");
 
   const PENSION_INIT = [
     {
@@ -616,8 +619,11 @@ function InvestBook() {
     }
     return totalWeight > 0 ? weightedSum / totalWeight : 0;
   };
-  const avgAnnReturn         = calcWeightedAnnReturn(allRows);
-  const avgAnnReturnNoCrypto = calcWeightedAnnReturn(allRows.filter(p => p.category !== "Crypto"));
+  // Pokud žádná importovaná pozice nemá priceCZK, ceny ještě nejsou načteny ze Sheets
+  // → použij STATIC hodnoty (ručně zadané) jako fallback
+  const hasPrices = importedRows.some(p => p.priceCZK && p.priceCZK > 0);
+  const avgAnnReturn         = hasPrices ? calcWeightedAnnReturn(allRows) : STATIC.avgAnnReturn;
+  const avgAnnReturnNoCrypto = hasPrices ? calcWeightedAnnReturn(allRows.filter(p => p.category !== "Crypto")) : STATIC.avgAnnReturnNoCrypto;
 
   // Update manual row
   const updateManual = useCallback((id, field, raw) => {
@@ -1745,6 +1751,24 @@ function InvestBook() {
     const totalIn = (acc.myTotal||0) + (acc.employerTotal||0) + (acc.stateTotal||0);
     const appreciation = acc.appreciation || (currentValue - totalIn);
 
+    // CAGR – roční výnos zhodnocení
+    // Počítáme z celkového vloženého kapitálu vs. aktuální hodnota, přes počet let spoření
+    const spendingYears = Math.max(1, NOW_YEAR - (acc.startYear || 2006));
+    const cagrRaw = totalIn > 0 && currentValue > 0
+      ? (Math.pow(currentValue / totalIn, 1 / spendingYears) - 1) * 100
+      : null;
+    // CAGR z historických záznamů (první → poslední)
+    const histYears = entries.length >= 2
+      ? (() => {
+          const [fy, fm] = entries[0].label.split("-").map(Number);
+          const [ly, lm] = entries[entries.length-1].label.split("-").map(Number);
+          return Math.max(0.08, (ly - fy) + (lm - fm) / 12);
+        })()
+      : null;
+    const cagrHist = histYears && firstValue > 0 && currentValue > 0
+      ? (Math.pow(currentValue / firstValue, 1 / histYears) - 1) * 100
+      : null;
+
     // Graf data
     const chartData = entries.map(e => ({ label: e.label, hodnota: e.amount }));
 
@@ -1768,12 +1792,13 @@ function InvestBook() {
         </div>
 
         {/* KPI karty */}
-        <div className="ib-grid4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 16 }}>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 12, marginBottom: 16 }}>
           {[
             { label: "Celkem vloženo", value: fmt(totalIn), sub: `já ${fmt(acc.myTotal||0)} + zaměst. ${fmt(acc.employerTotal||0)}`, color: T.muted },
             { label: "Státní příspěvky", value: fmt(acc.stateTotal||0), color: T.amber },
-            { label: "Zhodnocení", value: fmt(appreciation), sub: totalIn > 0 ? "+" + ((appreciation/totalIn)*100).toFixed(1) + " %" : "", color: T.green },
-            { label: "Průměr. měs. přírůstek", value: fmt(avgMonthly), sub: "z historických dat", color: PURPLE },
+            { label: "Zhodnocení celkem", value: fmt(appreciation), sub: totalIn > 0 ? "+" + ((appreciation/totalIn)*100).toFixed(1) + " % z vkladu" : "", color: T.green },
+            { label: "Průměrný roční výnos (CAGR)", value: cagrRaw !== null ? "+" + cagrRaw.toFixed(2) + " %" : "—", sub: `od ${acc.startYear||2006} · ${spendingYears} let`, color: T.green },
+            { label: "Průměr. měs. přírůstek", value: fmt(avgMonthly), sub: cagrHist !== null ? "hist. CAGR +" + cagrHist.toFixed(2) + " %" : "z historických dat", color: PURPLE },
           ].map((k, i) => (
             <div key={i} style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 12, padding: "16px 18px" }}>
               <div style={{ fontSize: 10, color: T.muted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>{k.label}</div>
@@ -1850,7 +1875,10 @@ function InvestBook() {
                   <td style={{ padding: "9px 12px", fontSize: 12, color: PURPLE, fontWeight: 700 }}>CELKOVÝ RŮST</td>
                   <td style={{ padding: "9px 12px", textAlign: "right", fontSize: 14, color: T.text, fontWeight: 800, fontFamily: "'DM Mono',monospace" }}>{fmt(currentValue)}</td>
                   <td style={{ padding: "9px 12px", textAlign: "right", fontSize: 13, color: T.green, fontFamily: "'DM Mono',monospace" }}>+{fmt(currentValue - firstValue)}</td>
-                  <td style={{ padding: "9px 12px", textAlign: "right", fontSize: 13, color: T.green, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>+{totalGrowth.toFixed(2)}%</td>
+                  <td style={{ padding: "9px 12px", textAlign: "right", fontFamily: "'DM Mono',monospace" }}>
+                    <div style={{ fontSize: 13, color: T.green, fontWeight: 700 }}>+{totalGrowth.toFixed(2)}%</div>
+                    {cagrHist !== null && <div style={{ fontSize: 11, color: PURPLE, marginTop: 2 }}>CAGR +{cagrHist.toFixed(2)}% p.a.</div>}
+                  </td>
                 </tr>
               </tfoot>
             </table>
@@ -1858,18 +1886,39 @@ function InvestBook() {
         )}
 
         {/* Projekce */}
-        <div className="ib-grid2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
-          <div style={{ ...C, marginBottom: 0 }}>
-            <div style={{ fontSize: 13, color: T.muted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 12 }}>Projekce – konec roku 2026</div>
-            <div style={{ fontSize: 28, fontWeight: 800, color: PURPLE, fontFamily: "'DM Mono',monospace" }}>{fmt(projYear)}</div>
-            <div style={{ fontSize: 12, color: T.muted, marginTop: 6 }}>při průměrném přírůstku {fmt(avgMonthly)}/měs · {monthsToYearEnd} měsíců</div>
-          </div>
-          <div style={{ ...C, marginBottom: 0 }}>
-            <div style={{ fontSize: 13, color: T.muted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 12 }}>Projekce – za 5 let</div>
-            <div style={{ fontSize: 28, fontWeight: 800, color: T.amber, fontFamily: "'DM Mono',monospace" }}>{fmt(proj5)}</div>
-            <div style={{ fontSize: 12, color: T.muted, marginTop: 6 }}>při stejném tempu růstu · rok {new Date().getFullYear() + 5}</div>
-          </div>
-        </div>
+        {(() => {
+          const projN = currentValue + avgMonthly * 12 * projYears;
+          const commitProjYears = () => { const n = parseInt(projYearsDraft); if (n > 0 && n <= 50) setProjYears(n); setEditingProjYears(false); };
+          return (
+            <div className="ib-grid2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+              <div style={{ ...C, marginBottom: 0 }}>
+                <div style={{ fontSize: 13, color: T.muted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 12 }}>Projekce – konec roku {NOW_YEAR}</div>
+                <div style={{ fontSize: 28, fontWeight: 800, color: PURPLE, fontFamily: "'DM Mono',monospace" }}>{fmt(projYear)}</div>
+                <div style={{ fontSize: 12, color: T.muted, marginTop: 6 }}>při průměrném přírůstku {fmt(avgMonthly)}/měs · {monthsToYearEnd} měsíců</div>
+              </div>
+              <div style={{ ...C, marginBottom: 0 }}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
+                  <span style={{ fontSize: 13, color: T.muted, letterSpacing: "0.08em", textTransform: "uppercase" }}>Projekce – za</span>
+                  {editingProjYears ? (
+                    <input autoFocus type="text" value={projYearsDraft}
+                      onChange={e => setProjYearsDraft(e.target.value)}
+                      onBlur={commitProjYears}
+                      onKeyDown={e => { if (e.key === "Enter") commitProjYears(); if (e.key === "Escape") setEditingProjYears(false); }}
+                      style={{ background: T.bg, border: "1px solid " + T.amber, borderRadius: 6, color: T.text, fontFamily: "'DM Mono',monospace", fontSize: 15, fontWeight: 700, padding: "2px 8px", width: 48, outline: "none", textAlign: "center" }} />
+                  ) : (
+                    <span onClick={() => { setProjYearsDraft(String(projYears)); setEditingProjYears(true); }}
+                      style={{ padding: "2px 10px", background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.25)", borderRadius: 6, cursor: "text", fontFamily: "'DM Mono',monospace", fontSize: 15, color: T.amber, fontWeight: 700 }}>
+                      {projYears} ✎
+                    </span>
+                  )}
+                  <span style={{ fontSize: 13, color: T.muted, letterSpacing: "0.08em", textTransform: "uppercase" }}>let</span>
+                </div>
+                <div style={{ fontSize: 28, fontWeight: 800, color: T.amber, fontFamily: "'DM Mono',monospace" }}>{fmt(projN)}</div>
+                <div style={{ fontSize: 12, color: T.muted, marginTop: 6 }}>při stejném tempu růstu · rok {NOW_YEAR + projYears}</div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Metadata – editovatelná */}
         <div style={{ ...C }}>
