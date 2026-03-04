@@ -111,16 +111,43 @@ async function clearSheet(name) {
     range: name + "!A1:Z10000",
   });
 }
-async function saveToSheets(manual, imported, settings) {
+const PENSION_SHEET_HDR = ["id","name","myContrib","employerContrib","startYear","myTotal","employerTotal","stateTotal","appreciation"];
+const PENSION_ENTRY_HDR = ["accountId","entryId","label","amount"];
+
+function pensionToRows(accounts) {
+  const accs = accounts.map(a => [a.id, a.name, a.myContrib||0, a.employerContrib||0, a.startYear||2006, a.myTotal||0, a.employerTotal||0, a.stateTotal||0, a.appreciation||0]);
+  const entries = accounts.flatMap(a => (a.entries||[]).map(e => [a.id, e.id, e.label, e.amount]));
+  return { accs, entries };
+}
+
+function rowsToPension(accRows, entryRows) {
+  const accounts = accRows.filter(r=>r.length>=2).map(r => ({
+    id: +r[0], name: r[1], myContrib: +r[2]||0, employerContrib: +r[3]||0,
+    startYear: +r[4]||2006, myTotal: +r[5]||0, employerTotal: +r[6]||0,
+    stateTotal: +r[7]||0, appreciation: +r[8]||0, entries: []
+  }));
+  for (const r of entryRows.filter(r=>r.length>=4)) {
+    const acc = accounts.find(a => a.id === +r[0]);
+    if (acc) acc.entries.push({ id: +r[1], label: r[2], amount: +r[3]||0 });
+  }
+  return accounts;
+}
+
+async function saveToSheets(manual, imported, settings, pension) {
   await ensureSheets();
   await Promise.all([
     clearSheet("manual_positions"),
     clearSheet("imported_positions"),
     clearSheet("settings"),
+    clearSheet("pension_accounts"),
+    clearSheet("pension_entries"),
   ]);
+  const { accs, entries } = pensionToRows(pension || []);
   await sheetsSet("manual_positions!A1",   [PHDR, ...manual.map(posToRow)]);
   await sheetsSet("imported_positions!A1", [PHDR_IMP, ...imported.map(posToRowImp)]);
   await sheetsSet("settings!A1", [["key","value"], ...Object.entries(settings).map(([k,v])=>[k,v])]);
+  await sheetsSet("pension_accounts!A1", [PENSION_SHEET_HDR, ...accs]);
+  if (entries.length) await sheetsSet("pension_entries!A1", [PENSION_ENTRY_HDR, ...entries]);
 }
 
 async function ensurePricesHeader() {
@@ -148,11 +175,13 @@ async function ensurePricesHeader() {
 }
 
 async function loadFromSheets() {
-  const [m, i, s, p] = await Promise.all([
+  const [m, i, s, p, pa, pe] = await Promise.all([
     sheetsGet("manual_positions!A2:L1000"),
     sheetsGet("imported_positions!A2:L1000"),
     sheetsGet("settings!A2:B100"),
-    sheetsGet("prices!A1:C1000"),  // A=ticker, B=priceUSD, C=priceCZK (formula)
+    sheetsGet("prices!A1:C1000"),
+    sheetsGet("pension_accounts!A2:I1000"),
+    sheetsGet("pension_entries!A2:D10000"),
   ]);
   // First row is header (A1:C1), data starts at row index 1
   const priceRows = (p||[]).slice(1);
@@ -174,11 +203,13 @@ async function loadFromSheets() {
     }
     if (ticker && priceCZK && isFinite(priceCZK) && priceCZK > 0) prices[ticker] = priceCZK;
   }
+  const pensionFromSheets = (pa && pa.length) ? rowsToPension(pa, pe||[]) : null;
   return {
     manual:   m.filter(r=>r.length>=6).map(rowToPos),
     imported: i.filter(r=>r.length>=3).map(rowToImp),
     settings: Object.fromEntries((s||[]).map(r=>[r[0],r[1]])),
     prices,
+    pension: pensionFromSheets,
   };
 }
 
@@ -492,6 +523,31 @@ function InvestBook() {
   const [editingRate10, setEditingRate10] = useState(false);
   const [rate10Draft, setRate10Draft] = useState("10");
 
+  const PENSION_INIT = [
+    {
+      id: 1,
+      name: "Doplňkové penzijní spoření",
+      // Metadata – editovatelná
+      myContrib: 500,          // Kč/měsíc – můj příspěvek
+      employerContrib: 0,      // Kč/měsíc – příspěvek zaměstnavatele
+      startYear: 2006,         // rok začátku spoření (231 měsíců = ~2006)
+      myTotal: 117244,         // celkový můj příspěvek
+      employerTotal: 183099,   // celkový příspěvek zaměstnavatele
+      stateTotal: 31080,       // státní příspěvky celkem
+      appreciation: 117237,    // zhodnocení
+      // Měsíční záznamy hodnoty
+      entries: [
+        { id: 1,  label: "2025-06", amount: 392971 },
+        { id: 2,  label: "2025-09", amount: 416850 },
+        { id: 3,  label: "2025-10", amount: 429584 },
+        { id: 4,  label: "2025-11", amount: 442250 },
+        { id: 5,  label: "2026-02", amount: 443212 },
+        { id: 6,  label: "2026-03", amount: 448660 },
+      ],
+    },
+  ];
+  const [pensionAccounts, setPensionAccounts] = useState(PENSION_INIT);
+
   // Manual positions (ČSOB + Portu)
   const [manualRows, setManualRows] = useState([...INITIAL_CSOB, ...INITIAL_MANUAL_EXTRA]);
   // Imported positions (DEGIRO + eToro + Crypto)
@@ -639,6 +695,7 @@ function InvestBook() {
       if (data.settings.hypoteka) setHypoteka(parseFloat(data.settings.hypoteka));
       if (data.settings.zustatek) setZustatek(parseFloat(data.settings.zustatek));
     }
+    if (data.pension && data.pension.length) setPensionAccounts(data.pension);
   };
 
   React.useEffect(() => {
@@ -687,7 +744,7 @@ function InvestBook() {
         monthlyContrib: String(monthlyContrib),
         hypoteka: String(hypoteka),
         zustatek: String(zustatek),
-      }));
+      }, pensionAccounts));
       setGsStatus("saved");
       setGsMsg("✓ Uloženo do Sheets");
       setTimeout(() => { setGsStatus("idle"); setGsMsg(""); }, 3000);
@@ -1146,7 +1203,7 @@ function InvestBook() {
         </div>
 
         {/* Price fetch status banner */}
-        
+
         {/* MANUAL POSITIONS (ČSOB + Portu) */}
         <div style={{ fontSize: 11, color: T.muted, letterSpacing: "0.1em", fontWeight: 600, marginBottom: 8, textTransform: "uppercase" }}>
           Ruční pozice — ČSOB
@@ -1659,9 +1716,231 @@ function InvestBook() {
     );
   };
 
+  // ── PENZIJKO TAB ────────────────────────────────────────────────────────────
+  const tabPenzijko = () => {
+    const C = { background: T.card, border: "1px solid " + T.border, borderRadius: 14, padding: "20px 22px", marginBottom: 16 };
+    const PURPLE = "#a78bfa";
+    const PURPLE_DIM = "rgba(167,139,250,0.15)";
+    const PURPLE_BORDER = "rgba(167,139,250,0.25)";
+
+    // Jen první účet – lze rozšířit na více
+    const acc = pensionAccounts[0];
+    if (!acc) return <div style={{ color: T.muted, padding: 40 }}>Žádný penzijní účet.</div>;
+
+    const entries = [...(acc.entries || [])].sort((a, b) => a.label.localeCompare(b.label));
+    const currentValue = entries.length ? entries[entries.length - 1].amount : 0;
+    const firstValue   = entries.length ? entries[0].amount : 0;
+    const totalGrowth  = firstValue > 0 ? ((currentValue - firstValue) / firstValue) * 100 : 0;
+
+    // Průměrný měsíční přírůstek (z po sobě jdoucích záznamů)
+    const diffs = entries.slice(1).map((e, i) => e.amount - entries[i].amount).filter(d => d > 0);
+    const avgMonthly = diffs.length ? diffs.reduce((s,d)=>s+d,0) / diffs.length : 0;
+
+    // Odhad na konec roku / za 5 let
+    const monthsToYearEnd = 12 - new Date().getMonth();
+    const projYear  = currentValue + avgMonthly * monthsToYearEnd;
+    const proj5     = currentValue + avgMonthly * 12 * 5;
+
+    // Celkový vložený kapitál (moje + zaměstnavatel + stát)
+    const totalIn = (acc.myTotal||0) + (acc.employerTotal||0) + (acc.stateTotal||0);
+    const appreciation = acc.appreciation || (currentValue - totalIn);
+
+    // Graf data
+    const chartData = entries.map(e => ({ label: e.label, hodnota: e.amount }));
+
+    // Pomocník pro editaci metadata
+    const updateMeta = (field, raw) => {
+      setPensionAccounts(prev => prev.map(a => a.id !== acc.id ? a : { ...a, [field]: parseFlt(raw)||0 }));
+    };
+
+    return (
+      <div>
+        {/* Header */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24 }}>
+          <div>
+            <h1 style={{ fontSize: 26, fontWeight: 800, color: T.text, letterSpacing: "-0.02em" }}>{acc.name}</h1>
+            <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>Doplňkové penzijní spoření · od {acc.startYear}</div>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 32, fontWeight: 800, color: PURPLE, fontFamily: "'DM Mono',monospace", letterSpacing: "-0.02em" }}>{fmt(currentValue)}</div>
+            <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>aktuální hodnota · {entries.length > 0 ? entries[entries.length-1].label : "—"}</div>
+          </div>
+        </div>
+
+        {/* KPI karty */}
+        <div className="ib-grid4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 16 }}>
+          {[
+            { label: "Celkem vloženo", value: fmt(totalIn), sub: `já ${fmt(acc.myTotal||0)} + zaměst. ${fmt(acc.employerTotal||0)}`, color: T.muted },
+            { label: "Státní příspěvky", value: fmt(acc.stateTotal||0), color: T.amber },
+            { label: "Zhodnocení", value: fmt(appreciation), sub: totalIn > 0 ? "+" + ((appreciation/totalIn)*100).toFixed(1) + " %" : "", color: T.green },
+            { label: "Průměr. měs. přírůstek", value: fmt(avgMonthly), sub: "z historických dat", color: PURPLE },
+          ].map((k, i) => (
+            <div key={i} style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 12, padding: "16px 18px" }}>
+              <div style={{ fontSize: 10, color: T.muted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>{k.label}</div>
+              <div style={{ fontSize: 20, fontWeight: 700, color: k.color, fontFamily: "'DM Mono',monospace" }}>{k.value}</div>
+              {k.sub && <div style={{ fontSize: 11, color: T.subtle, marginTop: 4 }}>{k.sub}</div>}
+            </div>
+          ))}
+        </div>
+
+        {/* Graf vývoje */}
+        <div style={{ ...C }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 4 }}>Vývoj hodnoty portfolia</div>
+          <div style={{ fontSize: 12, color: T.muted, marginBottom: 16 }}>Historické záznamy aktuální hodnoty</div>
+          {entries.length >= 2 ? (
+            <ResponsiveContainer width="100%" height={220}>
+              <AreaChart data={chartData} margin={{ left: 10, right: 10, top: 4, bottom: 0 }}>
+                <defs>
+                  <linearGradient id="gPension" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stopColor={PURPLE} stopOpacity={0.25} />
+                    <stop offset="100%" stopColor={PURPLE} stopOpacity={0.02} />
+                  </linearGradient>
+                </defs>
+                <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+                <XAxis dataKey="label" tick={{ fontFamily: "'DM Mono',monospace", fontSize: 11, fill: T.tick }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontFamily: "'DM Mono',monospace", fontSize: 11, fill: T.tick }} axisLine={false} tickLine={false} width={60}
+                  tickFormatter={v => v >= 1000000 ? (v/1000000).toFixed(2)+"M" : (v/1000).toFixed(0)+"k"} />
+                <Tooltip contentStyle={{ background: T.card, border: "1px solid " + PURPLE_BORDER, borderRadius: 10, fontFamily: "'DM Mono',monospace", fontSize: 12 }}
+                  formatter={v => [fmt(v), "Hodnota"]} />
+                <Area type="monotone" dataKey="hodnota" stroke={PURPLE} strokeWidth={2.5} fill="url(#gPension)"
+                  dot={{ r: 5, fill: PURPLE, strokeWidth: 0 }} activeDot={{ r: 7, fill: PURPLE, strokeWidth: 0 }} />
+              </AreaChart>
+            </ResponsiveContainer>
+          ) : (
+            <div style={{ padding: "40px 0", textAlign: "center", color: T.muted, fontSize: 13 }}>Přidej alespoň 2 záznamy pro zobrazení grafu.</div>
+          )}
+        </div>
+
+        {/* Meziroční přírůstky tabulka */}
+        {entries.length >= 2 && (
+          <div style={{ ...C }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 14 }}>Mezizáznamové přírůstky</div>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid " + T.border }}>
+                  {["Období","Hodnota","Přírůstek","Přírůstek %"].map((h, i) => (
+                    <th key={i} style={{ padding: "7px 12px", textAlign: i === 0 ? "left" : "right", fontSize: 10, color: T.muted, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase" }}>{h}</th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {entries.map((e, i) => {
+                  const prev = i > 0 ? entries[i-1].amount : null;
+                  const diff = prev !== null ? e.amount - prev : null;
+                  const diffPct = prev !== null && prev > 0 ? ((e.amount - prev) / prev * 100) : null;
+                  const gc = diff !== null ? (diff >= 0 ? T.green : T.red) : T.muted;
+                  return (
+                    <tr key={e.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.03)" }}
+                      onMouseEnter={el => el.currentTarget.style.background = "rgba(167,139,250,0.03)"}
+                      onMouseLeave={el => el.currentTarget.style.background = ""}>
+                      <td style={{ padding: "9px 12px", fontSize: 13, color: T.muted, fontFamily: "'DM Mono',monospace" }}>{e.label}</td>
+                      <td style={{ padding: "9px 12px", textAlign: "right", fontSize: 14, color: T.text, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{fmt(e.amount)}</td>
+                      <td style={{ padding: "9px 12px", textAlign: "right", fontSize: 13, color: gc, fontFamily: "'DM Mono',monospace" }}>
+                        {diff !== null ? (diff >= 0 ? "+" : "") + fmt(diff) : "—"}
+                      </td>
+                      <td style={{ padding: "9px 12px", textAlign: "right", fontSize: 13, color: gc, fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>
+                        {diffPct !== null ? (diffPct >= 0 ? "+" : "") + diffPct.toFixed(2) + "%" : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr style={{ borderTop: "1px solid " + PURPLE_BORDER, background: PURPLE_DIM }}>
+                  <td style={{ padding: "9px 12px", fontSize: 12, color: PURPLE, fontWeight: 700 }}>CELKOVÝ RŮST</td>
+                  <td style={{ padding: "9px 12px", textAlign: "right", fontSize: 14, color: T.text, fontWeight: 800, fontFamily: "'DM Mono',monospace" }}>{fmt(currentValue)}</td>
+                  <td style={{ padding: "9px 12px", textAlign: "right", fontSize: 13, color: T.green, fontFamily: "'DM Mono',monospace" }}>+{fmt(currentValue - firstValue)}</td>
+                  <td style={{ padding: "9px 12px", textAlign: "right", fontSize: 13, color: T.green, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>+{totalGrowth.toFixed(2)}%</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
+
+        {/* Projekce */}
+        <div className="ib-grid2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+          <div style={{ ...C, marginBottom: 0 }}>
+            <div style={{ fontSize: 13, color: T.muted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 12 }}>Projekce – konec roku 2026</div>
+            <div style={{ fontSize: 28, fontWeight: 800, color: PURPLE, fontFamily: "'DM Mono',monospace" }}>{fmt(projYear)}</div>
+            <div style={{ fontSize: 12, color: T.muted, marginTop: 6 }}>při průměrném přírůstku {fmt(avgMonthly)}/měs · {monthsToYearEnd} měsíců</div>
+          </div>
+          <div style={{ ...C, marginBottom: 0 }}>
+            <div style={{ fontSize: 13, color: T.muted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 12 }}>Projekce – za 5 let</div>
+            <div style={{ fontSize: 28, fontWeight: 800, color: T.amber, fontFamily: "'DM Mono',monospace" }}>{fmt(proj5)}</div>
+            <div style={{ fontSize: 12, color: T.muted, marginTop: 6 }}>při stejném tempu růstu · rok {new Date().getFullYear() + 5}</div>
+          </div>
+        </div>
+
+        {/* Metadata – editovatelná */}
+        <div style={{ ...C }}>
+          <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 14 }}>Detaily a příspěvky <span style={{ fontSize: 12, color: T.subtle, fontWeight: 400 }}>· klikni pro editaci</span></div>
+          <div className="ib-grid4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12 }}>
+            {[
+              { label: "Můj měs. příspěvek", field: "myContrib", value: acc.myContrib||0, suffix: " Kč/měs" },
+              { label: "Přísp. zaměstnavatele", field: "employerContrib", value: acc.employerContrib||0, suffix: " Kč/měs" },
+              { label: "Celkem já", field: "myTotal", value: acc.myTotal||0, suffix: " Kč" },
+              { label: "Celkem zaměstnavatel", field: "employerTotal", value: acc.employerTotal||0, suffix: " Kč" },
+              { label: "Státní příspěvky", field: "stateTotal", value: acc.stateTotal||0, suffix: " Kč" },
+              { label: "Zhodnocení", field: "appreciation", value: acc.appreciation||0, suffix: " Kč" },
+              { label: "Rok začátku spoření", field: "startYear", value: acc.startYear||2006, suffix: "" },
+            ].map(m => (
+              <div key={m.field} style={{ background: "rgba(255,255,255,0.02)", border: "1px solid " + T.border, borderRadius: 10, overflow: "hidden" }}>
+                <div style={{ padding: "6px 12px 2px", fontSize: 10, color: T.muted, letterSpacing: "0.07em", textTransform: "uppercase" }}>{m.label}</div>
+                <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                  <tbody><tr>
+                    <EditCell value={m.value} color={PURPLE} suffix={m.suffix} onSave={v => updateMeta(m.field, v)} />
+                  </tr></tbody>
+                </table>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Přidání záznamu */}
+        <div style={{ ...C, border: "1px solid " + PURPLE_BORDER }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+            <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>Záznamy hodnoty</div>
+            <button onClick={() => {
+              setPensionAccounts(prev => prev.map(a => {
+                if (a.id !== acc.id) return a;
+                const newId = Math.max(0, ...(a.entries||[]).map(e => e.id)) + 1;
+                const now = new Date();
+                const label = now.getFullYear() + "-" + String(now.getMonth()+1).padStart(2,"0");
+                return { ...a, entries: [...(a.entries||[]), { id: newId, label, amount: 0 }] };
+              }));
+            }}
+              style={{ background: PURPLE_DIM, border: "1px solid " + PURPLE_BORDER, borderRadius: 8, color: PURPLE, cursor: "pointer", padding: "7px 16px", fontSize: 13, fontWeight: 700 }}>
+              + Přidat záznam
+            </button>
+          </div>
+          <div style={{ fontSize: 12, color: T.muted, marginBottom: 12 }}>Datum ve formátu RRRR-MM, částka v Kč. Kliknutím na buňku lze editovat.</div>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+            {entries.map(entry => (
+              <div key={entry.id} style={{ display: "flex", alignItems: "center", gap: 4, background: "rgba(167,139,250,0.06)", border: "1px solid " + PURPLE_BORDER, borderRadius: 8, overflow: "hidden", minWidth: 200 }}>
+                <table style={{ borderCollapse: "collapse", flex: 1 }}>
+                  <tbody><tr>
+                    <EditCell value={entry.label} type="text" align="left" color={T.muted}
+                      onSave={v => setPensionAccounts(prev => prev.map(a => a.id!==acc.id?a:{...a,entries:a.entries.map(e=>e.id!==entry.id?e:{...e,label:v})}))} />
+                    <EditCell value={entry.amount} color={PURPLE}
+                      onSave={v => setPensionAccounts(prev => prev.map(a => a.id!==acc.id?a:{...a,entries:a.entries.map(e=>e.id!==entry.id?e:{...e,amount:parseFlt(v)||0})}))} />
+                  </tr></tbody>
+                </table>
+                <button onClick={() => setPensionAccounts(prev => prev.map(a => a.id!==acc.id?a:{...a,entries:a.entries.filter(e=>e.id!==entry.id)}))}
+                  style={{ background: "none", border: "none", color: T.subtle, cursor: "pointer", fontSize: 16, padding: "4px 8px", flexShrink: 0 }}
+                  onMouseEnter={e => e.currentTarget.style.color = T.red}
+                  onMouseLeave={e => e.currentTarget.style.color = T.subtle}>×</button>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   const TABS = [
     { id: "portfolio", label: "Přehled" },
     { id: "analyza",   label: "Analýza" },
+    { id: "penzijko",  label: "Penzijko" },
     { id: "positions", label: "Pozice" },
   ];
 
@@ -1745,7 +2024,7 @@ function InvestBook() {
               style={{ flex: 1, background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "4px 0",
                 color: activeTab === tab.id ? T.green : T.muted }}>
               <span style={{ fontSize: 20 }}>
-                {tab.id === "portfolio" ? "📊" : tab.id === "analyza" ? "🔍" : "📋"}
+                {tab.id === "portfolio" ? "📊" : tab.id === "analyza" ? "🔍" : tab.id === "penzijko" ? "🏦" : "📋"}
               </span>
               <span style={{ fontSize: 11, fontWeight: 600 }}>{tab.label}</span>
             </button>
@@ -1764,6 +2043,7 @@ function InvestBook() {
           {activeTab === "portfolio" && tabPrehled()}
           {activeTab === "positions" && tabPozice()}
           {activeTab === "analyza"   && tabAnalyza()}
+          {activeTab === "penzijko"  && tabPenzijko()}
         </main>
       </div>
     </div>
