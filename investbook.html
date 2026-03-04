@@ -476,6 +476,12 @@ function InvestBook() {
   const [tblDir, setTblDir] = useState("desc");
   const [activeCat, setActiveCat] = useState("vse");
   const [dispCurrency, setDispCurrency] = useState("CZK");
+  const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth <= 768);
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth <= 768);
+    window.addEventListener("resize", handler);
+    return () => window.removeEventListener("resize", handler);
+  }, []);
   const [monthlyContrib, setMonthlyContrib] = useState(30000);
   const [hypoteka, setHypoteka] = useState(1821963);
   const [zustatek, setZustatek] = useState(0);
@@ -709,7 +715,7 @@ function InvestBook() {
           <div style={{ fontSize: 13, color: T.muted, letterSpacing: "0.1em", marginBottom: 8, fontWeight: 500 }}>CELKOVÉ PORTFOLIO · 2018–2026</div>
           <div style={{ display: "flex", gap: 40, alignItems: "flex-end", flexWrap: "wrap" }}>
             <div>
-              <div style={{ fontSize: 56, fontWeight: 800, color: T.text, letterSpacing: "-0.03em", lineHeight: 1 }}>{fmt(totalValue)}</div>
+              <div className="ib-hero-value" style={{ fontSize: 56, fontWeight: 800, color: T.text, letterSpacing: "-0.03em", lineHeight: 1 }}>{fmt(totalValue)}</div>
               <div style={{ display: "flex", gap: 12, marginTop: 6, alignItems: "center" }}>
                 <span style={{ fontSize: 14, color: T.muted }}>{"≈ $" + Math.round(totalValue / 20.57).toLocaleString("en-US")}</span>
                 <span style={{ fontSize: 13, color: T.muted }}>celková hodnota</span>
@@ -735,7 +741,7 @@ function InvestBook() {
           const hodnotaMajetku = totalValue + zustatek;
           const cistyMajetek   = hodnotaMajetku - hypoteka;
           return (
-            <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 20 }}>
+            <div className="ib-grid4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 20 }}>
               <StatCard label="Investováno celkem"      value={fmt(totalInvested)}   color={T.muted}  accent={T.subtle} />
               <StatCard label="Výnos celkem"            value={fmt(gain)}            color={T.green}  accent={T.green}  sub={"+" + gainPct.toFixed(2) + " %"} />
               <StatCard label="Hodnota majetku"         value={fmt(hodnotaMajetku)}  color={T.text}   accent={T.blue}   sub={zustatek > 0 ? "vč. hotovosti " + fmt(zustatek) : null} />
@@ -842,67 +848,119 @@ function InvestBook() {
                   <div style={{ fontSize: 13, color: T.muted }}>Klikni na hlavičku pro seřazení · {sortedRows.length} pozic</div>
                 </div>
               </div>
-              <div style={{ overflowX: "auto" }}>
-                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 700 }}>
-                  <thead>
-                    <tr style={{ borderBottom: "1px solid " + T.border }}>
-                      <th style={{ padding: "8px 12px", textAlign: "left", fontSize: 12, color: T.muted, fontWeight: 600, letterSpacing: "0.08em" }}>#</th>
-                      {COLS.map(c => (
-                        <th key={c.key} onClick={() => onSort(c.key)}
-                          style={{ padding: "8px 12px", textAlign: c.align, fontSize: 12, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", cursor: "pointer", userSelect: "none", whiteSpace: "nowrap",
-                            color: tblSort === c.key ? T.text : T.muted, transition: "color 0.1s" }}>
-                          {c.label}{arrow(c.key)}
-                        </th>
-                      ))}
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {sortedRows.map((p, idx) => {
-                      const gain    = p.valueCZK - p.investedCZK;
-                      const gainPct = p.gainPctOrig || 0;  // % v původní měně (USD/EUR/CZK)
-                      const share   = (p.valueCZK / totalValue) * 100;
-                      const gc = gainPct >= 0 ? T.green : T.red;
-                      return (
-                        <tr key={p.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.03)", transition: "background 0.1s" }}
-                          onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.025)"; }}
-                          onMouseLeave={e => { e.currentTarget.style.background = ""; }}>
-                          <td style={{ padding: "10px 12px", fontSize: 13, color: T.subtle }}>{idx + 1}</td>
-                          <td style={{ padding: "10px 12px" }}>
-                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                              <div style={{ width: 8, height: 8, borderRadius: 2, background: CAT_COLOR[p.category] || T.muted, flexShrink: 0 }} />
-                              <span style={{ fontSize: 15, color: T.text, fontWeight: 600 }}>{p.name.split("(")[0].trim()}</span>
-                            </div>
-                          </td>
-                          <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: T.muted, fontFamily: "'DM Mono',monospace" }}>{fmt(p.investedCZK)}</td>
-                          <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: T.text, fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>{fmt(p.valueCZK)}</td>
-                          <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: gc, fontFamily: "'DM Mono',monospace" }}>{gain >= 0 ? "+" : ""}{fmt(gain)}</td>
-                          <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: gc, fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>{gainPct >= 0 ? "+" : ""}{gainPct.toFixed(2)}%</td>
-                          {(() => { const yrs = Math.max(1, NOW_YEAR - (p.start || NOW_YEAR)); const ratio = gainPct / 100 + 1; const cagr = ratio > 0 ? (Math.pow(ratio, 1 / yrs) - 1) * 100 : 0; return <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: gc, fontFamily: "'DM Mono',monospace" }}>{cagr >= 0 ? "+" : ""}{cagr.toFixed(2)}%</td>; })()}
-                          <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 13, color: T.muted, fontFamily: "'DM Mono',monospace" }}>{share.toFixed(2)}%</td>
-
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                  <tfoot>
-                    <tr style={{ borderTop: "1px solid rgba(34,197,94,0.2)", background: "rgba(34,197,94,0.03)" }}>
-                      <td colSpan={2} style={{ padding: "10px 12px", fontSize: 13, color: T.green, fontWeight: 700, letterSpacing: "0.06em" }}>CELKEM · {sortedRows.length} POZIC</td>
-                      {(() => {
-                        const fInv = sortedRows.reduce((s,p) => s+p.investedCZK, 0);
-                        const fVal = sortedRows.reduce((s,p) => s+p.valueCZK, 0);
-                        return (<>
-                          <td style={{ ...nc(T.muted), padding: "10px 12px" }}>{fmt(fInv)}</td>
-                          <td style={{ ...nc(T.text), padding: "10px 12px", fontSize: 16, fontWeight: 800 }}>{fmt(fVal)}</td>
-                          <td style={{ ...nc(T.green), padding: "10px 12px" }}>+{fmt(fVal - fInv)}</td>
-                          <td style={{ ...nc(T.green), padding: "10px 12px", fontWeight: 700 }}>+{fInv > 0 ? (((fVal-fInv)/fInv)*100).toFixed(2) : "0.00"}%</td>
-                          <td style={{ padding: "10px 12px" }} />
-                        </>);
-                      })()}
-                      <td colSpan={1} />
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
+              {isMobile ? (
+                /* Mobile: card list */
+                <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+                  {sortedRows.map((p, idx) => {
+                    const gain    = p.valueCZK - p.investedCZK;
+                    const gainPct = p.gainPctOrig || 0;
+                    const yrs     = Math.max(1, NOW_YEAR - (p.start || NOW_YEAR));
+                    const ratio   = gainPct / 100 + 1;
+                    const cagr    = ratio > 0 ? (Math.pow(ratio, 1 / yrs) - 1) * 100 : 0;
+                    const gc      = gainPct >= 0 ? T.green : T.red;
+                    return (
+                      <div key={p.id} style={{ padding: "12px 14px", borderRadius: 10, background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.05)" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                            <div style={{ width: 8, height: 8, borderRadius: 2, background: CAT_COLOR[p.category] || T.muted, flexShrink: 0 }} />
+                            <span style={{ fontSize: 15, color: T.text, fontWeight: 600 }}>{p.name.split("(")[0].trim()}</span>
+                          </div>
+                          <span style={{ fontSize: 13, color: T.muted }}>{idx + 1}</span>
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                          <div>
+                            <div style={{ fontSize: 11, color: T.subtle, marginBottom: 2 }}>Hodnota</div>
+                            <div style={{ fontSize: 14, color: T.text, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{fmt(p.valueCZK)}</div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 11, color: T.subtle, marginBottom: 2 }}>Výnos</div>
+                            <div style={{ fontSize: 14, color: gc, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{gainPct >= 0 ? "+" : ""}{gainPct.toFixed(1)}%</div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 11, color: T.subtle, marginBottom: 2 }}>p.a.</div>
+                            <div style={{ fontSize: 14, color: gc, fontFamily: "'DM Mono',monospace" }}>{cagr >= 0 ? "+" : ""}{cagr.toFixed(1)}%</div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {/* Footer součet */}
+                  {(() => {
+                    const fInv = sortedRows.reduce((s,p) => s+p.investedCZK, 0);
+                    const fVal = sortedRows.reduce((s,p) => s+p.valueCZK, 0);
+                    const fGp  = fInv > 0 ? (((fVal-fInv)/fInv)*100) : 0;
+                    return (
+                      <div style={{ padding: "12px 14px", borderRadius: 10, background: "rgba(34,197,94,0.06)", border: "1px solid rgba(34,197,94,0.15)", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                        <div><div style={{ fontSize: 11, color: T.subtle }}>Investováno</div><div style={{ fontSize: 14, color: T.muted, fontFamily: "'DM Mono',monospace" }}>{fmt(fInv)}</div></div>
+                        <div><div style={{ fontSize: 11, color: T.subtle }}>Hodnota</div><div style={{ fontSize: 14, color: T.text, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{fmt(fVal)}</div></div>
+                        <div><div style={{ fontSize: 11, color: T.subtle }}>Výnos</div><div style={{ fontSize: 14, color: T.green, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>+{fGp.toFixed(1)}%</div></div>
+                      </div>
+                    );
+                  })()}
+                </div>
+              ) : (
+                /* Desktop: tabulka */
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 700 }}>
+                    <thead>
+                      <tr style={{ borderBottom: "1px solid " + T.border }}>
+                        <th style={{ padding: "8px 12px", textAlign: "left", fontSize: 12, color: T.muted, fontWeight: 600, letterSpacing: "0.08em" }}>#</th>
+                        {COLS.map(c => (
+                          <th key={c.key} onClick={() => onSort(c.key)}
+                            style={{ padding: "8px 12px", textAlign: c.align, fontSize: 12, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", cursor: "pointer", userSelect: "none", whiteSpace: "nowrap",
+                              color: tblSort === c.key ? T.text : T.muted, transition: "color 0.1s" }}>
+                            {c.label}{arrow(c.key)}
+                          </th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {sortedRows.map((p, idx) => {
+                        const gain    = p.valueCZK - p.investedCZK;
+                        const gainPct = p.gainPctOrig || 0;
+                        const share   = (p.valueCZK / totalValue) * 100;
+                        const gc = gainPct >= 0 ? T.green : T.red;
+                        return (
+                          <tr key={p.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.03)", transition: "background 0.1s" }}
+                            onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.025)"; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = ""; }}>
+                            <td style={{ padding: "10px 12px", fontSize: 13, color: T.subtle }}>{idx + 1}</td>
+                            <td style={{ padding: "10px 12px" }}>
+                              <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                                <div style={{ width: 8, height: 8, borderRadius: 2, background: CAT_COLOR[p.category] || T.muted, flexShrink: 0 }} />
+                                <span style={{ fontSize: 15, color: T.text, fontWeight: 600 }}>{p.name.split("(")[0].trim()}</span>
+                              </div>
+                            </td>
+                            <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: T.muted, fontFamily: "'DM Mono',monospace" }}>{fmt(p.investedCZK)}</td>
+                            <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: T.text, fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>{fmt(p.valueCZK)}</td>
+                            <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: gc, fontFamily: "'DM Mono',monospace" }}>{gain >= 0 ? "+" : ""}{fmt(gain)}</td>
+                            <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: gc, fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>{gainPct >= 0 ? "+" : ""}{gainPct.toFixed(2)}%</td>
+                            {(() => { const yrs = Math.max(1, NOW_YEAR - (p.start || NOW_YEAR)); const ratio = gainPct / 100 + 1; const cagr = ratio > 0 ? (Math.pow(ratio, 1 / yrs) - 1) * 100 : 0; return <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: gc, fontFamily: "'DM Mono',monospace" }}>{cagr >= 0 ? "+" : ""}{cagr.toFixed(2)}%</td>; })()}
+                            <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 13, color: T.muted, fontFamily: "'DM Mono',monospace" }}>{share.toFixed(2)}%</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                    <tfoot>
+                      <tr style={{ borderTop: "1px solid rgba(34,197,94,0.2)", background: "rgba(34,197,94,0.03)" }}>
+                        <td colSpan={2} style={{ padding: "10px 12px", fontSize: 13, color: T.green, fontWeight: 700, letterSpacing: "0.06em" }}>CELKEM · {sortedRows.length} POZIC</td>
+                        {(() => {
+                          const fInv = sortedRows.reduce((s,p) => s+p.investedCZK, 0);
+                          const fVal = sortedRows.reduce((s,p) => s+p.valueCZK, 0);
+                          return (<>
+                            <td style={{ ...nc(T.muted), padding: "10px 12px" }}>{fmt(fInv)}</td>
+                            <td style={{ ...nc(T.text), padding: "10px 12px", fontSize: 16, fontWeight: 800 }}>{fmt(fVal)}</td>
+                            <td style={{ ...nc(T.green), padding: "10px 12px" }}>+{fmt(fVal - fInv)}</td>
+                            <td style={{ ...nc(T.green), padding: "10px 12px", fontWeight: 700 }}>+{fInv > 0 ? (((fVal-fInv)/fInv)*100).toFixed(2) : "0.00"}%</td>
+                            <td style={{ padding: "10px 12px" }} />
+                          </>);
+                        })()}
+                        <td colSpan={1} />
+                      </tr>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
             </div>
           </>);
         })()}
@@ -955,7 +1013,7 @@ function InvestBook() {
                 <div style={{ fontSize: 13, color: T.muted }}>= {fmt(monthlyContrib * 12)} ročně</div>
               </div>
 
-              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              <div className="ib-grid2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                 {[
                   { label: "Predikce · " + avgAnnReturnNoCrypto.toFixed(2) + " % p.a.", sub: "průměrný výnos bez crypto", key: "avg", baseKey: "avgBase", color: T.green, grad: "gPA" },
                   { label: "Predikce · 10 % p.a.", sub: "konzervativní scénář S&P 500", key: "r10", baseKey: "r10Base", color: T.blue, grad: "gP10" },
@@ -1330,7 +1388,7 @@ function InvestBook() {
         </div>
 
         {/* Stats cards row */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 16 }}>
+        <div className="ib-grid4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 16 }}>
           <StatCard label="Největší pozice"
             value={biggest ? biggest.name.split("(")[0].trim() : "—"}
             sub={biggest ? fmt(biggest.valueCZK) + " · " + ((biggest.valueCZK/totalValue)*100).toFixed(1) + "%" : ""}
@@ -1344,7 +1402,7 @@ function InvestBook() {
         </div>
 
         {/* Koláče Podle brokera + Podle kategorie */}
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+        <div className="ib-grid2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
           {[
             { title: "Podle brokera",   data: brokerData2, colorFn: (_, i) => BROKER_COLORS[i % BROKER_COLORS.length] },
             { title: "Podle kategorie", data: catData2,    colorFn: (d)    => CAT_COLOR[d.name] || T.muted },
@@ -1410,7 +1468,7 @@ function InvestBook() {
             );
           };
           return (
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+            <div className="ib-grid2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
               <div style={{ ...C }}>
                 <SectionTitle title="🏆 Top 3 — nejlepší výnos" sub="Podle celkového výnosu %" />
                 {top3.map((p, i) => <Row key={p.id} p={p} rank={i + 1} isTop={true} />)}
@@ -1490,16 +1548,39 @@ function InvestBook() {
         ::-webkit-scrollbar { width: 4px; height: 4px; }
         ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
         @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.3} }
+        .ib-grid4  { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; }
+        .ib-grid2  { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+        .ib-grid3  { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+        .ib-hdr-fx { display: flex; align-items: center; gap: 6px; }
+        .ib-nav    { display: flex; }
+        .ib-tab-bar { display: none; }
+        @media (max-width: 768px) {
+          .ib-grid4  { grid-template-columns: 1fr 1fr !important; gap: 10px !important; }
+          .ib-grid2  { grid-template-columns: 1fr !important; }
+          .ib-grid3  { grid-template-columns: 1fr !important; }
+          .ib-hdr-fx { display: none !important; }
+          .ib-nav    { display: none !important; }
+          .ib-tab-bar { display: flex !important; position: fixed; bottom: 0; left: 0; right: 0; z-index: 200;
+            background: rgba(15,15,19,0.97); border-top: 1px solid rgba(255,255,255,0.08);
+            padding: 8px 0 calc(8px + env(safe-area-inset-bottom)); }
+          .ib-main   { padding: 16px 16px 80px !important; }
+          .ib-header { padding: 0 16px !important; }
+          .ib-hero-value { font-size: 36px !important; }
+        }
+        @media (min-width: 769px) {
+          .ib-tab-bar { display: none !important; }
+          .ib-main { padding: 28px 32px; }
+        }
       `}</style>
 
       <div style={{ minHeight: "100vh", background: T.bg, color: T.text, fontFamily: "'DM Sans', system-ui, sans-serif" }}>
         {/* HEADER */}
-        <header style={{ height: 56, padding: "0 32px", borderBottom: "1px solid " + T.border, display: "flex", alignItems: "center", position: "sticky", top: 0, background: "rgba(15,15,19,0.92)", backdropFilter: "blur(16px)", zIndex: 100 }}>
+        <header className="ib-header" style={{ height: 56, padding: "0 32px", borderBottom: "1px solid " + T.border, display: "flex", alignItems: "center", position: "sticky", top: 0, background: "rgba(15,15,19,0.92)", backdropFilter: "blur(16px)", zIndex: 100 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginRight: 40 }}>
             <div style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(135deg," + T.green + "," + T.blue + ")", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, color: "#000" }}>i</div>
             <span style={{ fontSize: 17, fontWeight: 700, color: T.text, letterSpacing: "-0.01em" }}>InvestBook</span>
           </div>
-          <nav style={{ display: "flex", gap: 2 }}>
+          <nav className="ib-nav" style={{ display: "flex", gap: 2 }}>
             {TABS.map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)}
                 style={{ padding: "6px 14px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, transition: "all 0.12s",
@@ -1510,11 +1591,11 @@ function InvestBook() {
             ))}
           </nav>
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
-            <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div className="ib-hdr-fx" style={{ display: "flex", alignItems: "center", gap: 6 }}>
               <div style={{ width: 6, height: 6, borderRadius: "50%", background: T.green, animation: "pulse 2.5s infinite", boxShadow: "0 0 6px " + T.green }} />
               <span style={{ fontSize: 12, color: T.muted, fontFamily: "'DM Mono',monospace" }}>EUR 24,23 · USD 20,57</span>
             </div>
-            <div style={{ height: 20, width: 1, background: T.border }} />
+            <div className="ib-hdr-fx" style={{ height: 20, width: 1, background: T.border }} />
             <div style={{ display: "flex", gap: 2, background: "rgba(255,255,255,0.04)", borderRadius: 8, padding: 3 }}>
               {["CZK","EUR","USD"].map(cur => (
                 <button key={cur} onClick={() => setDispCurrency(cur)}
@@ -1531,7 +1612,21 @@ function InvestBook() {
           </div>
         </header>
 
-        <main style={{ maxWidth: 1360, margin: "0 auto", padding: "28px 32px" }}>
+        {/* Mobile bottom tab bar */}
+        <div className="ib-tab-bar" style={{ display: "none" }}>
+          {TABS.map(tab => (
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+              style={{ flex: 1, background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "4px 0",
+                color: activeTab === tab.id ? T.green : T.muted }}>
+              <span style={{ fontSize: 20 }}>
+                {tab.id === "portfolio" ? "📊" : tab.id === "analyza" ? "🔍" : "📋"}
+              </span>
+              <span style={{ fontSize: 11, fontWeight: 600 }}>{tab.label}</span>
+            </button>
+          ))}
+        </div>
+
+        <main className="ib-main" style={{ maxWidth: 1360, margin: "0 auto", padding: "28px 32px" }}>
           {gsMsg !== "" && (
             <div style={{ marginBottom: 14, padding: "8px 16px", borderRadius: 8, fontSize: 12, fontWeight: 600,
               background: gsStatus === "error" ? "rgba(239,68,68,0.1)" : "rgba(16,185,129,0.1)",
