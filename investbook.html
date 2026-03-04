@@ -75,7 +75,7 @@ async function sheetsSet(range, values) {
 async function ensureSheets() {
   const meta = await gapi.client.sheets.spreadsheets.get({ spreadsheetId: window.INVESTBOOK_CONFIG.SPREADSHEET_ID });
   const have = meta.result.sheets.map(s => s.properties.title);
-  const need = ["manual_positions","imported_positions","settings"].filter(n => !have.includes(n));
+  const need = ["manual_positions","imported_positions","settings","pension_accounts","pension_entries"].filter(n => !have.includes(n));
   if (!need.length) return;
   await gapi.client.sheets.spreadsheets.batchUpdate({
     spreadsheetId: window.INVESTBOOK_CONFIG.SPREADSHEET_ID,
@@ -139,8 +139,8 @@ async function saveToSheets(manual, imported, settings, pension) {
     clearSheet("manual_positions"),
     clearSheet("imported_positions"),
     clearSheet("settings"),
-    clearSheet("pension_accounts"),
-    clearSheet("pension_entries"),
+    clearSheet("pension_accounts").catch(()=>{}),
+    clearSheet("pension_entries").catch(()=>{}),
   ]);
   const { accs, entries } = pensionToRows(pension || []);
   await sheetsSet("manual_positions!A1",   [PHDR, ...manual.map(posToRow)]);
@@ -175,13 +175,14 @@ async function ensurePricesHeader() {
 }
 
 async function loadFromSheets() {
+  const safeGet = async (range) => { try { return await sheetsGet(range); } catch(e) { return []; } };
   const [m, i, s, p, pa, pe] = await Promise.all([
-    sheetsGet("manual_positions!A2:L1000"),
-    sheetsGet("imported_positions!A2:L1000"),
-    sheetsGet("settings!A2:B100"),
-    sheetsGet("prices!A1:C1000"),
-    sheetsGet("pension_accounts!A2:I1000"),
-    sheetsGet("pension_entries!A2:D10000"),
+    safeGet("manual_positions!A2:L1000"),
+    safeGet("imported_positions!A2:L1000"),
+    safeGet("settings!A2:B100"),
+    safeGet("prices!A1:C1000"),
+    safeGet("pension_accounts!A2:I1000"),
+    safeGet("pension_entries!A2:D10000"),
   ]);
   // First row is header (A1:C1), data starts at row index 1
   const priceRows = (p||[]).slice(1);
