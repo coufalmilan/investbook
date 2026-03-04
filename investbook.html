@@ -488,6 +488,9 @@ function InvestBook() {
   const [zustatek, setZustatek] = useState(0);
   const [editingContrib, setEditingContrib] = useState(false);
   const [contribDraft, setContribDraft] = useState("30000");
+  const [customRate10, setCustomRate10] = useState(10);
+  const [editingRate10, setEditingRate10] = useState(false);
+  const [rate10Draft, setRate10Draft] = useState("10");
 
   // Manual positions (ČSOB + Portu)
   const [manualRows, setManualRows] = useState([...INITIAL_CSOB, ...INITIAL_MANUAL_EXTRA]);
@@ -976,7 +979,7 @@ function InvestBook() {
         {(() => {
           const base    = totalValue;
           const rateAvg = avgAnnReturnNoCrypto / 100;
-          const rate10  = 0.10;
+          const rate10  = customRate10 / 100;
           const annual  = monthlyContrib * 12;
           const years   = [2026,2027,2028,2029,2030,2031,2032];
           const fv = (rate, i) => {
@@ -991,8 +994,9 @@ function InvestBook() {
             avgBase: Math.round(base * Math.pow(1 + rateAvg, i)),
             r10Base: Math.round(base * Math.pow(1 + rate10,  i)),
           }));
-          const fmt = v => v >= 1000000 ? (v/1000000).toFixed(2)+"M" : (v/1000).toFixed(0)+"k";
+          const fmtP = v => { const c = typeof fmt === "function" ? fmt(v) : v; return c; };
           const commitContrib = () => { const n = parseFlt(contribDraft); if (!isNaN(n) && n >= 0) setMonthlyContrib(n); setEditingContrib(false); };
+          const commitRate10 = () => { const n = parseFlt(rate10Draft); if (!isNaN(n) && n > 0 && n <= 100) setCustomRate10(n); setEditingRate10(false); };
 
           return (
             <div>
@@ -1023,14 +1027,36 @@ function InvestBook() {
               <div className="ib-grid2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
                 {[
                   { label: "Predikce · " + avgAnnReturnNoCrypto.toFixed(2) + " % p.a.", sub: "průměrný výnos bez crypto", key: "avg", baseKey: "avgBase", color: T.green, grad: "gPA" },
-                  { label: "Predikce · 10 % p.a.", sub: "konzervativní scénář S&P 500", key: "r10", baseKey: "r10Base", color: T.blue, grad: "gP10" },
+                  { label: null, sub: "vlastní scénář", key: "r10", baseKey: "r10Base", color: T.blue, grad: "gP10" },
                 ].map(cfg => {
                   const finalVal    = projData[projData.length - 1][cfg.key];
                   const finalBase   = projData[projData.length - 1][cfg.baseKey];
                   const contribGain = finalVal - finalBase;
                   return (
                     <div key={cfg.key} style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 16, padding: 22 }}>
-                      <div style={{ fontSize: 15, fontWeight: 600, color: T.text, marginBottom: 2 }}>{cfg.label}</div>
+                      {cfg.key === "r10" ? (
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+                          <span style={{ fontSize: 15, fontWeight: 600, color: T.text }}>Predikce ·</span>
+                          {editingRate10 ? (
+                            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                              <input autoFocus type="text" value={rate10Draft}
+                                onChange={e => setRate10Draft(e.target.value)}
+                                onBlur={commitRate10}
+                                onKeyDown={e => { if (e.key === "Enter") commitRate10(); if (e.key === "Escape") setEditingRate10(false); }}
+                                style={{ background: T.bg, border: "1px solid " + T.blue, borderRadius: 6, color: T.text, fontFamily: "'DM Mono',monospace", fontSize: 15, fontWeight: 700, padding: "2px 8px", width: 60, outline: "none", textAlign: "right" }} />
+                              <span style={{ fontSize: 15, color: T.blue, fontWeight: 600 }}>% p.a.</span>
+                            </div>
+                          ) : (
+                            <div onClick={() => { setRate10Draft(String(customRate10)); setEditingRate10(true); }}
+                              style={{ display: "flex", alignItems: "center", gap: 4, cursor: "text", padding: "2px 10px", background: "rgba(59,130,246,0.1)", border: "1px solid rgba(59,130,246,0.25)", borderRadius: 6 }}>
+                              <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 15, color: T.blue, fontWeight: 700 }}>{customRate10} %</span>
+                              <span style={{ fontSize: 12, color: T.blue }}>p.a. ✎</span>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 15, fontWeight: 600, color: T.text, marginBottom: 2 }}>{cfg.label}</div>
+                      )}
                       <div style={{ fontSize: 13, color: T.muted, marginBottom: 10 }}>{cfg.sub}</div>
                       <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: monthlyContrib > 0 ? 2 : 16 }}>
                         <span style={{ fontSize: 31, fontWeight: 800, color: cfg.color, letterSpacing: "-0.02em" }}>{fmt(finalVal)}</span>
