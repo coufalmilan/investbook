@@ -1226,7 +1226,7 @@ function InvestBook() {
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ borderBottom: "1px solid " + T.border }}>
-                {["Název / Ticker","Broker","Kategorie","Kusy","Investováno","Invest. CZK","Hodnota CZK","Výnos CZK","Výnos %"].map((h, i) => (
+                {["Název / Ticker","Broker","Kategorie","Kusy","Investováno","Invest. CZK","Hodnota CZK","Výnos CZK","Výnos %","Od"].map((h, i) => (
                   <th key={i} style={{ padding: "9px 12px", textAlign: i <= 2 ? "left" : "right", fontSize: 10, color: T.muted, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
                 ))}
               </tr>
@@ -1269,6 +1269,7 @@ function InvestBook() {
                     </td>
                     <td style={nc(hasPrice ? gc : T.subtle)}>{hasPrice ? (gainCZK>=0?"+":"")+fmt(gainCZK) : "—"}</td>
                     <td style={{...nc(hasPrice ? gc : T.subtle), fontWeight:700}}>{hasPrice ? (gainPct>=0?"+":"")+gainPct.toFixed(2)+"%" : "—"}</td>
+                    <EditCell value={pos.start || ""} color={T.muted} onSave={v=>updateImported(pos.id,"start",v)}/>
                   </tr>
                 );
               })}
@@ -1281,6 +1282,7 @@ function InvestBook() {
                 <td style={{ ...nc(T.text), fontSize:14, fontWeight:800 }}>{fmt(importedTotal)}</td>
                 <td style={nc(T.green)}>{fmt(importedTotal - importedInvested)}</td>
                 <td style={{ ...nc(T.green), fontWeight:700 }}>{importedInvested > 0 ? "+"+(((importedTotal-importedInvested)/importedInvested)*100).toFixed(2)+"%" : "—"}</td>
+                <td />
               </tr>
             </tfoot>
           </table>
