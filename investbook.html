@@ -305,12 +305,13 @@ const T = {
   card:    "#1c1c26",
   border:  "rgba(255,255,255,0.06)",
   text:    "#f4f4f6",
-  muted:   "#6b7280",
-  subtle:  "#374151",
+  muted:   "#9ca3af",
+  subtle:  "#6b7280",
   green:   "#22c55e",
   blue:    "#3b82f6",
   red:     "#ef4444",
   amber:   "#f59e0b",
+  tick:    "#9ca3af",
 };
 
 const CAT_COLOR = { Fond: "#22c55e", ETF: "#3b82f6", Portfolio: "#8b5cf6", Akcie: "#f59e0b", Crypto: "#ec4899" };
@@ -826,9 +827,9 @@ function InvestBook() {
                     </linearGradient>
                   </defs>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-                  <XAxis dataKey="d" tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.muted }} axisLine={false} tickLine={false}
+                  <XAxis dataKey="d" tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.tick }} axisLine={false} tickLine={false}
                     tickFormatter={d => { const [y,m] = d.split("-"); return m === "01" ? y : m + "/" + y.slice(2); }} />
-                  <YAxis tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.muted }} axisLine={false} tickLine={false} width={52}
+                  <YAxis tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.tick }} axisLine={false} tickLine={false} width={52}
                     domain={[ dataMin => Math.floor(dataMin * 0.95 / 50000) * 50000, dataMax => Math.ceil(dataMax * 1.05 / 50000) * 50000 ]}
                     tickFormatter={v => v >= 1000000 ? (v/1000000).toFixed(1)+"M" : (v/1000).toFixed(0)+"k"} />
                   <Tooltip {...ttStyle} formatter={(v) => [fmt(v), cat.label]} labelFormatter={d => d} />
@@ -863,7 +864,10 @@ function InvestBook() {
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
                           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                             <div style={{ width: 8, height: 8, borderRadius: 2, background: CAT_COLOR[p.category] || T.muted, flexShrink: 0 }} />
-                            <span style={{ fontSize: 15, color: T.text, fontWeight: 600 }}>{p.name.split("(")[0].trim()}</span>
+                            <div>
+                              <span style={{ fontSize: 15, color: T.text, fontWeight: 600 }}>{p.name.split("(")[0].trim()}</span>
+                              {p.shares != null && p.shares > 0 && <div style={{ fontSize: 11, color: T.subtle, fontFamily: "'DM Mono',monospace", marginTop: 1 }}>{Number.isInteger(p.shares) ? p.shares : p.shares.toFixed(4)} ks</div>}
+                            </div>
                           </div>
                           <span style={{ fontSize: 13, color: T.muted }}>{idx + 1}</span>
                         </div>
@@ -928,7 +932,10 @@ function InvestBook() {
                             <td style={{ padding: "10px 12px" }}>
                               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                 <div style={{ width: 8, height: 8, borderRadius: 2, background: CAT_COLOR[p.category] || T.muted, flexShrink: 0 }} />
-                                <span style={{ fontSize: 15, color: T.text, fontWeight: 600 }}>{p.name.split("(")[0].trim()}</span>
+                                <div>
+                                  <span style={{ fontSize: 15, color: T.text, fontWeight: 600 }}>{p.name.split("(")[0].trim()}</span>
+                                  {p.shares != null && p.shares > 0 && <div style={{ fontSize: 11, color: T.subtle, fontFamily: "'DM Mono',monospace", marginTop: 1 }}>{Number.isInteger(p.shares) ? p.shares : p.shares.toFixed(4)} ks</div>}
+                                </div>
                               </div>
                             </td>
                             <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: T.muted, fontFamily: "'DM Mono',monospace" }}>{fmt(p.investedCZK)}</td>
@@ -1048,8 +1055,8 @@ function InvestBook() {
                             </linearGradient>
                           </defs>
                           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-                          <XAxis dataKey="rok" tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.muted }} axisLine={false} tickLine={false} />
-                          <YAxis tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.muted }} axisLine={false} tickLine={false} width={52}
+                          <XAxis dataKey="rok" tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.tick }} axisLine={false} tickLine={false} />
+                          <YAxis tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.tick }} axisLine={false} tickLine={false} width={52}
                             domain={[
                               () => Math.floor(base * 0.95 / 100000) * 100000,
                               dataMax => Math.ceil(dataMax * 1.05 / 100000) * 100000,
@@ -1513,14 +1520,105 @@ function InvestBook() {
           </div>
         </div>
 
+        {/* Roční výkonnost portfolia */}
+        {(() => {
+          // Vezmi vždy první dostupný bod každého roku z PORTFOLIO_HISTORY
+          const years = {};
+          PORTFOLIO_HISTORY.forEach(p => {
+            const yr = p.d.split("-")[0];
+            if (!years[yr]) years[yr] = p;
+          });
+          // Přidej aktuální hodnotu jako "2026 YTD"
+          years["2026"] = PORTFOLIO_HISTORY[PORTFOLIO_HISTORY.length - 1];
+
+          const yearKeys = Object.keys(years).sort();
+          const yearData = yearKeys.map((yr, i) => {
+            const cur  = years[yr].v;
+            const prev = i > 0 ? years[yearKeys[i-1]].v : null;
+            const growthPct = prev ? ((cur - prev) / prev) * 100 : null;
+            const growthAbs = prev ? cur - prev : null;
+            return { yr, cur, prev, growthPct, growthAbs };
+          }).filter(d => d.growthPct !== null);  // první rok nemá srovnání
+
+          const maxGrowth = Math.max(...yearData.map(d => Math.abs(d.growthPct)));
+
+          return (
+            <div style={{ ...C, marginBottom: 16 }}>
+              <SectionTitle title="Roční výkonnost portfolia" sub="Meziroční změna hodnoty portfolia" />
+
+              {/* Bar chart meziroční % */}
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart data={yearData} margin={{ left: 4, right: 4, top: 4, bottom: 0 }} barCategoryGap="30%">
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+                  <XAxis dataKey="yr" tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.tick }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.tick }} axisLine={false} tickLine={false} width={40}
+                    tickFormatter={v => v.toFixed(0) + "%"} />
+                  <Tooltip {...ttStyle} formatter={(v) => [v.toFixed(1) + " %", "Meziroční růst"]} />
+                  <Bar dataKey="growthPct" radius={[4,4,0,0]}>
+                    {yearData.map((d, i) => <Cell key={i} fill={d.growthPct >= 0 ? T.green : T.red} fillOpacity={0.8} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+
+              {/* Tabulka po letech */}
+              <div style={{ display: "flex", flexDirection: "column", gap: 0, marginTop: 16 }}>
+                {/* Header */}
+                <div style={{ display: "grid", gridTemplateColumns: "60px 1fr 100px 120px 80px", gap: 8, padding: "6px 12px", borderBottom: "1px solid " + T.border }}>
+                  {["Rok","Hodnota portfolia","Meziroční %","Přírůstek","Bar"].map(h => (
+                    <div key={h} style={{ fontSize: 11, color: T.subtle, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", textAlign: h === "Rok" ? "left" : "right" }}>{h}</div>
+                  ))}
+                </div>
+                {yearData.map((d, i) => {
+                  const gc = d.growthPct >= 0 ? T.green : T.red;
+                  const barW = Math.abs(d.growthPct) / maxGrowth * 100;
+                  return (
+                    <div key={d.yr} style={{ display: "grid", gridTemplateColumns: "60px 1fr 100px 120px 80px", gap: 8, padding: "10px 12px",
+                      borderBottom: "1px solid rgba(255,255,255,0.03)", background: i % 2 === 0 ? "rgba(255,255,255,0.01)" : "transparent" }}>
+                      <div style={{ fontSize: 14, color: T.muted, fontWeight: 700 }}>{d.yr}</div>
+                      <div style={{ textAlign: "right", fontSize: 14, color: T.text, fontFamily: "'DM Mono',monospace", fontWeight: 600 }}>{fmt(d.cur)}</div>
+                      <div style={{ textAlign: "right", fontSize: 14, color: gc, fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>
+                        {d.growthPct >= 0 ? "+" : ""}{d.growthPct.toFixed(1)}%
+                      </div>
+                      <div style={{ textAlign: "right", fontSize: 13, color: gc, fontFamily: "'DM Mono',monospace" }}>
+                        {d.growthAbs >= 0 ? "+" : ""}{fmt(d.growthAbs)}
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", justifyContent: "flex-end" }}>
+                        <div style={{ width: barW + "%", height: 6, background: gc, borderRadius: 3, opacity: 0.7, minWidth: 2 }} />
+                      </div>
+                    </div>
+                  );
+                })}
+                {/* Celkový řádek */}
+                {(() => {
+                  const first = PORTFOLIO_HISTORY[0].v;
+                  const last  = PORTFOLIO_HISTORY[PORTFOLIO_HISTORY.length - 1].v;
+                  const totalGrowth = ((last - first) / first) * 100;
+                  const years = PORTFOLIO_HISTORY.length > 1 ? (new Date(PORTFOLIO_HISTORY[PORTFOLIO_HISTORY.length-1].d+"-01") - new Date(PORTFOLIO_HISTORY[0].d+"-01")) / (1000*60*60*24*365.25) : 1;
+                  const cagr = (Math.pow(last/first, 1/years) - 1) * 100;
+                  return (
+                    <div style={{ display: "grid", gridTemplateColumns: "60px 1fr 100px 120px 80px", gap: 8, padding: "12px 12px",
+                      borderTop: "2px solid rgba(34,197,94,0.2)", background: "rgba(34,197,94,0.04)", borderRadius: "0 0 10px 10px" }}>
+                      <div style={{ fontSize: 13, color: T.green, fontWeight: 700 }}>Celkem</div>
+                      <div style={{ textAlign: "right", fontSize: 14, color: T.text, fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>{fmt(last)}</div>
+                      <div style={{ textAlign: "right", fontSize: 14, color: T.green, fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>+{totalGrowth.toFixed(1)}%</div>
+                      <div style={{ textAlign: "right", fontSize: 13, color: T.green, fontFamily: "'DM Mono',monospace" }}>+{fmt(last - first)}</div>
+                      <div style={{ textAlign: "right", fontSize: 11, color: T.muted, fontFamily: "'DM Mono',monospace" }}>CAGR {cagr.toFixed(1)}%</div>
+                    </div>
+                  );
+                })()}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Bar chart */}
         <div style={{ ...C, marginBottom: 16 }}>
           <SectionTitle title="Top 12 — investováno vs. hodnota" sub="Porovnání vložené částky a aktuální hodnoty" />
           <ResponsiveContainer width="100%" height={230}>
             <BarChart data={barData} barCategoryGap="28%">
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-              <XAxis dataKey="name" tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.muted }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.muted }} axisLine={false} tickLine={false} tickFormatter={v => (v/1000).toFixed(0)+"k"} width={40} />
+              <XAxis dataKey="name" tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.tick }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.tick }} axisLine={false} tickLine={false} tickFormatter={v => (v/1000).toFixed(0)+"k"} width={40} />
               <Tooltip {...ttStyle} formatter={(v, name) => [fmt(v), name]} />
               <Bar dataKey="Investováno" fill="rgba(107,114,128,0.35)" radius={[3,3,0,0]} />
               <Bar dataKey="Hodnota" radius={[3,3,0,0]}>
