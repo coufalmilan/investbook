@@ -1794,25 +1794,16 @@ function InvestBook() {
 
         {/* KPI karty */}
         <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 12, marginBottom: 16 }}>
-          {[
-            { label: "Celkem vloženo", value: fmt(totalIn), sub: `já ${fmt(acc.myTotal||0)} + zaměst. ${fmt(acc.employerTotal||0)}`, color: T.muted },
-            { label: "Státní příspěvky", value: fmt(acc.stateTotal||0), color: T.amber },
-            { label: "Zhodnocení celkem", value: fmt(appreciation), sub: totalIn > 0 ? "+" + ((appreciation/totalIn)*100).toFixed(1) + " % z vkladu" : "", color: T.green },
-            { label: "Průměrný roční výnos (CAGR)", value: cagrRaw !== null ? "+" + cagrRaw.toFixed(2) + " %" : "—", sub: `od ${acc.startYear||2006} · ${spendingYears} let`, color: T.green },
-            { label: "Průměr. měs. přírůstek", value: fmt(avgMonthly), sub: cagrHist !== null ? "hist. CAGR +" + cagrHist.toFixed(2) + " %" : "z historických dat", color: PURPLE },
-          ].map((k, i) => (
-            <div key={i} style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 12, padding: "16px 18px" }}>
-              <div style={{ fontSize: 10, color: T.muted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>{k.label}</div>
-              <div style={{ fontSize: 20, fontWeight: 700, color: k.color, fontFamily: "'DM Mono',monospace" }}>{k.value}</div>
-              {k.sub && <div style={{ fontSize: 11, color: T.subtle, marginTop: 4 }}>{k.sub}</div>}
-            </div>
-          ))}
+          <StatCard label="Celkem vloženo"          value={fmt(totalIn)}     color={T.muted}  accent={T.subtle} sub={`já ${fmt(acc.myTotal||0)} + zaměst. ${fmt(acc.employerTotal||0)}`} />
+          <StatCard label="Státní příspěvky"        value={fmt(acc.stateTotal||0)} color={T.amber}  accent={T.amber} />
+          <StatCard label="Zhodnocení celkem"       value={fmt(appreciation)} color={T.green}  accent={T.green}  sub={totalIn > 0 ? "+" + ((appreciation/totalIn)*100).toFixed(1) + " % z vkladu" : ""} />
+          <StatCard label="Průměrný roční výnos (CAGR)" value={cagrRaw !== null ? "+" + cagrRaw.toFixed(2) + " %" : "—"} color={T.green} accent={T.green} sub={`od ${acc.startYear||2006} · ${spendingYears} let`} />
+          <StatCard label="Průměr. měs. přírůstek" value={fmt(avgMonthly)}   color={PURPLE}   accent={PURPLE}   sub={cagrHist !== null ? "hist. CAGR +" + cagrHist.toFixed(2) + " %" : "z historických dat"} />
         </div>
 
         {/* Graf vývoje */}
         <div style={{ ...C }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 4 }}>Vývoj hodnoty portfolia</div>
-          <div style={{ fontSize: 12, color: T.muted, marginBottom: 16 }}>Historické záznamy aktuální hodnoty</div>
+          <SectionTitle title="Vývoj hodnoty portfolia" sub="Historické záznamy aktuální hodnoty" />
           {entries.length >= 2 ? (
             <ResponsiveContainer width="100%" height={220}>
               <AreaChart data={chartData} margin={{ left: 10, right: 10, top: 4, bottom: 0 }}>
@@ -1840,7 +1831,7 @@ function InvestBook() {
         {/* Meziroční přírůstky tabulka */}
         {entries.length >= 2 && (
           <div style={{ ...C }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 14 }}>Mezizáznamové přírůstky</div>
+            <SectionTitle title="Mezizáznamové přírůstky" sub="Změna hodnoty mezi záznamy" />
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid " + T.border }}>
@@ -1923,7 +1914,7 @@ function InvestBook() {
 
         {/* Metadata – editovatelná */}
         <div style={{ ...C }}>
-          <div style={{ fontSize: 14, fontWeight: 700, color: T.text, marginBottom: 14 }}>Detaily a příspěvky <span style={{ fontSize: 12, color: T.subtle, fontWeight: 400 }}>· klikni pro editaci</span></div>
+          <SectionTitle title="Detaily a příspěvky" sub="Klikni na hodnotu pro editaci" />
           <div className="ib-grid4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12 }}>
             {[
               { label: "Můj měs. příspěvek", field: "myContrib", value: acc.myContrib||0, suffix: " Kč/měs" },
@@ -1934,8 +1925,9 @@ function InvestBook() {
               { label: "Zhodnocení", field: "appreciation", value: acc.appreciation||0, suffix: " Kč" },
               { label: "Rok začátku spoření", field: "startYear", value: acc.startYear||2006, suffix: "" },
             ].map(m => (
-              <div key={m.field} style={{ background: "rgba(255,255,255,0.02)", border: "1px solid " + T.border, borderRadius: 10, overflow: "hidden" }}>
-                <div style={{ padding: "6px 12px 2px", fontSize: 10, color: T.muted, letterSpacing: "0.07em", textTransform: "uppercase" }}>{m.label}</div>
+              <div key={m.field} style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 14, overflow: "hidden", position: "relative" }}>
+                <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: PURPLE, borderRadius: "14px 14px 0 0" }} />
+                <div style={{ padding: "14px 14px 4px", fontSize: 11, color: T.muted, letterSpacing: "0.08em", fontWeight: 500, textTransform: "uppercase" }}>{m.label}</div>
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <tbody><tr>
                     <EditCell value={m.value} color={PURPLE} suffix={m.suffix} onSave={v => updateMeta(m.field, v)} />
@@ -1949,7 +1941,7 @@ function InvestBook() {
         {/* Přidání záznamu */}
         <div style={{ ...C, border: "1px solid " + PURPLE_BORDER }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-            <div style={{ fontSize: 14, fontWeight: 700, color: T.text }}>Záznamy hodnoty</div>
+            <SectionTitle title="Záznamy hodnoty" sub={null} />
             <button onClick={() => {
               setPensionAccounts(prev => prev.map(a => {
                 if (a.id !== acc.id) return a;
@@ -1959,7 +1951,7 @@ function InvestBook() {
                 return { ...a, entries: [...(a.entries||[]), { id: newId, label, amount: 0 }] };
               }));
             }}
-              style={{ background: PURPLE_DIM, border: "1px solid " + PURPLE_BORDER, borderRadius: 8, color: PURPLE, cursor: "pointer", padding: "7px 16px", fontSize: 13, fontWeight: 700 }}>
+              style={{ background: T.green, border: "none", borderRadius: 8, color: "#000", cursor: "pointer", padding: "7px 16px", fontSize: 13, fontWeight: 700 }}>
               + Přidat záznam
             </button>
           </div>
