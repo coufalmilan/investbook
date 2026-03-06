@@ -778,29 +778,68 @@ function InvestBook() {
 
     return (
       <div>
+        {/* Sdílený filtr + Hero – vše závisí na activeCat */}
+        {(() => {
+          const CATS = [
+            { id: "vse",    label: "Vše",       chartKey: "v",      color: T.green,   tblFilter: null },
+            { id: "fond",   label: "Fondy+ETF", chartKey: "fond",   color: T.blue,    tblFilter: ["Fond","ETF","Portfolio"] },
+            { id: "akcie",  label: "Akcie",     chartKey: "akcie",  color: T.amber,   tblFilter: ["Akcie"] },
+            { id: "crypto", label: "Crypto",    chartKey: "crypto", color: "#ec4899", tblFilter: ["Crypto"] },
+          ];
+          const cat = CATS.find(c => c.id === activeCat) || CATS[0];
+          const isFiltered = activeCat !== "vse";
+
+          // Filtrované řádky – základ pro všechny výpočty
+          const filteredRows = cat.tblFilter
+            ? allRows.filter(p => cat.tblFilter.includes(p.category))
+            : allRows;
+
+          // Přepočítané hodnoty podle filtru
+          const fValue    = filteredRows.reduce((s, p) => s + p.valueCZK, 0);
+          const fInvested = filteredRows.reduce((s, p) => s + p.investedCZK, 0);
+          const fGain     = fValue - fInvested;
+          const fGainPct  = fInvested > 0 ? (fGain / fInvested) * 100 : 0;
+          const fAvgAnn   = calcWeightedAnnReturn(filteredRows);
+          const fAvgAnnNC = calcWeightedAnnReturn(filteredRows.filter(p => p.category !== "Crypto"));
+          const showNoCrypto = !isFiltered || cat.tblFilter?.some(c => c !== "Crypto");
+
+          // Statické hodnoty pouze pro "Vše"
+          const dispValue    = isFiltered ? fValue    : totalValue;
+          const dispInvested = isFiltered ? fInvested : totalInvested;
+          const dispGain     = isFiltered ? fGain     : (totalValue - totalInvested);
+          const dispGainPct  = dispInvested > 0 ? (dispGain / dispInvested) * 100 : 0;
+          const dispAvgAnn   = isFiltered ? (hasPrices ? fAvgAnn    : avgAnnReturn)         : avgAnnReturn;
+          const dispAvgAnnNC = isFiltered ? (hasPrices ? fAvgAnnNC  : avgAnnReturnNoCrypto)  : avgAnnReturnNoCrypto;
+
+          return (<>
         {/* Hero */}
         <div style={{ marginBottom: 28 }}>
-          <div style={{ fontSize: 13, color: T.muted, letterSpacing: "0.1em", marginBottom: 8, fontWeight: 500 }}>CELKOVÉ PORTFOLIO · 2018–2026</div>
+          <div style={{ fontSize: 13, color: T.muted, letterSpacing: "0.1em", marginBottom: 8, fontWeight: 500 }}>
+            {isFiltered ? cat.label.toUpperCase() + " · FILTROVÁNO" : "CELKOVÉ PORTFOLIO · 2018–2026"}
+          </div>
           <div style={{ display: "flex", gap: 40, alignItems: "flex-end", flexWrap: "wrap" }}>
             <div>
-              <div className="ib-hero-value" style={{ fontSize: 56, fontWeight: 800, color: T.text, letterSpacing: "-0.03em", lineHeight: 1 }}>{fmt(totalValue)}</div>
+              <div className="ib-hero-value" style={{ fontSize: 56, fontWeight: 800, color: isFiltered ? cat.color : T.text, letterSpacing: "-0.03em", lineHeight: 1 }}>{fmt(dispValue)}</div>
               <div style={{ display: "flex", gap: 12, marginTop: 6, alignItems: "center" }}>
-                <span style={{ fontSize: 14, color: T.muted }}>{"≈ $" + Math.round(totalValue / 20.57).toLocaleString("en-US")}</span>
-                <span style={{ fontSize: 13, color: T.muted }}>celková hodnota</span>
+                <span style={{ fontSize: 14, color: T.muted }}>{"≈ $" + Math.round(dispValue / 20.57).toLocaleString("en-US")}</span>
+                <span style={{ fontSize: 13, color: T.muted }}>{isFiltered ? "hodnota · " + cat.label : "celková hodnota"}</span>
+                {isFiltered && <span style={{ fontSize: 12, color: cat.color, background: cat.color + "18", border: "1px solid " + cat.color + "40", borderRadius: 6, padding: "1px 8px" }}>{((fValue / totalValue) * 100).toFixed(1)} % portfolia</span>}
               </div>
             </div>
             <div style={{ paddingBottom: 4 }}>
-              <div style={{ fontSize: 31, fontWeight: 700, color: T.green, letterSpacing: "-0.02em" }}>{gain >= 0 ? "+" : ""}{fmt(gain)}</div>
-              <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>nerealizovaný zisk celkem</div>
+              <div style={{ fontSize: 31, fontWeight: 700, color: T.green, letterSpacing: "-0.02em" }}>{dispGain >= 0 ? "+" : ""}{fmt(dispGain)}</div>
+              <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>nerealizovaný zisk</div>
             </div>
             <div style={{ paddingBottom: 4 }}>
-              <div style={{ fontSize: 31, fontWeight: 700, color: T.amber, letterSpacing: "-0.02em" }}>{avgAnnReturn >= 0 ? "+" : ""}{avgAnnReturn.toFixed(2)} %</div>
-              <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>prům. roční výnos celkem</div>
+              <div style={{ fontSize: 31, fontWeight: 700, color: T.amber, letterSpacing: "-0.02em" }}>{dispAvgAnn >= 0 ? "+" : ""}{dispAvgAnn.toFixed(2)} %</div>
+              <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>prům. roční výnos{isFiltered ? " · " + cat.label : " celkem"}</div>
             </div>
-            <div style={{ paddingBottom: 4 }}>
-              <div style={{ fontSize: 31, fontWeight: 700, color: T.blue, letterSpacing: "-0.02em" }}>{avgAnnReturnNoCrypto >= 0 ? "+" : ""}{avgAnnReturnNoCrypto.toFixed(2)} %</div>
-              <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>prům. výnos bez crypto</div>
-            </div>
+            {showNoCrypto && activeCat !== "crypto" && (
+              <div style={{ paddingBottom: 4 }}>
+                <div style={{ fontSize: 31, fontWeight: 700, color: T.blue, letterSpacing: "-0.02em" }}>{dispAvgAnnNC >= 0 ? "+" : ""}{dispAvgAnnNC.toFixed(2)} %</div>
+                <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>prům. výnos bez crypto</div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -810,30 +849,16 @@ function InvestBook() {
           const cistyMajetek   = hodnotaMajetku - hypoteka;
           return (
             <div className="ib-grid4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 20 }}>
-              <StatCard label="Investováno celkem"      value={fmt(totalInvested)}   color={T.muted}  accent={T.subtle} />
-              <StatCard label="Výnos celkem"            value={fmt(gain)}            color={T.green}  accent={T.green}  sub={"+" + gainPct.toFixed(2) + " %"} />
-              <StatCard label="Hodnota majetku"         value={fmt(hodnotaMajetku)}  color={T.text}   accent={T.blue}   sub={zustatek > 0 ? "vč. hotovosti " + fmt(zustatek) : null} />
+              <StatCard label="Investováno celkem"      value={fmt(dispInvested)}    color={T.muted}  accent={T.subtle} />
+              <StatCard label="Výnos celkem"            value={fmt(dispGain)}        color={T.green}  accent={T.green}  sub={"+" + dispGainPct.toFixed(2) + " %"} />
+              <StatCard label={isFiltered ? "Hodnota " + cat.label : "Hodnota majetku"} value={isFiltered ? fmt(fValue) : fmt(hodnotaMajetku)} color={T.text} accent={T.blue} sub={!isFiltered && zustatek > 0 ? "vč. hotovosti " + fmt(zustatek) : null} />
               <StatCard label="Čistý majetek −hypotéka" value={fmt(cistyMajetek)}    color={T.amber}  accent={T.amber}  sub={"hypotéka " + fmt(hypoteka)} />
             </div>
           );
         })()}
 
-        {/* Sdílený filtr kategorií pro graf i tabulku */}
-        {(() => {
-          // Kategorie: id grafu → { label, chartKey, color, tblCategories }
-          const CATS = [
-            { id: "vse",    label: "Vše",       chartKey: "v",      color: T.green,   tblFilter: null },
-            { id: "fond",   label: "Fondy+ETF", chartKey: "fond",   color: T.blue,    tblFilter: ["Fond","ETF","Portfolio"] },
-            { id: "akcie",  label: "Akcie",     chartKey: "akcie",  color: T.amber,   tblFilter: ["Akcie"] },
-            { id: "crypto", label: "Crypto",    chartKey: "crypto", color: "#ec4899", tblFilter: ["Crypto"] },
-          ];
-          const cat = CATS.find(c => c.id === activeCat) || CATS[0];
-
-          // Filtrované řádky tabulky
-          const filteredRows = cat.tblFilter
-            ? allRows.filter(p => cat.tblFilter.includes(p.category))
-            : allRows;
-
+          {/* Graf + tabulka */}
+          {(() => {
           const COLS = [
             { key: "name",    label: "Název",       align: "left",  sortFn: (a,b) => a.name.localeCompare(b.name) },
             { key: "invested",label: "Investováno", align: "right", sortFn: (a,b) => a.investedCZK - b.investedCZK },
@@ -1036,6 +1061,8 @@ function InvestBook() {
                 </div>
               )}
             </div>
+          </>);
+          })()}
           </>);
         })()}
 
