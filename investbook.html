@@ -193,18 +193,18 @@ async function loadFromSheets() {
   ]);
   // First row is header (A1:C1), data starts at row index 1
   const priceRows = (p||[]).slice(1);
-  // Build price map: ticker -> priceNative (cena v původní měně pozice — USD, EUR, GBP)
-  // Sheets sloupec B = priceNative (Yahoo vrací číslo v měně burzy)
-  // Sloupec C = přepočet × 20.57, ale to ignorujeme — přepočet děláme v appce přes p.fx
+  // Build price map: ticker -> priceCZK
+  // Apps Script ukládá: sloupec B = priceNative, sloupec C = priceCZK (= priceNative × fx)
+  // Bereme sloupec C — hotová CZK hodnota, žádný fx přepočet v appce
   const prices = {};
   for (const row of priceRows) {
     if (!row[0]) continue;
     const ticker = row[0].trim();
-    // Bereme sloupec B (priceNative v měně pozice)
-    if (row[1] && row[1] !== "") {
-      const raw = String(row[1]).replace(/[$\s,\s]/g,"").replace(",",".");
-      const priceNative = parseFloat(raw.replace(/[^0-9.]/g,""));
-      if (ticker && isFinite(priceNative) && priceNative > 0) prices[ticker] = priceNative;
+    // Sloupec C = priceCZK (Apps Script to přepočítá správným kurzem)
+    const col = row[2] && row[2] !== "" ? row[2] : row[1]; // C přednostně, fallback B
+    if (col && col !== "") {
+      const priceCZK = parseFloat(String(col).replace(/[^0-9.]/g,""));
+      if (ticker && isFinite(priceCZK) && priceCZK > 0) prices[ticker] = priceCZK;
     }
   }
   const pensionFromSheets = (pa && pa.length) ? rowsToPension(pa, pe||[]) : null;
@@ -573,12 +573,14 @@ function InvestBook() {
       const fx = p.fx||(p.currency==="EUR"?DEGIRO_FX:p.currency==="GBP"?GBP_FX:ETORO_FX);
       // priceNative = cena v původní měně (USD/EUR/GBP), fx = kurz měny
       // valueCZK = priceNative × fx × shares — správný přepočet pro každou měnu
-      const hasPrice = p.priceCZK && p.shares && fx > 0;
-      const priceNative = p.priceCZK || null; // priceCZK je nyní priceNative ze Sheets
-      const valCZK = (priceNative && p.shares) ? Math.round(priceNative * p.shares) : Math.round((p.invested||0)*fx);
+      const hasPrice = p.priceCZK && p.shares;
+      // priceCZK ze Sheets = cena v CZK (Apps Script přepočítá správným kurzem)
+      // valueCZK = priceCZK × shares — přímý výpočet, žádný fx
+      const valCZK = hasPrice ? Math.round(p.priceCZK * p.shares) : Math.round((p.invested||0)*fx);
       const invCZK = Math.round((p.invested||0)*fx);
       // valueOrig = hodnota v původní měně pro výpočet výnosu %
-      const valueOrig = (priceNative && p.shares) ? priceNative * p.shares : null;
+      // valueOrig = hodnota v původní měně (USD/EUR) pro správný výpočet výnosu %
+      const valueOrig = hasPrice ? (p.priceCZK * p.shares) / fx : null;
       const gainPctOrig = (valueOrig !== null && p.invested > 0) ? ((valueOrig - p.invested) / p.invested) * 100 : null;
       return { ...p, valueCZK: valCZK, investedCZK: invCZK, gainPctOrig };
     }),
