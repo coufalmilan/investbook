@@ -615,11 +615,10 @@ function InvestBook() {
   // valueOrig/invested jsou obojí ve stejné měně → žádné zkreslení FX
   // Váha = investedCZK (proporce v portfoliu)
   const calcWeightedAnnReturn = (rows) => {
-    // Počítáme portfolio-level CAGR: celková hodnota / celkové investice za N let
-    // Tím se vyhneme zkreslení kde záporné pozice (LTC, ETC) táhnou průměr dolů
-    // přestože celkové portfolio je v plusu
-    let totalValCZK = 0, totalInvCZK = 0;
-    let earliestStart = NOW_YEAR;
+    // Počítáme portfolio-level CAGR s váženými roky
+    // Každá pozice přispívá svou dobou držení váženou investicí (invCZK × years)
+    // → crypto (88k, 8 let) nemůže natáhnout jmenovatel celého portfolia (1.5M, 3-5 let)
+    let totalValCZK = 0, totalInvCZK = 0, weightedYearsSum = 0;
     for (const p of rows) {
       if (!p.invested || p.invested <= 0 || !p.investedCZK || p.investedCZK <= 0) continue;
       let valCZK;
@@ -629,12 +628,13 @@ function InvestBook() {
         valCZK = (p.priceCZK && p.shares) ? p.priceCZK * p.shares : null;
       }
       if (valCZK === null) continue;
+      const years = Math.max(1, NOW_YEAR - (p.start || NOW_YEAR));
       totalValCZK += valCZK;
       totalInvCZK += p.investedCZK;
-      if ((p.start || NOW_YEAR) < earliestStart) earliestStart = p.start || NOW_YEAR;
+      weightedYearsSum += p.investedCZK * years;
     }
     if (totalInvCZK <= 0 || totalValCZK <= 0) return 0;
-    const years = Math.max(1, NOW_YEAR - earliestStart);
+    const years = Math.max(1, weightedYearsSum / totalInvCZK);
     const ratio = totalValCZK / totalInvCZK;
     const cagr = (Math.pow(ratio, 1 / years) - 1) * 100;
     return isFinite(cagr) ? cagr : 0;
@@ -2134,7 +2134,7 @@ function InvestBook() {
             <div style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(135deg," + T.green + "," + T.blue + ")", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, color: "#000" }}>i</div>
             <div>
               <span style={{ fontSize: 17, fontWeight: 700, color: T.text, letterSpacing: "-0.01em" }}>InvestBook</span>
-              <span style={{ fontSize: 10, color: T.muted, marginLeft: 6, fontFamily: "'DM Mono',monospace" }}>v2.5</span>
+              <span style={{ fontSize: 10, color: T.muted, marginLeft: 6, fontFamily: "'DM Mono',monospace" }}>v2.6</span>
             </div>
           </div>
           <nav className="ib-nav" style={{ gap: 2 }}>
