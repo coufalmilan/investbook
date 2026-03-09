@@ -2032,10 +2032,11 @@ function InvestBook() {
         .ib-grid4  { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; }
         .ib-grid2  { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
         .ib-grid3  { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
-        .ib-hdr-fx { display: flex; align-items: center; gap: 6px; }
-        .ib-nav    { display: flex; }
-        .ib-tab-bar { display: none; }
+        .ib-hdr-fx       { display: flex; align-items: center; gap: 6px; }
+        .ib-nav          { display: flex; }
+        .ib-tab-bar      { display: none; }
         .ib-hdr-currency { display: flex; }
+        .ib-hdr-divider  { display: block; }
 
         @media (max-width: 480px) {
           /* Základní layout */
@@ -2092,7 +2093,8 @@ function InvestBook() {
 
         @media (min-width: 481px) {
           .ib-tab-bar { display: none !important; }
-          .ib-main { padding: 28px 32px; }
+          .ib-nav     { display: flex !important; }
+          .ib-main    { padding: 28px 32px; }
         }
       `}</style>
 
@@ -2103,7 +2105,7 @@ function InvestBook() {
             <div style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(135deg," + T.green + "," + T.blue + ")", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, color: "#000" }}>i</div>
             <span style={{ fontSize: 17, fontWeight: 700, color: T.text, letterSpacing: "-0.01em" }}>InvestBook</span>
           </div>
-          <nav className="ib-nav" style={{ display: "flex", gap: 2 }}>
+          <nav className="ib-nav" style={{ gap: 2 }}>
             {TABS.map(tab => (
               <button key={tab.id} onClick={() => setActiveTab(tab.id)}
                 style={{ padding: "6px 14px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 14, fontWeight: 600, transition: "all 0.12s",
@@ -2114,12 +2116,12 @@ function InvestBook() {
             ))}
           </nav>
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
-            <div className="ib-hdr-fx" style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div className="ib-hdr-fx" style={{ alignItems: "center", gap: 6 }}>
               <div style={{ width: 6, height: 6, borderRadius: "50%", background: T.green, animation: "pulse 2.5s infinite", boxShadow: "0 0 6px " + T.green }} />
               <span style={{ fontSize: 12, color: T.muted, fontFamily: "'DM Mono',monospace" }}>EUR 24,23 · USD 20,57</span>
             </div>
             <div className="ib-hdr-fx" style={{ height: 20, width: 1, background: T.border }} />
-            <div style={{ display: "flex", gap: 2, background: "rgba(255,255,255,0.04)", borderRadius: 8, padding: 3 }}>
+            <div className="ib-hdr-currency" style={{ gap: 2, background: "rgba(255,255,255,0.04)", borderRadius: 8, padding: 3 }}>
               {["CZK","EUR","USD"].map(cur => (
                 <button key={cur} onClick={() => setDispCurrency(cur)}
                   style={{ padding: "3px 10px", borderRadius: 6, border: "none", cursor: "pointer",
@@ -2136,7 +2138,7 @@ function InvestBook() {
         </header>
 
         {/* Mobile bottom tab bar */}
-        <div className="ib-tab-bar" style={{ display: "none" }}>
+        <div className="ib-tab-bar">
           {TABS.map(tab => (
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
               style={{ flex: 1, background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "4px 0",
