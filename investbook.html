@@ -609,29 +609,29 @@ function InvestBook() {
   // valueOrig/invested jsou obojí ve stejné měně → žádné zkreslení FX
   // Váha = investedCZK (proporce v portfoliu)
   const calcWeightedAnnReturn = (rows) => {
-    let weightedSum = 0, totalWeight = 0;
+    // Počítáme portfolio-level CAGR: celková hodnota / celkové investice za N let
+    // Tím se vyhneme zkreslení kde záporné pozice (LTC, ETC) táhnou průměr dolů
+    // přestože celkové portfolio je v plusu
+    let totalValCZK = 0, totalInvCZK = 0;
+    let earliestStart = NOW_YEAR;
     for (const p of rows) {
       if (!p.invested || p.invested <= 0 || !p.investedCZK || p.investedCZK <= 0) continue;
-      const years = Math.max(1, NOW_YEAR - (p.start || NOW_YEAR));
-      let valueOrig;
+      let valCZK;
       if (p.currency === "CZK") {
-        valueOrig = p.value || p.invested;
+        valCZK = p.value || p.invested;
       } else {
-        const fx = p.fx || (p.currency==="EUR" ? DEGIRO_FX : p.currency==="GBP" ? GBP_FX : ETORO_FX);
-        valueOrig = (p.priceCZK && p.shares && fx > 0)
-          ? p.priceCZK * p.shares / fx  // priceCZK (=CZK) × shares / fx = valueOrig v původní měně
-          : null; // bez ceny přeskočíme — nechceme 0% srazit průměr
+        valCZK = (p.priceCZK && p.shares) ? p.priceCZK * p.shares : null;
       }
-      // Přeskočit pozice bez načtené ceny (value == invested = placeholder)
-      if (valueOrig === null) continue;
-      const ratio = valueOrig / p.invested;
-      if (!isFinite(ratio) || ratio <= 0) continue;
-      const annR = (Math.pow(ratio, 1 / years) - 1) * 100;
-      if (!isFinite(annR)) continue;
-      weightedSum += annR * p.investedCZK;
-      totalWeight += p.investedCZK;
+      if (valCZK === null) continue;
+      totalValCZK += valCZK;
+      totalInvCZK += p.investedCZK;
+      if ((p.start || NOW_YEAR) < earliestStart) earliestStart = p.start || NOW_YEAR;
     }
-    return totalWeight > 0 ? weightedSum / totalWeight : 0;
+    if (totalInvCZK <= 0 || totalValCZK <= 0) return 0;
+    const years = Math.max(1, NOW_YEAR - earliestStart);
+    const ratio = totalValCZK / totalInvCZK;
+    const cagr = (Math.pow(ratio, 1 / years) - 1) * 100;
+    return isFinite(cagr) ? cagr : 0;
   };
   // Pokud žádná importovaná pozice nemá priceCZK, ceny ještě nejsou načteny ze Sheets
   // → použij STATIC hodnoty (ručně zadané) jako fallback
