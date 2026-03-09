@@ -693,20 +693,35 @@ function InvestBook() {
   const applyLoadedData = (data) => {
     if (data.manual && data.manual.length) setManualRows(data.manual);
     if (data.imported && data.imported.length) {
+      // Sestavíme lookup init dat podle id — shares a fx vždy bereme z init dat (kódu)
+      // Sheets může přepsat jen: invested, name, broker, category, start, priceCZK
+      const INIT_ALL = [...DEGIRO_POSITIONS_INIT, ...ETORO_POSITIONS_INIT, ...CRYPTO_POSITIONS_INIT];
+      const initById = {};
+      for (const p of INIT_ALL) initById[p.id] = p;
+
       const priced = data.imported.map(pos => {
-        // prices mapa obsahuje přímo priceCZK (z column C v prices sheetu, vzorec =B*20.57)
-        let priceCZK = pos.priceCZK || null;
-        if (pos.ticker && data.prices) {
-          const t = pos.ticker;
+        const init = initById[pos.id] || {};
+        // shares: použij init hodnotu jako minimum-správnou (post-split)
+        // Pokud Sheets má VÍCE shares než init → uživatel dokoupil → použij Sheets
+        // Pokud Sheets má MÉNĚ shares → jsou to pre-split hodnoty → použij init
+        const sheetsShares = pos.shares || 0;
+        const initShares = init.shares || sheetsShares;
+        const shares = sheetsShares > initShares * 1.01 ? sheetsShares : initShares;
+        const merged = { ...pos, shares, fx: init.fx ?? pos.fx };
+
+        // Načti priceCZK z prices mapy
+        let priceCZK = null;
+        if (merged.ticker && data.prices) {
+          const t = merged.ticker;
           const tClean = t.replace(/[*]/g, "");
-          const tBase  = tClean.replace(/-(USD|EUR|GBP|L)$/i, ""); // BTC-USD → BTC
+          const tBase  = tClean.replace(/-(USD|EUR|GBP|L)$/i, "");
           const candidates = [t, tClean, tBase, t.toUpperCase(), tClean.toUpperCase(), tBase.toUpperCase(),
                                tBase + "-USD", tBase + "-EUR", tClean + ".L"];
           for (const c of candidates) {
             if (data.prices[c] != null && data.prices[c] > 0) { priceCZK = data.prices[c]; break; }
           }
         }
-        return { ...pos, priceCZK };
+        return { ...merged, priceCZK };
       });
       setImportedRows(priced);
     }
