@@ -2186,7 +2186,10 @@ ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(
   </script>
   <script>
     if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
+      window.addEventListener('load', async () => {
+        // Unregister všechny staré SW, pak zaregistruj nový
+        const regs = await navigator.serviceWorker.getRegistrations();
+        for (const reg of regs) await reg.unregister();
         navigator.serviceWorker.register('./sw.js')
           .then(r => console.log('SW registered:', r.scope))
           .catch(e => console.log('SW error:', e));
