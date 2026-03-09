@@ -575,7 +575,7 @@ function InvestBook() {
       // valueCZK = priceNative × fx × shares — správný přepočet pro každou měnu
       const hasPrice = p.priceCZK && p.shares && fx > 0;
       const priceNative = p.priceCZK || null; // priceCZK je nyní priceNative ze Sheets
-      const valCZK = (priceNative && p.shares) ? Math.round(priceNative * fx * p.shares) : Math.round((p.invested||0)*fx);
+      const valCZK = (priceNative && p.shares) ? Math.round(priceNative * p.shares) : Math.round((p.invested||0)*fx);
       const invCZK = Math.round((p.invested||0)*fx);
       // valueOrig = hodnota v původní měně pro výpočet výnosu %
       const valueOrig = (priceNative && p.shares) ? priceNative * p.shares : null;
@@ -585,7 +585,7 @@ function InvestBook() {
   ];
   const totalValue = manualRows.reduce((s,p) => s + (p.value||0), 0) + importedRows.reduce((s,p) => {
       const fx = p.fx||(p.currency==="EUR"?DEGIRO_FX:p.currency==="GBP"?GBP_FX:ETORO_FX);
-      return s + (p.priceCZK && p.shares ? Math.round(p.priceCZK * fx * p.shares) : Math.round((p.invested||0)*fx));
+      return s + (p.priceCZK && p.shares ? Math.round(p.priceCZK * p.shares) : Math.round((p.invested||0)*fx));
     }, 0);
   const totalInvested = allRows.reduce((s, p) => s + p.investedCZK, 0);
 
@@ -615,7 +615,7 @@ function InvestBook() {
       } else {
         const fx = p.fx || (p.currency==="EUR" ? DEGIRO_FX : p.currency==="GBP" ? GBP_FX : ETORO_FX);
         valueOrig = (p.priceCZK && p.shares && fx > 0)
-          ? p.priceCZK * p.shares  // priceNative × shares = valueOrig v původní měně
+          ? p.priceCZK * p.shares / fx  // priceCZK (=CZK) × shares / fx = valueOrig v původní měně
           : null; // bez ceny přeskočíme — nechceme 0% srazit průměr
       }
       // Přeskočit pozice bez načtené ceny (value == invested = placeholder)
