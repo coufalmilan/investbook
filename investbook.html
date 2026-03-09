@@ -494,10 +494,10 @@ function SectionTitle({ title, sub }) {
 
 function StatCard({ label, value, sub, color, accent }) {
   return (
-    <div style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 14, padding: "18px 20px", position: "relative", overflow: "hidden" }}>
+    <div className="ib-statcard" style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 14, padding: "18px 20px", position: "relative", overflow: "hidden" }}>
       {accent && <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: accent, borderRadius: "14px 14px 0 0" }} />}
-      <div style={{ fontSize: 11, color: T.muted, letterSpacing: "0.08em", fontWeight: 500, marginBottom: 10, textTransform: "uppercase" }}>{label}</div>
-      <div style={{ fontSize: 23, fontWeight: 700, color: color || T.text, letterSpacing: "-0.02em", lineHeight: 1.2 }}>{value}</div>
+      <div className="ib-statcard-lbl" style={{ fontSize: 11, color: T.muted, letterSpacing: "0.08em", fontWeight: 500, marginBottom: 10, textTransform: "uppercase" }}>{label}</div>
+      <div className="ib-statcard-val" style={{ fontSize: 23, fontWeight: 700, color: color || T.text, letterSpacing: "-0.02em", lineHeight: 1.2 }}>{value}</div>
       {sub && <div style={{ fontSize: 12, color: T.muted, marginTop: 5 }}>{sub}</div>}
     </div>
   );
@@ -824,12 +824,12 @@ function InvestBook() {
           <div style={{ fontSize: 13, color: T.muted, letterSpacing: "0.1em", marginBottom: 8, fontWeight: 500 }}>
             {isFiltered ? cat.label.toUpperCase() + " · FILTROVÁNO" : "CELKOVÉ PORTFOLIO · 2018–2026"}
           </div>
-          <div style={{ display: "flex", gap: 40, alignItems: "flex-end", flexWrap: "wrap" }}>
+          <div className="ib-hero-row" style={{ display: "flex", gap: 40, alignItems: "flex-end", flexWrap: "wrap" }}>
             <div>
               <div className="ib-hero-value" style={{ fontSize: 56, fontWeight: 800, color: isFiltered ? cat.color : T.text, letterSpacing: "-0.03em", lineHeight: 1 }}>{fmt(dispValue)}</div>
               <div style={{ display: "flex", gap: 12, marginTop: 6, alignItems: "center" }}>
                 <span style={{ fontSize: 14, color: T.muted }}>{"≈ $" + Math.round(dispValue / 20.57).toLocaleString("en-US")}</span>
-                <span style={{ fontSize: 13, color: T.muted }}>{isFiltered ? "hodnota · " + cat.label : "celková hodnota"}</span>
+                <span className="ib-hero-sub" style={{ fontSize: 13, color: T.muted }}>{isFiltered ? "hodnota · " + cat.label : "celková hodnota"}</span>
                 {isFiltered && <span style={{ fontSize: 12, color: cat.color, background: cat.color + "18", border: "1px solid " + cat.color + "40", borderRadius: 6, padding: "1px 8px" }}>{((fValue / totalValue) * 100).toFixed(1)} % portfolia</span>}
               </div>
             </div>
@@ -898,7 +898,7 @@ function InvestBook() {
             </div>
 
             {/* Graf */}
-            <div style={{ background: T.card, border: "1px solid " + (activeCat !== "vse" ? cat.color + "40" : T.border), borderRadius: 16, padding: 22, marginBottom: 16, transition: "border-color 0.2s" }}>
+            <div className="ib-table-wrap" style={{ background: T.card, border: "1px solid " + (activeCat !== "vse" ? cat.color + "40" : T.border), borderRadius: 16, padding: 22, marginBottom: 16, transition: "border-color 0.2s" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
                 <div>
                   <div style={{ fontSize: 15, fontWeight: 600, color: T.text, marginBottom: 2 }}>Vývoj portfolia
@@ -1249,7 +1249,7 @@ function InvestBook() {
         <div style={{ fontSize: 11, color: T.muted, letterSpacing: "0.1em", fontWeight: 600, marginBottom: 8, textTransform: "uppercase" }}>
           Ruční pozice — ČSOB
         </div>
-        <div style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 14, overflow: "hidden", marginBottom: 20 }}>
+        <div className="ib-table-wrap" style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 14, overflow: "hidden", marginBottom: 20 }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ borderBottom: "1px solid " + T.border }}>
@@ -1346,7 +1346,7 @@ function InvestBook() {
           </div>
         </div>
 
-        <div style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 14, overflow: "hidden", marginBottom: 20 }}>
+        <div className="ib-table-wrap" style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 14, overflow: "hidden", marginBottom: 20 }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ borderBottom: "1px solid " + T.border }}>
@@ -1827,7 +1827,7 @@ function InvestBook() {
         </div>
 
         {/* KPI karty */}
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 12, marginBottom: 16 }}>
+        <div className="ib-pension-kpi" style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 12, marginBottom: 16 }}>
           <StatCard label="Celkem vloženo"          value={fmt(totalIn)}     color={T.muted}  accent={T.subtle} sub={`já ${fmt(acc.myTotal||0)} + zaměst. ${fmt(acc.employerTotal||0)}`} />
           <StatCard label="Státní příspěvky"        value={fmt(acc.stateTotal||0)} color={T.amber}  accent={T.amber} />
           <StatCard label="Zhodnocení celkem"       value={fmt(appreciation)} color={T.green}  accent={T.green}  sub={totalIn > 0 ? "+" + ((appreciation/totalIn)*100).toFixed(1) + " % z vkladu" : ""} />
@@ -1916,7 +1916,7 @@ function InvestBook() {
           const projN = currentValue + avgMonthly * 12 * projYears;
           const commitProjYears = () => { const n = parseInt(projYearsDraft); if (n > 0 && n <= 50) setProjYears(n); setEditingProjYears(false); };
           return (
-            <div className="ib-grid2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+            <div className="ib-grid2 ib-proj-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
               <div style={{ ...C, marginBottom: 0 }}>
                 <div style={{ fontSize: 13, color: T.muted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 12 }}>Projekce – konec roku {NOW_YEAR}</div>
                 <div style={{ fontSize: 28, fontWeight: 800, color: PURPLE, fontFamily: "'DM Mono',monospace" }}>{fmt(projYear)}</div>
@@ -2035,20 +2035,62 @@ function InvestBook() {
         .ib-hdr-fx { display: flex; align-items: center; gap: 6px; }
         .ib-nav    { display: flex; }
         .ib-tab-bar { display: none; }
-        @media (max-width: 768px) {
-          .ib-grid4  { grid-template-columns: 1fr 1fr !important; gap: 10px !important; }
-          .ib-grid2  { grid-template-columns: 1fr !important; }
-          .ib-grid3  { grid-template-columns: 1fr !important; }
-          .ib-hdr-fx { display: none !important; }
-          .ib-nav    { display: none !important; }
-          .ib-tab-bar { display: flex !important; position: fixed; bottom: 0; left: 0; right: 0; z-index: 200;
-            background: rgba(15,15,19,0.97); border-top: 1px solid rgba(255,255,255,0.08);
-            padding: 8px 0 calc(8px + env(safe-area-inset-bottom)); }
-          .ib-main   { padding: 16px 16px 80px !important; }
-          .ib-header { padding: 0 16px !important; }
-          .ib-hero-value { font-size: 36px !important; }
+        .ib-hdr-currency { display: flex; }
+
+        @media (max-width: 480px) {
+          /* Základní layout */
+          .ib-main   { padding: 12px 12px 76px 12px !important; max-width: 100% !important; }
+          .ib-header { padding: 0 12px !important; height: 48px !important; }
+
+          /* Gridy */
+          .ib-grid4  { grid-template-columns: 1fr 1fr !important; gap: 8px !important; }
+          .ib-grid2  { grid-template-columns: 1fr !important; gap: 10px !important; }
+          .ib-grid3  { grid-template-columns: 1fr !important; gap: 10px !important; }
+
+          /* Header – skryj FX kurzy, nech jen menu a měnu */
+          .ib-hdr-fx       { display: none !important; }
+          .ib-hdr-divider  { display: none !important; }
+          .ib-nav          { display: none !important; }
+
+          /* Spodní tab bar */
+          .ib-tab-bar {
+            display: flex !important;
+            position: fixed; bottom: 0; left: 0; right: 0; z-index: 200;
+            background: rgba(15,15,19,0.98);
+            border-top: 1px solid rgba(255,255,255,0.08);
+            padding: 6px 0 calc(6px + env(safe-area-inset-bottom));
+          }
+
+          /* Typografie */
+          .ib-hero-value { font-size: 32px !important; letter-spacing: -0.02em !important; }
+
+          /* StatCard kompaktnější */
+          .ib-statcard { padding: 12px 14px !important; border-radius: 12px !important; }
+          .ib-statcard-val { font-size: 17px !important; }
+          .ib-statcard-lbl { font-size: 10px !important; }
+
+          /* Tabulky – horizontální scroll */
+          .ib-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 12px; }
+          .ib-table-wrap table { min-width: 540px; }
+
+          /* Karty */
+          .ib-card { border-radius: 12px !important; padding: 14px 14px !important; }
+
+          /* Penzijko KPI – 2 sloupce místo 5 */
+          .ib-pension-kpi { grid-template-columns: 1fr 1fr !important; }
+
+          /* Hero gap */
+          .ib-hero-row { gap: 20px !important; }
+          .ib-hero-sub { font-size: 11px !important; }
+
+          /* Projekce – 1 sloupec */
+          .ib-proj-grid { grid-template-columns: 1fr !important; }
+
+          /* Grafy – nižší výška */
+          .ib-chart-tall { height: 180px !important; }
         }
-        @media (min-width: 769px) {
+
+        @media (min-width: 481px) {
           .ib-tab-bar { display: none !important; }
           .ib-main { padding: 28px 32px; }
         }
@@ -2088,7 +2130,7 @@ function InvestBook() {
                 </button>
               ))}
             </div>
-            <div style={{ height: 20, width: 1, background: T.border }} />
+            <div className="ib-hdr-divider" style={{ height: 20, width: 1, background: T.border }} />
             <span style={{ fontSize: 14, fontWeight: 700, color: T.green, fontFamily: "'DM Mono',monospace" }}>{fmt(totalValue)}</span>
           </div>
         </header>
@@ -2107,7 +2149,7 @@ function InvestBook() {
           ))}
         </div>
 
-        <main className="ib-main" style={{ maxWidth: 1360, margin: "0 auto", padding: "28px 32px" }}>
+        <main className="ib-main" style={{ maxWidth: 1360, margin: "0 auto", padding: "28px 32px", boxSizing: "border-box", width: "100%" }}>
           {gsMsg !== "" && (
             <div style={{ marginBottom: 14, padding: "8px 16px", borderRadius: 8, fontSize: 12, fontWeight: 600,
               background: gsStatus === "error" ? "rgba(239,68,68,0.1)" : "rgba(16,185,129,0.1)",
