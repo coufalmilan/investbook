@@ -203,7 +203,9 @@ async function loadFromSheets() {
     // Sloupec C = priceCZK (Apps Script to přepočítá správným kurzem)
     const col = row[2] && row[2] !== "" ? row[2] : row[1]; // C přednostně, fallback B
     if (col && col !== "") {
-      const priceCZK = parseFloat(String(col).replace(/[^0-9.]/g,""));
+      // Sheets formátuje CZK jako "15 004,67 Kč" — odstraníme mezery, Kč, nahradíme čárku tečkou
+      const cleaned = String(col).replace(/[\s ]/g,"").replace("Kč","").replace(",",".").replace(/[^0-9.]/g,"");
+      const priceCZK = parseFloat(cleaned);
       if (ticker && isFinite(priceCZK) && priceCZK > 0) prices[ticker] = priceCZK;
     }
   }
@@ -2111,7 +2113,7 @@ function InvestBook() {
             <div style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(135deg," + T.green + "," + T.blue + ")", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, color: "#000" }}>i</div>
             <div>
               <span style={{ fontSize: 17, fontWeight: 700, color: T.text, letterSpacing: "-0.01em" }}>InvestBook</span>
-              <span style={{ fontSize: 10, color: T.muted, marginLeft: 6, fontFamily: "'DM Mono',monospace" }}>v2.3</span>
+              <span style={{ fontSize: 10, color: T.muted, marginLeft: 6, fontFamily: "'DM Mono',monospace" }}>v2.4</span>
             </div>
           </div>
           <nav className="ib-nav" style={{ gap: 2 }}>
