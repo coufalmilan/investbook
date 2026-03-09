@@ -310,6 +310,7 @@ const ETORO_POSITIONS_INIT = [
   { id: 211, name: "RHM.DE (Rheinmetall AG)",                   broker: "eToro", invested: 883.53,  value: 883.53,  currency: "EUR", fx: DEGIRO_FX, start: 2025, annReturn: null, category: "Akcie", shares: 0.8127 , ticker: "RHM.DE" },
   { id: 212, name: "CSG.AS (CSG NV)",                           broker: "eToro", invested: 461.72,  value: 461.72,  currency: "EUR", fx: DEGIRO_FX, start: 2026, annReturn: null, category: "Akcie", shares: 13.8798 , ticker: "CSG.AS" },
   { id: 213, name: "BA-.L (Boeing Co)",                         broker: "eToro", invested: 223.31,  value: 223.31,  currency: "GBP", fx: GBP_FX,   start: 2025, annReturn: null, category: "Akcie", shares: 12.3115 , ticker: "BA-.L" },
+  { id: 214, name: "CSPX.L (iShares Core S&P 500 UCITS ETF)",  broker: "eToro", invested: 7504.02, value: 7504.02, currency: "USD", fx: ETORO_FX,  start: 2022, annReturn: null, category: "ETF",   shares: 16.1408,  ticker: "CSPX.L" },
 ];
 
 const CRYPTO_POSITIONS_INIT = [
@@ -321,7 +322,6 @@ const CRYPTO_POSITIONS_INIT = [
   { id: 306, name: "SOL* (Solana)",                             broker: "Crypto", invested: 154.55,  value: 154.55,  currency: "USD", fx: ETORO_FX, start: 2018, annReturn: null, category: "Crypto", shares: 1.091,    ticker: "SOL-USD" },
   { id: 307, name: "DOGE (Dogecoin)",                           broker: "Crypto", invested: 0.53,    value: 0.53,    currency: "USD", fx: ETORO_FX, start: 2020, annReturn: null, category: "Crypto", shares: 222.0,    ticker: "DOGE-USD" },
   { id: 308, name: "BNB (Binance Coin)",                        broker: "Crypto", invested: 148.31,  value: 148.31,  currency: "USD", fx: ETORO_FX, start: 2022, annReturn: null, category: "Crypto", shares: 0.2996,   ticker: "BNB-USD" },
-  { id: 309, name: "CSPX.L (iShares Core S&P 500 UCITS ETF)",  broker: "Crypto", invested: 7504.02, value: 7504.02, currency: "USD", fx: ETORO_FX, start: 2022, annReturn: null, category: "ETF",    shares: 16.1408,  ticker: "CSPX.L" },
 ];
 
 // Portu stays manual too (added to ČSOB group as "ostatní ruční")
@@ -330,8 +330,8 @@ const INITIAL_MANUAL_EXTRA = [];
 const STATIC = {
   majetekHodnota: 2722295,
   hypoteka: 1821963,
-  avgAnnReturn: 30.09,
-  avgAnnReturnNoCrypto: 13.24,
+  avgAnnReturn: 7.39,       // CAGR crypto: 88 224 → 156 112 CZK za 8 let
+  avgAnnReturnNoCrypto: 7.39, // fallback — přepočítá se live po načtení cen ze Sheets
   gainCZK: 715018,
 };
 
