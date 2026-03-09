@@ -193,23 +193,19 @@ async function loadFromSheets() {
   ]);
   // First row is header (A1:C1), data starts at row index 1
   const priceRows = (p||[]).slice(1);
-  // Build price map: ticker -> priceCZK
-  // Column C = priceCZK (=B*20.57 formula), fallback to B*20.57 if C missing
+  // Build price map: ticker -> priceNative (cena v původní měně pozice — USD, EUR, GBP)
+  // Sheets sloupec B = priceNative (Yahoo vrací číslo v měně burzy)
+  // Sloupec C = přepočet × 20.57, ale to ignorujeme — přepočet děláme v appce přes p.fx
   const prices = {};
   for (const row of priceRows) {
     if (!row[0]) continue;
     const ticker = row[0].trim();
-    // Prefer column C (priceCZK), fallback to column B * USD rate
-    let priceCZK = null;
-    if (row[2] && row[2] !== "") {
-      const raw = String(row[2]).replace(/[$\s]/g,"").replace(",",".");
-      priceCZK = parseFloat(raw);
-    } else if (row[1] && row[1] !== "") {
-      const raw = String(row[1]).replace(/[$\s]/g,"").replace(",",".");
-      const priceUSD = parseFloat(raw);
-      if (isFinite(priceUSD)) priceCZK = priceUSD * 20.57;
+    // Bereme sloupec B (priceNative v měně pozice)
+    if (row[1] && row[1] !== "") {
+      const raw = String(row[1]).replace(/[$\s,\s]/g,"").replace(",",".");
+      const priceNative = parseFloat(raw.replace(/[^0-9.]/g,""));
+      if (ticker && isFinite(priceNative) && priceNative > 0) prices[ticker] = priceNative;
     }
-    if (ticker && priceCZK && isFinite(priceCZK) && priceCZK > 0) prices[ticker] = priceCZK;
   }
   const pensionFromSheets = (pa && pa.length) ? rowsToPension(pa, pe||[]) : null;
   return {
@@ -292,24 +288,24 @@ const GBP_FX = 25.80; // GBP→CZK approximate
 
 const DEGIRO_POSITIONS_INIT = [
   { id: 101, name: "SXR8.DE (iShares Core S&P 500 UCITS ETF)", broker: "DEGIRO", invested: 24113.18, value: 24113.18, currency: "EUR", fx: DEGIRO_FX, start: 2024, annReturn: null, category: "ETF",   shares: 42 , ticker: "SXR8.DE" },
-  { id: 102, name: "DFND.PA (iShares Global Aerospace & Defence UCITS ETF)", broker: "DEGIRO", invested: 217.93, value: 217.93, currency: "EUR", fx: DEGIRO_FX, start: 2026, annReturn: null, category: "ETF",   shares: 25 , ticker: "DFND.PA" },
+  { id: 102, name: "DFND.PA (iShares Global Aerospace & Defence UCITS ETF)", broker: "DEGIRO", invested: 393.17, value: 393.17, currency: "EUR", fx: DEGIRO_FX, start: 2026, annReturn: null, category: "ETF",   shares: 45 , ticker: "DFND.PA" },
   { id: 103, name: "CSG.AS (CSG NV)",                           broker: "DEGIRO", invested: 645.90,   value: 645.90,   currency: "EUR", fx: DEGIRO_FX, start: 2026, annReturn: null, category: "Akcie", shares: 20 , ticker: "CSG.AS" },
 ];
 
 const ETORO_POSITIONS_INIT = [
-  { id: 201, name: "NVDA (NVIDIA Corp)",                        broker: "eToro", invested: 1432.85, value: 1432.85, currency: "USD", fx: ETORO_FX,  start: 2021, annReturn: null, category: "Akcie", shares: 7.4493 , ticker: "NVDA" },
-  { id: 202, name: "META (Meta Platforms Inc)",                 broker: "eToro", invested: 1586.73, value: 1586.73, currency: "USD", fx: ETORO_FX,  start: 2021, annReturn: null, category: "Akcie", shares: 5.0262 , ticker: "META" },
-  { id: 203, name: "MSFT (Microsoft Corp)",                     broker: "eToro", invested: 886.44,  value: 886.44,  currency: "USD", fx: ETORO_FX,  start: 2021, annReturn: null, category: "Akcie", shares: 3.0561 , ticker: "MSFT" },
-  { id: 204, name: "TSLA (Tesla Inc)",                          broker: "eToro", invested: 1700.18, value: 1700.18, currency: "USD", fx: ETORO_FX,  start: 2021, annReturn: null, category: "Akcie", shares: 7.18   , ticker: "TSLA" },
-  { id: 205, name: "AAPL (Apple Inc)",                          broker: "eToro", invested: 586.10,  value: 586.10,  currency: "USD", fx: ETORO_FX,  start: 2021, annReturn: null, category: "Akcie", shares: 4.2675 , ticker: "AAPL" },
-  { id: 206, name: "AMZN (Amazon.com Inc)",                     broker: "eToro", invested: 1197.43, value: 1197.43, currency: "USD", fx: ETORO_FX,  start: 2021, annReturn: null, category: "Akcie", shares: 1.1857 , ticker: "AMZN" },
-  { id: 207, name: "GOOG (Alphabet Inc)",                       broker: "eToro", invested: 882.05,  value: 882.05,  currency: "USD", fx: ETORO_FX,  start: 2021, annReturn: null, category: "Akcie", shares: 2.1408 , ticker: "GOOG" },
-  { id: 208, name: "TSM (Taiwan Semiconductor Manufacturing)",  broker: "eToro", invested: 327.06,  value: 327.06,  currency: "USD", fx: ETORO_FX,  start: 2025, annReturn: null, category: "Akcie", shares: 1.1578 , ticker: "TSM" },
-  { id: 209, name: "LRCX (Lam Research Corp)",                  broker: "eToro", invested: 500.00,  value: 500.00,  currency: "USD", fx: ETORO_FX,  start: 2024, annReturn: null, category: "Akcie", shares: 3.5481 , ticker: "LRCX" },
-  { id: 210, name: "ABBV (AbbVie Inc)",                         broker: "eToro", invested: 330.00,  value: 330.00,  currency: "USD", fx: ETORO_FX,  start: 2021, annReturn: null, category: "Akcie", shares: 2.2307 , ticker: "ABBV" },
-  { id: 211, name: "RHM.DE (Rheinmetall AG)",                   broker: "eToro", invested: 883.53,  value: 883.53,  currency: "EUR", fx: DEGIRO_FX, start: 2025, annReturn: null, category: "Akcie", shares: 0.8127 , ticker: "RHM.DE" },
-  { id: 212, name: "CSG.AS (CSG NV)",                           broker: "eToro", invested: 461.72,  value: 461.72,  currency: "EUR", fx: DEGIRO_FX, start: 2026, annReturn: null, category: "Akcie", shares: 13.8798 , ticker: "CSG.AS" },
-  { id: 213, name: "BA-.L (Boeing Co)",                         broker: "eToro", invested: 223.31,  value: 223.31,  currency: "GBP", fx: GBP_FX,   start: 2025, annReturn: null, category: "Akcie", shares: 12.3115 , ticker: "BA-.L" },
+  { id: 201, name: "NVDA (NVIDIA Corp)",                        broker: "eToro", invested: 1424.00, value: 1424.00, currency: "USD", fx: ETORO_FX,  start: 2021, annReturn: null, category: "Akcie", shares: 51.42  , ticker: "NVDA" },
+  { id: 202, name: "META (Meta Platforms Inc)",                 broker: "eToro", invested: 1551.10, value: 1551.10, currency: "USD", fx: ETORO_FX,  start: 2021, annReturn: null, category: "Akcie", shares: 5.03   , ticker: "META" },
+  { id: 203, name: "MSFT (Microsoft Corp)",                     broker: "eToro", invested: 824.64,  value: 824.64,  currency: "USD", fx: ETORO_FX,  start: 2021, annReturn: null, category: "Akcie", shares: 3.06   , ticker: "MSFT" },
+  { id: 204, name: "TSLA (Tesla Inc)",                          broker: "eToro", invested: 1698.15, value: 1698.15, currency: "USD", fx: ETORO_FX,  start: 2021, annReturn: null, category: "Akcie", shares: 7.18   , ticker: "TSLA" },
+  { id: 205, name: "AAPL (Apple Inc)",                          broker: "eToro", invested: 551.00,  value: 551.00,  currency: "USD", fx: ETORO_FX,  start: 2021, annReturn: null, category: "Akcie", shares: 4.27   , ticker: "AAPL" },
+  { id: 206, name: "AMZN (Amazon.com Inc)",                     broker: "eToro", invested: 1197.43, value: 1197.43, currency: "USD", fx: ETORO_FX,  start: 2021, annReturn: null, category: "Akcie", shares: 7.95   , ticker: "AMZN" },
+  { id: 207, name: "GOOG (Alphabet Inc)",                       broker: "eToro", invested: 863.61,  value: 863.61,  currency: "USD", fx: ETORO_FX,  start: 2021, annReturn: null, category: "Akcie", shares: 6.95   , ticker: "GOOG" },
+  { id: 208, name: "TSM (Taiwan Semiconductor Manufacturing)",  broker: "eToro", invested: 442.79,  value: 442.79,  currency: "USD", fx: ETORO_FX,  start: 2025, annReturn: null, category: "Akcie", shares: 1.47   , ticker: "TSM" },
+  { id: 209, name: "LRCX (Lam Research Corp)",                  broker: "eToro", invested: 486.29,  value: 486.29,  currency: "USD", fx: ETORO_FX,  start: 2024, annReturn: null, category: "Akcie", shares: 5.80   , ticker: "LRCX" },
+  { id: 210, name: "ABBV (AbbVie Inc)",                         broker: "eToro", invested: 250.65,  value: 250.65,  currency: "USD", fx: ETORO_FX,  start: 2021, annReturn: null, category: "Akcie", shares: 2.23   , ticker: "ABBV" },
+  { id: 211, name: "RHM.DE (Rheinmetall AG)",                   broker: "eToro", invested: 879.98,  value: 879.98,  currency: "EUR", fx: DEGIRO_FX, start: 2025, annReturn: null, category: "Akcie", shares: 0.81   , ticker: "RHM.DE" },
+  { id: 212, name: "CSG.AS (CSG NV)",                           broker: "eToro", invested: 1016.07, value: 1016.07, currency: "USD", fx: ETORO_FX,  start: 2026, annReturn: null, category: "Akcie", shares: 27.23  , ticker: "CSG.AS" },
+  { id: 213, name: "BA-.L (Boeing Co)",                         broker: "eToro", invested: 295.08,  value: 295.08,  currency: "USD", fx: ETORO_FX,  start: 2025, annReturn: null, category: "Akcie", shares: 12.31  , ticker: "BA-.L" },
   { id: 214, name: "CSPX.L (iShares Core S&P 500 UCITS ETF)",  broker: "eToro", invested: 7504.02, value: 7504.02, currency: "USD", fx: ETORO_FX,  start: 2022, annReturn: null, category: "ETF",   shares: 16.1408,  ticker: "CSPX.L" },
 ];
 
@@ -575,19 +571,21 @@ function InvestBook() {
     })),
     ...importedRows.map(p => {
       const fx = p.fx||(p.currency==="EUR"?DEGIRO_FX:p.currency==="GBP"?GBP_FX:ETORO_FX);
-      const valCZK = p.priceCZK && p.shares ? Math.round(p.priceCZK*p.shares) : Math.round((p.invested||0)*fx);
-      const invCZK = Math.round((p.invested||0)*fx);
-      // Přepočet hodnoty zpátky do původní měny pro správné %
-      // Pokud priceCZK není načtena, gainPctOrig = null (zobrazíme "—" místo 0%)
+      // priceNative = cena v původní měně (USD/EUR/GBP), fx = kurz měny
+      // valueCZK = priceNative × fx × shares — správný přepočet pro každou měnu
       const hasPrice = p.priceCZK && p.shares && fx > 0;
-      const valueOrig = hasPrice ? (p.priceCZK * p.shares) / fx : null;
-      const gainPctOrig = (hasPrice && p.invested > 0) ? ((valueOrig - p.invested) / p.invested) * 100 : null;
+      const priceNative = p.priceCZK || null; // priceCZK je nyní priceNative ze Sheets
+      const valCZK = (priceNative && p.shares) ? Math.round(priceNative * fx * p.shares) : Math.round((p.invested||0)*fx);
+      const invCZK = Math.round((p.invested||0)*fx);
+      // valueOrig = hodnota v původní měně pro výpočet výnosu %
+      const valueOrig = (priceNative && p.shares) ? priceNative * p.shares : null;
+      const gainPctOrig = (valueOrig !== null && p.invested > 0) ? ((valueOrig - p.invested) / p.invested) * 100 : null;
       return { ...p, valueCZK: valCZK, investedCZK: invCZK, gainPctOrig };
     }),
   ];
   const totalValue = manualRows.reduce((s,p) => s + (p.value||0), 0) + importedRows.reduce((s,p) => {
       const fx = p.fx||(p.currency==="EUR"?DEGIRO_FX:p.currency==="GBP"?GBP_FX:ETORO_FX);
-      return s + (p.priceCZK && p.shares ? Math.round(p.priceCZK*p.shares) : Math.round((p.invested||0)*fx));
+      return s + (p.priceCZK && p.shares ? Math.round(p.priceCZK * fx * p.shares) : Math.round((p.invested||0)*fx));
     }, 0);
   const totalInvested = allRows.reduce((s, p) => s + p.investedCZK, 0);
 
@@ -617,7 +615,7 @@ function InvestBook() {
       } else {
         const fx = p.fx || (p.currency==="EUR" ? DEGIRO_FX : p.currency==="GBP" ? GBP_FX : ETORO_FX);
         valueOrig = (p.priceCZK && p.shares && fx > 0)
-          ? (p.priceCZK * p.shares) / fx
+          ? p.priceCZK * p.shares  // priceNative × shares = valueOrig v původní měně
           : null; // bez ceny přeskočíme — nechceme 0% srazit průměr
       }
       // Přeskočit pozice bez načtené ceny (value == invested = placeholder)
@@ -2111,7 +2109,7 @@ function InvestBook() {
             <div style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(135deg," + T.green + "," + T.blue + ")", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, color: "#000" }}>i</div>
             <div>
               <span style={{ fontSize: 17, fontWeight: 700, color: T.text, letterSpacing: "-0.01em" }}>InvestBook</span>
-              <span style={{ fontSize: 10, color: T.muted, marginLeft: 6, fontFamily: "'DM Mono',monospace" }}>v2.1</span>
+              <span style={{ fontSize: 10, color: T.muted, marginLeft: 6, fontFamily: "'DM Mono',monospace" }}>v2.3</span>
             </div>
           </div>
           <nav className="ib-nav" style={{ gap: 2 }}>
