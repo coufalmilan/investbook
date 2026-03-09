@@ -578,8 +578,10 @@ function InvestBook() {
       const valCZK = p.priceCZK && p.shares ? Math.round(p.priceCZK*p.shares) : Math.round((p.invested||0)*fx);
       const invCZK = Math.round((p.invested||0)*fx);
       // Přepočet hodnoty zpátky do původní měny pro správné %
-      const valueOrig = (p.priceCZK && p.shares && fx > 0) ? (p.priceCZK * p.shares) / fx : (p.invested||0);
-      const gainPctOrig = p.invested > 0 ? ((valueOrig - p.invested) / p.invested) * 100 : 0;
+      // Pokud priceCZK není načtena, gainPctOrig = null (zobrazíme "—" místo 0%)
+      const hasPrice = p.priceCZK && p.shares && fx > 0;
+      const valueOrig = hasPrice ? (p.priceCZK * p.shares) / fx : null;
+      const gainPctOrig = (hasPrice && p.invested > 0) ? ((valueOrig - p.invested) / p.invested) * 100 : null;
       return { ...p, valueCZK: valCZK, investedCZK: invCZK, gainPctOrig };
     }),
   ];
@@ -616,8 +618,10 @@ function InvestBook() {
         const fx = p.fx || (p.currency==="EUR" ? DEGIRO_FX : p.currency==="GBP" ? GBP_FX : ETORO_FX);
         valueOrig = (p.priceCZK && p.shares && fx > 0)
           ? (p.priceCZK * p.shares) / fx
-          : p.invested;
+          : null; // bez ceny přeskočíme — nechceme 0% srazit průměr
       }
+      // Přeskočit pozice bez načtené ceny (value == invested = placeholder)
+      if (valueOrig === null) continue;
       const ratio = valueOrig / p.invested;
       if (!isFinite(ratio) || ratio <= 0) continue;
       const annR = (Math.pow(ratio, 1 / years) - 1) * 100;
@@ -953,11 +957,12 @@ function InvestBook() {
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                   {sortedRows.map((p, idx) => {
                     const gain    = p.valueCZK - p.investedCZK;
-                    const gainPct = p.gainPctOrig || 0;
+                    const gainPct = p.gainPctOrig;
+                    const hasGain = gainPct !== null && gainPct !== undefined;
                     const yrs     = Math.max(1, NOW_YEAR - (p.start || NOW_YEAR));
-                    const ratio   = gainPct / 100 + 1;
-                    const cagr    = ratio > 0 ? (Math.pow(ratio, 1 / yrs) - 1) * 100 : 0;
-                    const gc      = gainPct >= 0 ? T.green : T.red;
+                    const ratio   = hasGain ? gainPct / 100 + 1 : null;
+                    const cagr    = (ratio !== null && ratio > 0) ? (Math.pow(ratio, 1 / yrs) - 1) * 100 : null;
+                    const gc      = (gainPct === null || gainPct >= 0) ? T.green : T.red;
                     return (
                       <div key={p.id} style={{ padding: "12px 14px", borderRadius: 10, background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.05)" }}>
                         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
@@ -977,11 +982,11 @@ function InvestBook() {
                           </div>
                           <div>
                             <div style={{ fontSize: 11, color: T.subtle, marginBottom: 2 }}>Výnos</div>
-                            <div style={{ fontSize: 14, color: gc, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{gainPct >= 0 ? "+" : ""}{gainPct.toFixed(1)}%</div>
+                            <div style={{ fontSize: 14, color: gc, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{hasGain ? (gainPct >= 0 ? "+" : "") + gainPct.toFixed(1) + "%" : "—"}</div>
                           </div>
                           <div>
                             <div style={{ fontSize: 11, color: T.subtle, marginBottom: 2 }}>p.a.</div>
-                            <div style={{ fontSize: 14, color: gc, fontFamily: "'DM Mono',monospace" }}>{cagr >= 0 ? "+" : ""}{cagr.toFixed(1)}%</div>
+                            <div style={{ fontSize: 14, color: cagr !== null ? gc : T.muted, fontFamily: "'DM Mono',monospace" }}>{cagr !== null ? (cagr >= 0 ? "+" : "") + cagr.toFixed(1) + "%" : "—"}</div>
                           </div>
                         </div>
                       </div>
@@ -1020,9 +1025,10 @@ function InvestBook() {
                     <tbody>
                       {sortedRows.map((p, idx) => {
                         const gain    = p.valueCZK - p.investedCZK;
-                        const gainPct = p.gainPctOrig || 0;
+                        const gainPct = p.gainPctOrig;
+                        const hasGain = gainPct !== null && gainPct !== undefined;
                         const share   = (p.valueCZK / totalValue) * 100;
-                        const gc = gainPct >= 0 ? T.green : T.red;
+                        const gc = (gainPct === null || gainPct >= 0) ? T.green : T.red;
                         return (
                           <tr key={p.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.03)", transition: "background 0.1s" }}
                             onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.025)"; }}
@@ -1040,8 +1046,8 @@ function InvestBook() {
                             <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: T.muted, fontFamily: "'DM Mono',monospace" }}>{fmt(p.investedCZK)}</td>
                             <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: T.text, fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>{fmt(p.valueCZK)}</td>
                             <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: gc, fontFamily: "'DM Mono',monospace" }}>{gain >= 0 ? "+" : ""}{fmt(gain)}</td>
-                            <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: gc, fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>{gainPct >= 0 ? "+" : ""}{gainPct.toFixed(2)}%</td>
-                            {(() => { const yrs = Math.max(1, NOW_YEAR - (p.start || NOW_YEAR)); const ratio = gainPct / 100 + 1; const cagr = ratio > 0 ? (Math.pow(ratio, 1 / yrs) - 1) * 100 : 0; return <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: gc, fontFamily: "'DM Mono',monospace" }}>{cagr >= 0 ? "+" : ""}{cagr.toFixed(2)}%</td>; })()}
+                            <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: gc, fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>{hasGain ? (gainPct >= 0 ? "+" : "") + gainPct.toFixed(2) + "%" : "—"}</td>
+                            {(() => { const yrs = Math.max(1, NOW_YEAR - (p.start || NOW_YEAR)); const gp = p.gainPctOrig; const ratio = gp !== null && gp !== undefined ? gp / 100 + 1 : null; const cagr = (ratio !== null && ratio > 0) ? (Math.pow(ratio, 1 / yrs) - 1) * 100 : null; return <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: cagr !== null ? gc : T.muted, fontFamily: "'DM Mono',monospace" }}>{cagr !== null ? (cagr >= 0 ? "+" : "") + cagr.toFixed(2) + "%" : "—"}</td>; })()}
                             <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 13, color: T.muted, fontFamily: "'DM Mono',monospace" }}>{share.toFixed(2)}%</td>
                           </tr>
                         );
@@ -1577,7 +1583,7 @@ function InvestBook() {
           const top3   = byGain.slice(0, 3);
           const bot3   = byGain.slice(-3).reverse();
           const Row = ({ p, rank, isTop }) => {
-            const gp = p.gainPctOrig || 0;
+            const gp = p.gainPctOrig !== null && p.gainPctOrig !== undefined ? p.gainPctOrig : 0;
             const yrs = Math.max(1, NOW_YEAR - (p.start || NOW_YEAR));
             const ratio = gp / 100 + 1;
             const cagr = ratio > 0 ? (Math.pow(ratio, 1 / yrs) - 1) * 100 : 0;
