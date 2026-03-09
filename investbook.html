@@ -26,7 +26,7 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="https://apis.google.com/js/api.js" async defer></script>
-  <style>*{margin:0;padding:0;box-sizing:border-box}body{background:#0f0f13}</style>
+  <style>*{margin:0;padding:0;box-sizing:border-box}html,body{background:#0f0f13;overflow-x:hidden;width:100%}</style>
 </head>
 <body>
   <div id="root"></div>
@@ -975,7 +975,7 @@ function InvestBook() {
                           </div>
                           <span style={{ fontSize: 13, color: T.muted }}>{idx + 1}</span>
                         </div>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, minWidth: 0 }}>
                           <div>
                             <div style={{ fontSize: 11, color: T.subtle, marginBottom: 2 }}>Hodnota</div>
                             <div style={{ fontSize: 14, color: T.text, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{fmt(p.valueCZK)}</div>
@@ -2104,12 +2104,15 @@ function InvestBook() {
         }
       `}</style>
 
-      <div style={{ minHeight: "100vh", background: T.bg, color: T.text, fontFamily: "'DM Sans', system-ui, sans-serif" }}>
+      <div style={{ minHeight: "100vh", background: T.bg, color: T.text, fontFamily: "'DM Sans', system-ui, sans-serif", overflowX: "hidden", width: "100%" }}>
         {/* HEADER */}
         <header className="ib-header" style={{ height: 56, padding: "0 32px", borderBottom: "1px solid " + T.border, display: "flex", alignItems: "center", position: "sticky", top: 0, background: "rgba(15,15,19,0.92)", backdropFilter: "blur(16px)", zIndex: 100 }}>
           <div style={{ display: "flex", alignItems: "center", gap: 10, marginRight: 40 }}>
             <div style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(135deg," + T.green + "," + T.blue + ")", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, color: "#000" }}>i</div>
-            <span style={{ fontSize: 17, fontWeight: 700, color: T.text, letterSpacing: "-0.01em" }}>InvestBook</span>
+            <div>
+              <span style={{ fontSize: 17, fontWeight: 700, color: T.text, letterSpacing: "-0.01em" }}>InvestBook</span>
+              <span style={{ fontSize: 10, color: T.muted, marginLeft: 6, fontFamily: "'DM Mono',monospace" }}>v2.1</span>
+            </div>
           </div>
           <nav className="ib-nav" style={{ gap: 2 }}>
             {TABS.map(tab => (
