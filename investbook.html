@@ -1003,13 +1003,17 @@ function InvestBook() {
                           </div>
                           <span style={{ fontSize: 13, color: T.muted }}>{idx + 1}</span>
                         </div>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6, minWidth: 0 }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, minWidth: 0 }}>
                           <div>
                             <div style={{ fontSize: 11, color: T.subtle, marginBottom: 2 }}>Hodnota</div>
                             <div style={{ fontSize: 14, color: T.text, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{fmt(p.valueCZK)}</div>
                           </div>
                           <div>
-                            <div style={{ fontSize: 11, color: T.subtle, marginBottom: 2 }}>Výnos</div>
+                            <div style={{ fontSize: 11, color: T.subtle, marginBottom: 2 }}>Výnos CZK</div>
+                            <div style={{ fontSize: 14, color: gc, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{hasGain ? (gain >= 0 ? "+" : "") + fmt(gain) : "—"}</div>
+                          </div>
+                          <div>
+                            <div style={{ fontSize: 11, color: T.subtle, marginBottom: 2 }}>Výnos %</div>
                             <div style={{ fontSize: 14, color: gc, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{hasGain ? (gainPct >= 0 ? "+" : "") + gainPct.toFixed(1) + "%" : "—"}</div>
                           </div>
                           <div>
@@ -1167,7 +1171,7 @@ function InvestBook() {
                 <div style={{ fontSize: 13, color: T.muted }}>= {fmt(monthlyContrib * 12)} ročně</div>
               </div>
 
-              <div className="ib-grid2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+              <div className="ib-grid2" style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 16 }}>
                 {[
                   { label: "Predikce · " + avgAnnReturnNoCrypto.toFixed(2) + " % p.a.", sub: "průměrný výnos bez crypto", key: "avg", baseKey: "avgBase", color: T.green, grad: "gPA" },
                   { label: null, sub: "vlastní scénář", key: "r10", baseKey: "r10Base", color: T.blue, grad: "gP10" },
@@ -2152,7 +2156,7 @@ function InvestBook() {
             <div style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(135deg," + T.green + "," + T.blue + ")", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, color: "#000" }}>i</div>
             <div>
               <span style={{ fontSize: 17, fontWeight: 700, color: T.text, letterSpacing: "-0.01em" }}>InvestBook</span>
-              <span style={{ fontSize: 10, color: T.muted, marginLeft: 6, fontFamily: "'DM Mono',monospace" }}>v2.9</span>
+              <span style={{ fontSize: 10, color: T.muted, marginLeft: 6, fontFamily: "'DM Mono',monospace" }}>v3.0</span>
             </div>
           </div>
           <nav className="ib-nav" style={{ gap: 2 }}>

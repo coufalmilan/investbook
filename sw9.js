@@ -1,5 +1,5 @@
 // InvestBook Service Worker – offline cache
-const CACHE = 'investbook-v19';
+const CACHE = 'investbook-v20';
 const ASSETS = [
   './investbook.html',
   './manifest.json',
