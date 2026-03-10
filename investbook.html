@@ -1024,12 +1024,23 @@ function InvestBook() {
                   {(() => {
                     const fInv = sortedRows.reduce((s,p) => s+p.investedCZK, 0);
                     const fVal = sortedRows.reduce((s,p) => s+p.valueCZK, 0);
+                    const fGain = fVal - fInv;
                     const fGp  = fInv > 0 ? (((fVal-fInv)/fInv)*100) : 0;
+                    let wYears = 0, wInv = 0;
+                    for (const p of sortedRows) { const y = Math.max(1, NOW_YEAR-(p.start||NOW_YEAR)); wYears += p.investedCZK*y; wInv += p.investedCZK; }
+                    const avgYrs = wInv > 0 ? wYears/wInv : 1;
+                    const cagr = fInv > 0 ? (Math.pow(fVal/fInv, 1/Math.max(1,avgYrs))-1)*100 : 0;
                     return (
-                      <div style={{ padding: "12px 14px", borderRadius: 10, background: "rgba(34,197,94,0.06)", border: "1px solid rgba(34,197,94,0.15)", display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
-                        <div><div style={{ fontSize: 11, color: T.subtle }}>Investováno</div><div style={{ fontSize: 14, color: T.muted, fontFamily: "'DM Mono',monospace" }}>{fmt(fInv)}</div></div>
-                        <div><div style={{ fontSize: 11, color: T.subtle }}>Hodnota</div><div style={{ fontSize: 14, color: T.text, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{fmt(fVal)}</div></div>
-                        <div><div style={{ fontSize: 11, color: T.subtle }}>Výnos</div><div style={{ fontSize: 14, color: T.green, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>+{fGp.toFixed(1)}%</div></div>
+                      <div style={{ padding: "12px 14px", borderRadius: 10, background: "rgba(34,197,94,0.06)", border: "1px solid rgba(34,197,94,0.15)", display: "flex", flexDirection: "column", gap: 8 }}>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
+                          <div><div style={{ fontSize: 11, color: T.subtle }}>Investováno</div><div style={{ fontSize: 13, color: T.muted, fontFamily: "'DM Mono',monospace" }}>{fmt(fInv)}</div></div>
+                          <div><div style={{ fontSize: 11, color: T.subtle }}>Hodnota</div><div style={{ fontSize: 13, color: T.text, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{fmt(fVal)}</div></div>
+                          <div><div style={{ fontSize: 11, color: T.subtle }}>Výnos CZK</div><div style={{ fontSize: 13, color: T.green, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{fGain>=0?"+":""}{fmt(fGain)}</div></div>
+                        </div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: 8 }}>
+                          <div><div style={{ fontSize: 11, color: T.subtle }}>Výnos %</div><div style={{ fontSize: 13, color: T.green, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{fGp>=0?"+":""}{fGp.toFixed(1)}%</div></div>
+                          <div><div style={{ fontSize: 11, color: T.subtle }}>p.a.</div><div style={{ fontSize: 13, color: T.amber, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{cagr>=0?"+":""}{cagr.toFixed(1)}%</div></div>
+                        </div>
                       </div>
                     );
                   })()}
@@ -1225,21 +1236,20 @@ function InvestBook() {
                           <Area type="monotone" dataKey={cfg.key} stroke={cfg.color} strokeWidth={2.5} fill={"url(#"+cfg.grad+")"} dot={{ r: 3, fill: cfg.color, strokeWidth: 0 }} activeDot={{ r: 5, fill: cfg.color, strokeWidth: 0 }} />
                         </AreaChart>
                       </ResponsiveContainer>
-                      <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch", marginTop: 14, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
-                      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, minWidth: "max-content", paddingBottom: 4 }}>
-                        {projData.filter((_, i) => i > 0).map((pt, idx) => {
-                          const prev = projData.filter((_, i) => i > 0)[idx - 1];
-                          const prevVal = prev ? prev[cfg.key] : projData[0][cfg.key];
-                          const yoyGrowth = prevVal > 0 ? ((pt[cfg.key] - prevVal) / prevVal * 100) : 0;
-                          return (
-                            <div key={pt.rok} style={{ textAlign: "center" }}>
-                              <div style={{ fontSize: 12, color: T.muted, marginBottom: 3 }}>{pt.rok}</div>
-                              <div style={{ fontSize: 12, color: cfg.color, fontFamily: "'DM Mono',monospace", fontWeight: 600 }}>{fmt(pt[cfg.key])}</div>
-                              <div style={{ fontSize: 10, color: T.subtle, marginTop: 2 }}>+{fmt(pt[cfg.key] - prevVal)}</div>
-                            </div>
-                          );
-                        })}
-                      </div>
+                      <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch", marginTop: 14, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.05)", marginLeft: -22, marginRight: -22, paddingLeft: 22, paddingRight: 22 }}>
+                        <div style={{ display: "flex", gap: 6, paddingBottom: 4, width: "max-content" }}>
+                          {projData.filter((_, i) => i > 0).map((pt, idx) => {
+                            const prev = projData.filter((_, i) => i > 0)[idx - 1];
+                            const prevVal = prev ? prev[cfg.key] : projData[0][cfg.key];
+                            return (
+                              <div key={pt.rok} style={{ textAlign: "center", minWidth: 90, padding: "6px 8px", background: "rgba(255,255,255,0.03)", borderRadius: 8 }}>
+                                <div style={{ fontSize: 11, color: T.muted, marginBottom: 3 }}>{pt.rok}</div>
+                                <div style={{ fontSize: 12, color: cfg.color, fontFamily: "'DM Mono',monospace", fontWeight: 600 }}>{fmt(pt[cfg.key])}</div>
+                                <div style={{ fontSize: 10, color: T.subtle, marginTop: 2 }}>+{fmt(pt[cfg.key] - prevVal)}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
                     </div>
                   );
@@ -2142,7 +2152,7 @@ function InvestBook() {
             <div style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(135deg," + T.green + "," + T.blue + ")", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, color: "#000" }}>i</div>
             <div>
               <span style={{ fontSize: 17, fontWeight: 700, color: T.text, letterSpacing: "-0.01em" }}>InvestBook</span>
-              <span style={{ fontSize: 10, color: T.muted, marginLeft: 6, fontFamily: "'DM Mono',monospace" }}>v2.7</span>
+              <span style={{ fontSize: 10, color: T.muted, marginLeft: 6, fontFamily: "'DM Mono',monospace" }}>v2.9</span>
             </div>
           </div>
           <nav className="ib-nav" style={{ gap: 2 }}>
