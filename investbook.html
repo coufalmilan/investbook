@@ -228,9 +228,61 @@ async function loadFromSheets() {
 // ════════════════════════════════════════════════════════════════════════════
 //  APP SOURCE (transpiled from investbook-new.jsx)
 // ════════════════════════════════════════════════════════════════════════════
-const { useState, useCallback, useEffect } = React;
+const { useState, useCallback, useEffect, useRef } = React;
 const { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis,
         CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } = Recharts;
+
+// ════════════════════════════════════════════════════════════════════════════
+//  GEMINI AI INTEGRATION
+// ════════════════════════════════════════════════════════════════════════════
+const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
+
+async function callGemini(apiKey, systemPrompt, messages, model) {
+  const url = `${GEMINI_BASE}/${model}:generateContent?key=${apiKey}`;
+  const contents = messages.map(m => ({
+    role: m.role === "assistant" || m.role === "model" ? "model" : "user",
+    parts: [{ text: m.content || "" }],
+  }));
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      systemInstruction: { parts: [{ text: systemPrompt }] },
+      contents,
+      generationConfig: { maxOutputTokens: 1800, temperature: 0.7 },
+    }),
+  });
+  if (!res.ok) {
+    let msg = "Gemini API chyba";
+    try { const e = await res.json(); msg = e.error?.message || msg; } catch {}
+    throw new Error(msg);
+  }
+  const data = await res.json();
+  const text = data.candidates?.[0]?.content?.parts?.[0]?.text;
+  if (!text) throw new Error("Gemini nevrátil text – zkontroluj API klíč a model.");
+  return text;
+}
+
+async function typeInto(fullText, setFn) {
+  const CHUNK = 14;
+  for (let i = 0; i < fullText.length; i += CHUNK) {
+    setFn(fullText.slice(0, i + CHUNK));
+    await new Promise(r => setTimeout(r, 16));
+  }
+  setFn(fullText);
+}
+
+function renderMD(text) {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.+?)\*/g,   "<em>$1</em>")
+    .replace(/^### (.+)/gm,  "<b style='color:#a5b4fc;font-size:14px'>$1</b>")
+    .replace(/^## (.+)/gm,   "<b style='color:#a5b4fc;font-size:14px'>$1</b>")
+    .replace(/^- (.+)/gm,    "<li>$1</li>")
+    .replace(/(<li>.*<\/li>\n?)+/g, s => `<ul style='padding-left:18px;margin:6px 0'>${s}</ul>`)
+    .replace(/\n\n/g, "<br/><br/>")
+    .replace(/\n/g,   "<br/>");
+}
 
 
 
@@ -563,6 +615,22 @@ function InvestBook() {
   ];
   const [pensionAccounts, setPensionAccounts] = useState(PENSION_INIT);
 
+  // ── GEMINI AI STATE ──────────────────────────────────────────────────────────
+  const [geminiKey,   setGeminiKey]   = useState(() => localStorage.getItem("ib_gemini_key") || "");
+  const [geminiModel, setGeminiModel] = useState("gemini-2.0-flash");
+  const [aiMessages,  setAiMessages]  = useState([
+    { role: "assistant", content: "Ahoj! Jsem tvůj AI investiční asistent napojený na tvé portfolio. Zeptej se mě na cokoliv – analýzu pozic, doporučení nebo strategii. 📈" }
+  ]);
+  const [aiInput,            setAiInput]            = useState("");
+  const [aiLoading,          setAiLoading]          = useState(false);
+  const [aiAnalysis,         setAiAnalysis]         = useState("");
+  const [aiAnalysisLoading,  setAiAnalysisLoading]  = useState(false);
+  const [showGeminiSettings, setShowGeminiSettings] = useState(false);
+  const [geminiTestResult,   setGeminiTestResult]   = useState(null);
+  const [geminiTesting,      setGeminiTesting]      = useState(false);
+  const aiBottomRef = useRef(null);
+  useEffect(() => { aiBottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [aiMessages]);
+
   // Manual positions (ČSOB + Portu)
   const [manualRows, setManualRows] = useState([...INITIAL_CSOB, ...INITIAL_MANUAL_EXTRA]);
   // Imported positions (DEGIRO + eToro + Crypto)
@@ -649,6 +717,62 @@ function InvestBook() {
   const hasPrices = importedRows.some(p => p.priceCZK && p.priceCZK > 0);
   const avgAnnReturn         = hasPrices ? calcWeightedAnnReturn(allRows) : STATIC.avgAnnReturn;
   const avgAnnReturnNoCrypto = hasPrices ? calcWeightedAnnReturn(allRows.filter(p => p.category !== "Crypto")) : STATIC.avgAnnReturnNoCrypto;
+
+  // ── ANALÝZA TRHU – stav a funkce ──────────────────────────────────────────
+  const [marketData,        setMarketData]        = useState({});
+  const [marketLoading,     setMarketLoading]     = useState(false);
+  const [marketNews,        setMarketNews]        = useState(() => {
+    try { const c = JSON.parse(localStorage.getItem("ib_mkt_news")||"null"); return c?.date === new Date().toISOString().slice(0,10) ? c.text : ""; } catch { return ""; }
+  });
+  const [marketNewsLoading, setMarketNewsLoading] = useState(false);
+  const [marketNewsDate,    setMarketNewsDate]    = useState(() => {
+    try { return JSON.parse(localStorage.getItem("ib_mkt_news")||"null")?.date || null; } catch { return null; }
+  });
+  const MKT_SYMS = [
+    { sym: "^GSPC",   label: "S&P 500",   grp: "index" },
+    { sym: "^IXIC",   label: "NASDAQ",    grp: "index" },
+    { sym: "^DJI",    label: "Dow Jones", grp: "index" },
+    { sym: "^GDAXI",  label: "DAX",       grp: "index" },
+    { sym: "^VIX",    label: "VIX",       grp: "vix"   },
+    { sym: "SXR8.DE", label: "SXR8",      grp: "etf"   },
+    { sym: "BTC-USD", label: "Bitcoin",   grp: "crypto" },
+    { sym: "GC=F",    label: "Zlato",     grp: "commodity" },
+  ];
+  const fetchMktData = useCallback(async () => {
+    setMarketLoading(true);
+    const syms = MKT_SYMS.map(s => encodeURIComponent(s.sym)).join(",");
+    try {
+      const r = await fetch(`https://query2.finance.yahoo.com/v7/finance/quote?symbols=${syms}`);
+      if (r.ok) {
+        const d = await r.json();
+        const quotes = d?.quoteResponse?.result || [];
+        const map = {};
+        quotes.forEach(q => {
+          const m = MKT_SYMS.find(s => s.sym === q.symbol);
+          if (m) map[q.symbol] = { label: m.label, grp: m.grp, price: q.regularMarketPrice, change: q.regularMarketChange, pct: q.regularMarketChangePercent, currency: q.currency };
+        });
+        setMarketData(map);
+      }
+    } catch {}
+    setMarketLoading(false);
+  }, []);
+  const loadMktNews = useCallback(async () => {
+    if (!geminiKey) return;
+    setMarketNewsLoading(true);
+    const tickers = [...new Set(allRows.map(p => p.name.split("(")[0].trim().slice(0,12)).filter(Boolean))].slice(0,20).join(", ");
+    const today = new Date().toISOString().slice(0,10);
+    const prompt = `Dnes je ${today}. Jsem investor s těmito pozicemi: ${tickers}\n\nPro každou pozici (jen ty, kde jsou relevantní zprávy) stručně shrň nejdůležitější aktuální novinky za poslední 1-2 dny. Zaměř se na: výsledky (earnings), důležité produktové oznámení, regulace, makro faktory. Piš česky, max 2-3 věty na ticker. Začni nejdůležitějšími zprávami.\n\nFormát:\n## TICKER\nStručné shrnutí...`;
+    try {
+      const text = await callGemini(geminiKey, "Jsi zkušený finanční analytik. Odpovídej stručně v češtině.", [{ role: "user", content: prompt }], geminiModel);
+      setMarketNews(text);
+      setMarketNewsDate(today);
+      localStorage.setItem("ib_mkt_news", JSON.stringify({ date: today, text }));
+    } catch (e) {
+      setMarketNews("⚠️ Chyba: " + e.message);
+    }
+    setMarketNewsLoading(false);
+  }, [geminiKey, geminiModel, allRows]);
+  useEffect(() => { fetchMktData(); }, []);
 
   // Update manual row
   const updateManual = useCallback((id, field, raw) => {
@@ -1526,17 +1650,6 @@ function InvestBook() {
     allRows.forEach(p => { catMap[p.category] = (catMap[p.category] || 0) + p.valueCZK; });
     const catEntries = Object.keys(catMap).map(k => [k, catMap[k]]).sort((a,b) => b[1] - a[1]);
 
-    const rate = avgAnnReturnNoCrypto / 100;
-    const milestones = [3000000, 5000000, 10000000];
-    const milColors  = [T.green, T.amber, "#ec4899"];
-
-    const barData = sorted.slice(0,12).map(p => ({
-      name: p.name.split("(")[0].trim().slice(0,10),
-      Investováno: p.investedCZK,
-      Hodnota: p.valueCZK,
-      cat: p.category,
-    }));
-
     const C = { background: T.card, border: "1px solid " + T.border, borderRadius: 14, padding: 20 };
 
     // Koláče – broker + kategorie (stejná data jako v tabPrehled)
@@ -1666,38 +1779,6 @@ function InvestBook() {
           );
         })()}
 
-        {/* Milestone tracker */}
-        <div style={{ ...C, marginBottom: 16 }}>
-          <SectionTitle title="Milestone tracker" sub={"Odhad při " + avgAnnReturnNoCrypto.toFixed(2) + " % p.a. · aktuálně " + fmt(totalValue)} />
-          <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-            {milestones.map((target, i) => {
-              const reached = totalValue >= target;
-              const pct = Math.min((totalValue / target) * 100, 100);
-              const yrs = reached ? null : Math.log(target / totalValue) / Math.log(1 + rate);
-              const c = milColors[i];
-              return (
-                <div key={target}>
-                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                    <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-                      <span style={{ fontSize: 22 }}>{reached ? "✅" : ["🎯","🚀","💎"][i]}</span>
-                      <div>
-                        <div style={{ fontSize: 16, color: T.text, fontWeight: 700 }}>{(target/1000000).toFixed(0)} M CZK</div>
-                        <div style={{ fontSize: 12, color: reached ? T.green : T.muted }}>
-                          {reached ? "Dosaženo ✓" : "za ~" + yrs.toFixed(1) + " let · rok " + Math.ceil(NOW_YEAR + yrs)}
-                        </div>
-                      </div>
-                    </div>
-                    <span style={{ fontSize: 16, color: c, fontWeight: 800, fontFamily: "'DM Mono',monospace" }}>{pct.toFixed(0)}%</span>
-                  </div>
-                  <div style={{ height: 6, background: "rgba(255,255,255,0.05)", borderRadius: 3 }}>
-                    <div style={{ width: pct+"%", height: "100%", background: c, borderRadius: 3 }} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
         {/* Roční výkonnost portfolia */}
         {(() => {
           // Vezmi vždy první dostupný bod každého roku z PORTFOLIO_HISTORY
@@ -1791,21 +1872,84 @@ function InvestBook() {
           );
         })()}
 
-        {/* Bar chart */}
+        {/* ── ANALÝZA TRHU ─────────────────────────────────────────────────── */}
+        <div style={{ marginTop: 36, marginBottom: 24 }}>
+          <h1 style={{ fontSize: 27, fontWeight: 800, color: T.text, letterSpacing: "-0.02em" }}>Analýza trhu</h1>
+          <div style={{ fontSize: 14, color: T.muted, marginTop: 4 }}>Přehled klíčových trhů a zprávy k vašemu portfoliu</div>
+        </div>
+
+        {/* Tržní indexy */}
         <div style={{ ...C, marginBottom: 16 }}>
-          <SectionTitle title="Top 12 — investováno vs. hodnota" sub="Porovnání vložené částky a aktuální hodnoty" />
-          <ResponsiveContainer width="100%" height={230}>
-            <BarChart data={barData} barCategoryGap="28%">
-              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-              <XAxis dataKey="name" tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.tick }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.tick }} axisLine={false} tickLine={false} tickFormatter={v => (v/1000).toFixed(0)+"k"} width={40} />
-              <Tooltip {...ttStyle} wrapperStyle={{ maxWidth: 200, zIndex: 10 }} formatter={(v, name) => [fmt(v), name]} />
-              <Bar dataKey="Investováno" fill="rgba(107,114,128,0.35)" radius={[3,3,0,0]} />
-              <Bar dataKey="Hodnota" radius={[3,3,0,0]}>
-                {barData.map((d, i) => <Cell key={i} fill={CAT_COLOR[d.cat] || T.green} fillOpacity={0.85} />)}
-              </Bar>
-            </BarChart>
-          </ResponsiveContainer>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
+            <SectionTitle title="Tržní indexy a ETF" sub="Data z Yahoo Finance" />
+            <button onClick={fetchMktData} disabled={marketLoading}
+              style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid " + T.border, background: "transparent", color: marketLoading ? T.muted : T.blue, cursor: marketLoading ? "not-allowed" : "pointer", fontSize: 13, flexShrink: 0 }}>
+              {marketLoading ? "⏳" : "🔄"} Aktualizovat
+            </button>
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))", gap: 10 }}>
+            {MKT_SYMS.map(({ sym, label, grp }) => {
+              const d = marketData[sym];
+              const isVix = grp === "vix";
+              const gc = d ? (d.pct >= 0 ? (isVix ? T.red : T.green) : (isVix ? T.green : T.red)) : T.border;
+              return (
+                <div key={sym} style={{ background: T.surface, border: "1px solid " + T.border, borderRadius: 10, padding: "12px 14px", borderLeft: "3px solid " + gc }}>
+                  <div style={{ fontSize: 10, color: T.muted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4 }}>{label}</div>
+                  {d ? (
+                    <React.Fragment>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: T.text, fontFamily: "'DM Mono',monospace" }}>
+                        {d.price?.toLocaleString("cs-CZ", { maximumFractionDigits: 2 })}
+                      </div>
+                      <div style={{ fontSize: 12, color: gc, fontFamily: "'DM Mono',monospace", marginTop: 2 }}>
+                        {d.pct >= 0 ? "+" : ""}{d.pct?.toFixed(2)}%
+                        <span style={{ color: T.muted, marginLeft: 4, fontSize: 11 }}>({d.change >= 0 ? "+" : ""}{d.change?.toFixed(2)})</span>
+                      </div>
+                    </React.Fragment>
+                  ) : (
+                    <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>{marketLoading ? "…" : "N/A"}</div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+          {Object.keys(marketData).length === 0 && !marketLoading && (
+            <div style={{ color: T.muted, fontSize: 12, marginTop: 12, textAlign: "center" }}>Data nejsou dostupná – zkuste Aktualizovat nebo zkontrolujte připojení.</div>
+          )}
+        </div>
+
+        {/* Portfolio news */}
+        <div style={{ ...C, marginBottom: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+            <div>
+              <div style={{ fontSize: 15, fontWeight: 600, color: T.text }}>Zprávy portfolia</div>
+              <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>
+                {marketNewsDate ? `Načteno: ${marketNewsDate}` : "Denní AI přehled novinek k tvým pozicím"}
+              </div>
+            </div>
+            <button onClick={loadMktNews} disabled={marketNewsLoading || !geminiKey}
+              style={{ padding: "7px 14px", borderRadius: 8, border: "none",
+                background: (marketNewsLoading || !geminiKey) ? "rgba(99,102,241,0.25)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
+                color: "#fff", cursor: (marketNewsLoading || !geminiKey) ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", flexShrink: 0 }}>
+              {marketNewsLoading ? "⏳ Načítám..." : "📰 Načíst zprávy"}
+            </button>
+          </div>
+          {!geminiKey && (
+            <div style={{ background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.2)", borderRadius: 10, padding: "12px 16px", fontSize: 13, color: "#fbbf24" }}>
+              ⚠️ Pro zprávy portfolia nastav Gemini API klíč v záložce 🤖 AI.
+            </div>
+          )}
+          {marketNewsLoading && (
+            <div style={{ color: T.muted, fontSize: 13, padding: "20px 0", textAlign: "center" }}>Gemini generuje přehled zpráv…</div>
+          )}
+          {marketNews && !marketNewsLoading && (
+            <div style={{ fontSize: 14, color: T.text, lineHeight: 1.75 }}
+              dangerouslySetInnerHTML={{ __html: renderMD(marketNews) }} />
+          )}
+          {!marketNews && !marketNewsLoading && geminiKey && (
+            <div style={{ color: T.muted, fontSize: 13, textAlign: "center", padding: "24px 0" }}>
+              Klikni na <strong style={{ color: T.text }}>📰 Načíst zprávy</strong> pro denní AI přehled.
+            </div>
+          )}
         </div>
       </div>
     );
@@ -2066,11 +2210,271 @@ function InvestBook() {
     );
   };
 
+  // ── TAB AI ───────────────────────────────────────────────────────────────────
+  const tabAI = () => {
+    const C = { background: T.card, border: "1px solid " + T.border, borderRadius: 14, padding: "20px 22px" };
+    const MONO = "'DM Mono','Fira Mono',monospace";
+
+    // Portfolio kontext pro AI – vše co Gemini potřebuje vědět
+    const totalVal  = allRows.reduce((s, p) => s + p.valueCZK, 0);
+    const totalInv  = allRows.reduce((s, p) => s + p.investedCZK, 0);
+    const totalGain = totalVal - totalInv;
+    const gainPct   = totalInv > 0 ? (totalGain / totalInv * 100).toFixed(1) : "0";
+    const portfolioCtx = `Moje portfolio k dnešnímu dni (hodnoty v CZK):
+Celková hodnota: ${fmtCZK(totalVal)}, Investováno: ${fmtCZK(totalInv)}, Zisk/ztráta: ${fmtCZK(totalGain)} (${gainPct}%)
+
+Pozice (seřazeno dle hodnoty):
+${allRows.slice().sort((a,b)=>b.valueCZK-a.valueCZK).map(p => {
+  const g = p.gainPctOrig != null ? `${p.gainPctOrig.toFixed(1)}%` : "neznámý výnos";
+  return `- ${p.name} [${p.category}, ${p.broker}]: hodnota ${fmtCZK(p.valueCZK)}, investováno ${fmtCZK(p.investedCZK)}, výnos ${g}, od roku ${p.start}`;
+}).join("\n")}`;
+
+    const sysPrompt = `Jsi zkušený investiční poradce. Odpovídej vždy v češtině, konkrétně a přímočaře. Používej emoji pro přehlednost. Formátuj s **tučnými nadpisy** a odrážkami.\n\n${portfolioCtx}`;
+
+    // Odeslat zprávu v chatu
+    const sendChat = async () => {
+      const q = aiInput.trim();
+      if (!q || aiLoading || !geminiKey) return;
+      setAiInput("");
+      const newMsgs = [...aiMessages, { role: "user", content: q }];
+      setAiMessages(newMsgs);
+      setAiLoading(true);
+      setAiMessages(prev => [...prev, { role: "assistant", content: "", typing: true }]);
+      try {
+        const chatMsgs = newMsgs.filter(m => m.role !== "system").map(m => ({ role: m.role, content: m.content }));
+        const full = await callGemini(geminiKey, sysPrompt, chatMsgs, geminiModel);
+        await typeInto(full, txt => {
+          setAiMessages(prev => { const n = [...prev]; n[n.length-1] = { role: "assistant", content: txt, typing: true }; return n; });
+        });
+        setAiMessages(prev => { const n = [...prev]; n[n.length-1] = { role: "assistant", content: full, typing: false }; return n; });
+      } catch(e) {
+        setAiMessages(prev => { const n = [...prev]; n[n.length-1] = { role: "assistant", content: `❌ Chyba: ${e.message}`, typing: false }; return n; });
+      } finally { setAiLoading(false); }
+    };
+
+    // Analyzovat celé portfolio
+    const analyzePortfolio = async () => {
+      if (!geminiKey) return;
+      setAiAnalysisLoading(true);
+      setAiAnalysis("");
+      const userMsg = `Analyzuj mé portfolio:\n${portfolioCtx}\n\nProsím uveď:\n1. **Celkové hodnocení** – zdraví portfolia, diverzifikace\n2. **Nejsilnější pozice** (top 3 s zdůvodněním)\n3. **Nejslabší / riziková pozice** (top 3 s doporučením)\n4. **Konkrétní akce** – co přikoupit, co prodat, co držet\n5. **Strategie** na příštích 12 měsíců`;
+      try {
+        const txt = await callGemini(geminiKey, "Jsi zkušený portfolio manažer. Odpovídej v češtině, strukturovaně.", [{ role: "user", content: userMsg }], geminiModel);
+        setAiAnalysis(txt);
+      } catch(e) {
+        setAiAnalysis(`❌ Chyba: ${e.message}`);
+      } finally { setAiAnalysisLoading(false); }
+    };
+
+    // Test API klíče
+    const testKey = async (key) => {
+      if (!key.trim()) return;
+      setGeminiTesting(true); setGeminiTestResult(null);
+      try {
+        const url = `${GEMINI_BASE}/gemini-2.0-flash:generateContent?key=${key.trim()}`;
+        const res = await fetch(url, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: "Odpověz jedním slovem: OK" }] }] })
+        });
+        if (res.ok) setGeminiTestResult({ ok: true, msg: "✅ Klíč funguje! Gemini je připojeno." });
+        else { const e = await res.json(); setGeminiTestResult({ ok: false, msg: `❌ ${e.error?.message || "Neplatný klíč"}` }); }
+      } catch(e) { setGeminiTestResult({ ok: false, msg: `❌ Síťová chyba: ${e.message}` }); }
+      finally { setGeminiTesting(false); }
+    };
+
+    const SUGGESTIONS = ["Jak zdravé je moje portfolio?","Které pozice přikoupit?","Kde mám největší riziko?","Jak zdiverzifikovat portfolio?","Výhled trhu na rok 2025?"];
+
+    const inputBase = { background: T.bg, border: "1px solid " + T.border, borderRadius: 8, color: T.text, fontFamily: "'DM Sans',sans-serif", fontSize: 14, padding: "9px 13px", outline: "none", width: "100%" };
+
+    return (
+      <div>
+        {/* Nadpis + nastavení */}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 24 }}>
+          <div>
+            <h1 style={{ fontSize: 27, fontWeight: 800, color: T.text, letterSpacing: "-0.02em" }}>🤖 AI Asistent</h1>
+            <div style={{ fontSize: 14, color: T.muted, marginTop: 4 }}>Gemini AI napojené na tvoje portfolio · {allRows.length} pozic</div>
+          </div>
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            {geminiKey && (
+              <select value={geminiModel} onChange={e => setGeminiModel(e.target.value)}
+                style={{ background: T.card, border: "1px solid " + T.border, color: T.text, borderRadius: 8, padding: "6px 10px", fontSize: 13, cursor: "pointer", outline: "none", fontFamily: MONO }}>
+                <option value="gemini-2.0-flash">gemini-2.0-flash ⚡</option>
+                <option value="gemini-2.5-pro-exp-03-25">gemini-2.5-pro-exp 🧠</option>
+                <option value="gemini-1.5-flash">gemini-1.5-flash</option>
+                <option value="gemini-1.5-pro">gemini-1.5-pro</option>
+              </select>
+            )}
+            <button onClick={() => setShowGeminiSettings(s => !s)}
+              style={{ padding: "7px 16px", borderRadius: 8, border: "1px solid " + T.border, background: T.card, color: T.muted, cursor: "pointer", fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
+              ⚙️ {geminiKey ? "API klíč ✓" : "Nastavit API klíč"}
+            </button>
+          </div>
+        </div>
+
+        {/* Settings panel */}
+        {showGeminiSettings && (
+          <div style={{ ...C, marginBottom: 20, borderColor: "rgba(99,102,241,0.4)" }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: T.text, marginBottom: 16 }}>⚙️ Nastavení Gemini API</div>
+            <div style={{ background: "rgba(34,197,94,0.06)", border: "1px solid rgba(34,197,94,0.2)", borderRadius: 10, padding: "12px 16px", marginBottom: 16, fontSize: 13, color: T.muted, lineHeight: 1.7 }}>
+              <strong style={{ color: T.green }}>📌 Jak získat klíč (zdarma):</strong><br/>
+              1. Jdi na <a href="https://aistudio.google.com/app/apikey" target="_blank" style={{ color: T.blue }}>aistudio.google.com/app/apikey</a><br/>
+              2. Klikni „Create API key" → vyber projekt → zkopíruj klíč<br/>
+              <span style={{ color: T.subtle, fontSize: 12 }}>Gemini 2.0 Flash: zdarma · 15 req/min · 1M tokenů/den</span>
+            </div>
+            <div style={{ display: "flex", gap: 10, marginBottom: geminiTestResult ? 12 : 0 }}>
+              <input type="password" placeholder="AIza..." value={geminiKey}
+                onChange={e => { setGeminiKey(e.target.value); setGeminiTestResult(null); }}
+                style={{ ...inputBase, flex: 1, fontFamily: MONO }}
+              />
+              <button onClick={() => testKey(geminiKey)} disabled={geminiTesting || !geminiKey.trim()}
+                style={{ padding: "9px 16px", borderRadius: 8, border: "1px solid " + T.border, background: T.card, color: T.muted, cursor: "pointer", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" }}>
+                {geminiTesting ? "Testuji…" : "🧪 Otestovat"}
+              </button>
+              <button onClick={() => { localStorage.setItem("ib_gemini_key", geminiKey); setShowGeminiSettings(false); setGeminiTestResult(null); }}
+                style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>
+                💾 Uložit
+              </button>
+            </div>
+            {geminiTestResult && (
+              <div style={{ padding: "10px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600,
+                background: geminiTestResult.ok ? "rgba(34,197,94,0.08)" : "rgba(239,68,68,0.08)",
+                border: "1px solid " + (geminiTestResult.ok ? "rgba(34,197,94,0.25)" : "rgba(239,68,68,0.25)"),
+                color: geminiTestResult.ok ? T.green : "#f87171" }}>
+                {geminiTestResult.msg}
+              </div>
+            )}
+          </div>
+        )}
+
+        {!geminiKey ? (
+          <div style={{ ...C, textAlign: "center", padding: "56px 32px" }}>
+            <div style={{ fontSize: 56, marginBottom: 16 }}>🤖</div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: T.text, marginBottom: 8 }}>Nastav Gemini API klíč</div>
+            <div style={{ color: T.muted, fontSize: 14, marginBottom: 20 }}>Klíč je zdarma na <a href="https://aistudio.google.com/app/apikey" target="_blank" style={{ color: T.blue }}>aistudio.google.com</a></div>
+            <button onClick={() => setShowGeminiSettings(true)}
+              style={{ padding: "10px 24px", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "#fff", cursor: "pointer", fontSize: 14, fontWeight: 700 }}>
+              ⚙️ Nastavit klíč
+            </button>
+          </div>
+        ) : (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+
+            {/* Levý sloupec: Analýza portfolia */}
+            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
+              <div style={{ ...C }}>
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 15, fontWeight: 700, color: T.text }}>📊 Analýza portfolia</div>
+                    <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>Gemini analyzuje všech {allRows.length} pozic</div>
+                  </div>
+                  <button onClick={analyzePortfolio} disabled={aiAnalysisLoading}
+                    style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: aiAnalysisLoading ? "rgba(99,102,241,0.3)" : "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "#fff", cursor: aiAnalysisLoading ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+                    {aiAnalysisLoading
+                      ? <><span style={{ display: "inline-block", animation: "pulse 1s infinite" }}>⏳</span> Analyzuji…</>
+                      : "🔍 Analyzovat"}
+                  </button>
+                </div>
+                {!aiAnalysis && !aiAnalysisLoading && (
+                  <div style={{ color: T.subtle, fontSize: 13, textAlign: "center", padding: "24px 0" }}>
+                    Klikni „Analyzovat" a Gemini ti doporučí co koupit, prodat nebo držet.
+                  </div>
+                )}
+                {aiAnalysisLoading && (
+                  <div style={{ color: T.muted, fontSize: 13, padding: "20px 0", textAlign: "center" }}>
+                    <span style={{ animation: "pulse 1s infinite", display: "inline-block" }}>🤖</span> Gemini analyzuje tvoje portfolio…
+                  </div>
+                )}
+                {aiAnalysis && (
+                  <div style={{ fontSize: 13, lineHeight: 1.7, color: T.muted }} dangerouslySetInnerHTML={{ __html: renderMD(aiAnalysis) }} />
+                )}
+              </div>
+
+              {/* Portfolio souhrn pro AI */}
+              <div style={{ ...C }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: T.muted, marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.08em" }}>Kontext předaný AI</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                  {[
+                    { l: "Celková hodnota",  v: fmtCZK(totalVal) },
+                    { l: "Investováno",      v: fmtCZK(totalInv) },
+                    { l: "Celkový zisk",     v: fmtCZK(totalGain) + " (" + gainPct + "%)" },
+                    { l: "Počet pozic",      v: allRows.length },
+                    { l: "Kategorie",        v: [...new Set(allRows.map(p => p.category))].join(", ") },
+                    { l: "Brokéři",          v: [...new Set(allRows.map(p => p.broker))].join(", ") },
+                  ].map(r => (
+                    <div key={r.l} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid rgba(255,255,255,0.04)", fontSize: 12 }}>
+                      <span style={{ color: T.subtle }}>{r.l}</span>
+                      <span style={{ color: T.text, fontFamily: MONO }}>{r.v}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+
+            {/* Pravý sloupec: Chat */}
+            <div style={{ ...C, display: "flex", flexDirection: "column", height: 600 }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: T.text, marginBottom: 12 }}>💬 AI Chat</div>
+
+              {/* Zprávy */}
+              <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10, marginBottom: 12, paddingRight: 2 }}>
+                {aiMessages.map((m, i) => (
+                  <div key={i} style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start", gap: 8 }}>
+                    {m.role === "assistant" && (
+                      <div style={{ width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg,#6366f1,#8b5cf6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0, marginTop: 2 }}>🤖</div>
+                    )}
+                    <div style={{
+                      maxWidth: "80%", padding: "10px 14px", borderRadius: m.role === "user" ? "12px 12px 4px 12px" : "4px 12px 12px 12px",
+                      background: m.role === "user" ? "rgba(99,102,241,0.2)" : T.bg,
+                      border: "1px solid " + (m.role === "user" ? "rgba(99,102,241,0.4)" : T.border),
+                      fontSize: 13, lineHeight: 1.6, color: T.text,
+                    }}>
+                      {m.role === "assistant"
+                        ? <><span dangerouslySetInnerHTML={{ __html: renderMD(m.content) }} />{m.typing && <span style={{ display: "inline-block", width: 6, height: 14, background: T.blue, borderRadius: 2, marginLeft: 3, animation: "pulse 0.7s infinite" }} />}</>
+                        : m.content
+                      }
+                    </div>
+                  </div>
+                ))}
+                <div ref={aiBottomRef} />
+              </div>
+
+              {/* Návrhy (jen na začátku) */}
+              {aiMessages.length <= 1 && (
+                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
+                  {SUGGESTIONS.map(s => (
+                    <button key={s} onClick={() => setAiInput(s)}
+                      style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid " + T.border, background: T.bg, color: T.muted, cursor: "pointer", fontSize: 12, fontFamily: "'DM Sans',sans-serif" }}>
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Input */}
+              <div style={{ display: "flex", gap: 8 }}>
+                <input value={aiInput} onChange={e => setAiInput(e.target.value)}
+                  onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); } }}
+                  placeholder="Zeptej se na své portfolio…"
+                  disabled={aiLoading}
+                  style={{ ...inputBase, flex: 1 }}
+                />
+                <button onClick={sendChat} disabled={aiLoading || !aiInput.trim()}
+                  style={{ padding: "9px 16px", borderRadius: 8, border: "none", background: aiLoading || !aiInput.trim() ? "rgba(99,102,241,0.3)" : "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "#fff", cursor: aiLoading || !aiInput.trim() ? "not-allowed" : "pointer", fontSize: 16 }}>
+                  {aiLoading ? "⏳" : "➤"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
   const TABS = [
     { id: "portfolio", label: "Přehled" },
     { id: "analyza",   label: "Analýza" },
     { id: "penzijko",  label: "Penzijko" },
     { id: "positions", label: "Pozice" },
+    { id: "ai",        label: "🤖 AI" },
   ];
 
   return (
@@ -2194,7 +2598,7 @@ function InvestBook() {
               style={{ flex: 1, background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "4px 0",
                 color: activeTab === tab.id ? T.green : T.muted }}>
               <span style={{ fontSize: 20 }}>
-                {tab.id === "portfolio" ? "📊" : tab.id === "analyza" ? "🔍" : tab.id === "penzijko" ? "🏦" : "📋"}
+                {tab.id === "portfolio" ? "📊" : tab.id === "analyza" ? "🔍" : tab.id === "penzijko" ? "🏦" : tab.id === "ai" ? "🤖" : "📋"}
               </span>
               <span style={{ fontSize: 11, fontWeight: 600 }}>{tab.label}</span>
             </button>
@@ -2214,6 +2618,7 @@ function InvestBook() {
           {activeTab === "positions" && tabPozice()}
           {activeTab === "analyza"   && tabAnalyza()}
           {activeTab === "penzijko"  && tabPenzijko()}
+          {activeTab === "ai"        && tabAI()}
         </main>
       </div>
     </div>
