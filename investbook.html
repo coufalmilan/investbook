@@ -237,12 +237,35 @@ const { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis,
 // ════════════════════════════════════════════════════════════════════════════
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
-async function callGemini(apiKey, systemPrompt, messages, model) {
-  const url = `${GEMINI_BASE}/${model}:generateContent?key=${apiKey}`;
+// callGemini – uses Cloudflare Worker proxy when workerUrl is set,
+// otherwise calls the Gemini API directly (requires API key).
+async function callGemini(apiKey, systemPrompt, messages, model, workerUrl) {
   const contents = messages.map(m => ({
     role: m.role === "assistant" || m.role === "model" ? "model" : "user",
     parts: [{ text: m.content || "" }],
   }));
+
+  // ── Via Worker proxy (no API key needed in browser) ──────────────────────
+  if (workerUrl && workerUrl.trim()) {
+    const res = await fetch(workerUrl.trim(), {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ messages: contents, systemPrompt, model }),
+    });
+    if (!res.ok) {
+      let msg = "Worker chyba";
+      try { const e = await res.json(); msg = e.error || msg; } catch {}
+      throw new Error(msg);
+    }
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    const text = data.text;
+    if (!text) throw new Error("Worker nevrátil text.");
+    return text;
+  }
+
+  // ── Direct Gemini API call (fallback) ────────────────────────────────────
+  const url = `${GEMINI_BASE}/${model}:generateContent?key=${apiKey}`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -629,6 +652,7 @@ function InvestBook() {
   const [geminiTestResult,   setGeminiTestResult]   = useState(null);
   const [geminiTesting,      setGeminiTesting]      = useState(false);
   const [discoveredModels,   setDiscoveredModels]   = useState([]);
+  const [workerUrl,          setWorkerUrl]          = useState(() => localStorage.getItem("ib_worker_url") || "");
   const aiBottomRef = useRef(null);
   useEffect(() => { aiBottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [aiMessages]);
 
@@ -770,13 +794,13 @@ function InvestBook() {
     setMarketLoading(false);
   }, []);
   const loadMktNews = useCallback(async () => {
-    if (!geminiKey) return;
+    if (!geminiKey && !workerUrl) return;
     setMarketNewsLoading(true);
     const tickers = [...new Set(allRows.map(p => p.name.split("(")[0].trim().slice(0,12)).filter(Boolean))].slice(0,20).join(", ");
     const today = new Date().toISOString().slice(0,10);
     const prompt = `Dnes je ${today}. Jsem investor s těmito pozicemi: ${tickers}\n\nPro každou pozici (jen ty, kde jsou relevantní zprávy) stručně shrň nejdůležitější aktuální novinky za poslední 1-2 dny. Zaměř se na: výsledky (earnings), důležité produktové oznámení, regulace, makro faktory. Piš česky, max 2-3 věty na ticker. Začni nejdůležitějšími zprávami.\n\nFormát:\n## TICKER\nStručné shrnutí...`;
     try {
-      const text = await callGemini(geminiKey, "Jsi zkušený finanční analytik. Odpovídej stručně v češtině.", [{ role: "user", content: prompt }], geminiModel);
+      const text = await callGemini(geminiKey, "Jsi zkušený finanční analytik. Odpovídej stručně v češtině.", [{ role: "user", content: prompt }], geminiModel, workerUrl);
       setMarketNews(text);
       setMarketNewsDate(today);
       localStorage.setItem("ib_mkt_news", JSON.stringify({ date: today, text }));
@@ -784,7 +808,7 @@ function InvestBook() {
       setMarketNews("⚠️ Chyba: " + e.message);
     }
     setMarketNewsLoading(false);
-  }, [geminiKey, geminiModel, allRows]);
+  }, [geminiKey, geminiModel, allRows, workerUrl]);
   useEffect(() => { fetchMktData(); }, []);
 
   // Update manual row
@@ -1939,16 +1963,16 @@ function InvestBook() {
                 {marketNewsDate ? `Načteno: ${marketNewsDate}` : "Denní AI přehled novinek k tvým pozicím"}
               </div>
             </div>
-            <button onClick={loadMktNews} disabled={marketNewsLoading || !geminiKey}
+            <button onClick={loadMktNews} disabled={marketNewsLoading || (!geminiKey && !workerUrl)}
               style={{ padding: "7px 14px", borderRadius: 8, border: "none",
-                background: (marketNewsLoading || !geminiKey) ? "rgba(99,102,241,0.25)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
-                color: "#fff", cursor: (marketNewsLoading || !geminiKey) ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", flexShrink: 0 }}>
+                background: (marketNewsLoading || (!geminiKey && !workerUrl)) ? "rgba(99,102,241,0.25)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
+                color: "#fff", cursor: (marketNewsLoading || (!geminiKey && !workerUrl)) ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", flexShrink: 0 }}>
               {marketNewsLoading ? "⏳ Načítám..." : "📰 Načíst zprávy"}
             </button>
           </div>
-          {!geminiKey && (
+          {!geminiKey && !workerUrl && (
             <div style={{ background: "rgba(251,191,36,0.08)", border: "1px solid rgba(251,191,36,0.2)", borderRadius: 10, padding: "12px 16px", fontSize: 13, color: "#fbbf24" }}>
-              ⚠️ Pro zprávy portfolia nastav Gemini API klíč v záložce 🤖 AI.
+              ⚠️ Pro zprávy portfolia nastav Worker URL nebo Gemini API klíč v záložce 🤖 AI.
             </div>
           )}
           {marketNewsLoading && (
@@ -1958,7 +1982,7 @@ function InvestBook() {
             <div style={{ fontSize: 14, color: T.text, lineHeight: 1.75 }}
               dangerouslySetInnerHTML={{ __html: renderMD(marketNews) }} />
           )}
-          {!marketNews && !marketNewsLoading && geminiKey && (
+          {!marketNews && !marketNewsLoading && (geminiKey || workerUrl) && (
             <div style={{ color: T.muted, fontSize: 13, textAlign: "center", padding: "24px 0" }}>
               Klikni na <strong style={{ color: T.text }}>📰 Načíst zprávy</strong> pro denní AI přehled.
             </div>
@@ -2247,7 +2271,7 @@ ${allRows.slice().sort((a,b)=>b.valueCZK-a.valueCZK).map(p => {
     // Odeslat zprávu v chatu
     const sendChat = async () => {
       const q = aiInput.trim();
-      if (!q || aiLoading || !geminiKey) return;
+      if (!q || aiLoading || (!geminiKey && !workerUrl)) return;
       setAiInput("");
       const newMsgs = [...aiMessages, { role: "user", content: q }];
       setAiMessages(newMsgs);
@@ -2255,7 +2279,7 @@ ${allRows.slice().sort((a,b)=>b.valueCZK-a.valueCZK).map(p => {
       setAiMessages(prev => [...prev, { role: "assistant", content: "", typing: true }]);
       try {
         const chatMsgs = newMsgs.filter(m => m.role !== "system").map(m => ({ role: m.role, content: m.content }));
-        const full = await callGemini(geminiKey, sysPrompt, chatMsgs, geminiModel);
+        const full = await callGemini(geminiKey, sysPrompt, chatMsgs, geminiModel, workerUrl);
         await typeInto(full, txt => {
           setAiMessages(prev => { const n = [...prev]; n[n.length-1] = { role: "assistant", content: txt, typing: true }; return n; });
         });
@@ -2267,12 +2291,12 @@ ${allRows.slice().sort((a,b)=>b.valueCZK-a.valueCZK).map(p => {
 
     // Analyzovat celé portfolio
     const analyzePortfolio = async () => {
-      if (!geminiKey) return;
+      if (!geminiKey && !workerUrl) return;
       setAiAnalysisLoading(true);
       setAiAnalysis("");
       const userMsg = `Analyzuj mé portfolio:\n${portfolioCtx}\n\nProsím uveď:\n1. **Celkové hodnocení** – zdraví portfolia, diverzifikace\n2. **Nejsilnější pozice** (top 3 s zdůvodněním)\n3. **Nejslabší / riziková pozice** (top 3 s doporučením)\n4. **Konkrétní akce** – co přikoupit, co prodat, co držet\n5. **Strategie** na příštích 12 měsíců`;
       try {
-        const txt = await callGemini(geminiKey, "Jsi zkušený portfolio manažer. Odpovídej v češtině, strukturovaně.", [{ role: "user", content: userMsg }], geminiModel);
+        const txt = await callGemini(geminiKey, "Jsi zkušený portfolio manažer. Odpovídej v češtině, strukturovaně.", [{ role: "user", content: userMsg }], geminiModel, workerUrl);
         setAiAnalysis(txt);
       } catch(e) {
         setAiAnalysis(`❌ Chyba: ${e.message}`);
@@ -2349,7 +2373,7 @@ ${allRows.slice().sort((a,b)=>b.valueCZK-a.valueCZK).map(p => {
             )}
             <button onClick={() => setShowGeminiSettings(s => !s)}
               style={{ padding: "7px 16px", borderRadius: 8, border: "1px solid " + T.border, background: T.card, color: T.muted, cursor: "pointer", fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
-              ⚙️ {geminiKey ? "API klíč ✓" : "Nastavit API klíč"}
+              ⚙️ {workerUrl ? "Worker ✓" : geminiKey ? "API klíč ✓" : "Nastavit AI"}
             </button>
           </div>
         </div>
@@ -2357,48 +2381,73 @@ ${allRows.slice().sort((a,b)=>b.valueCZK-a.valueCZK).map(p => {
         {/* Settings panel */}
         {showGeminiSettings && (
           <div style={{ ...C, marginBottom: 20, borderColor: "rgba(99,102,241,0.4)" }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: T.text, marginBottom: 16 }}>⚙️ Nastavení Gemini API</div>
-            <div style={{ background: "rgba(34,197,94,0.06)", border: "1px solid rgba(34,197,94,0.2)", borderRadius: 10, padding: "12px 16px", marginBottom: 16, fontSize: 13, color: T.muted, lineHeight: 1.7 }}>
-              <strong style={{ color: T.green }}>📌 Jak získat klíč (zdarma):</strong><br/>
-              1. Jdi na <a href="https://aistudio.google.com/app/apikey" target="_blank" style={{ color: T.blue }}>aistudio.google.com/app/apikey</a><br/>
-              2. Klikni „Create API key" → vyber projekt → zkopíruj klíč<br/>
-              <span style={{ color: T.subtle, fontSize: 12 }}>Gemini 2.0 Flash: zdarma · 15 req/min · 1M tokenů/den</span>
-            </div>
-            <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
-              <input type="password" placeholder="AIza..." value={geminiKey}
-                onChange={e => { setGeminiKey(e.target.value); setGeminiTestResult(null); }}
-                style={{ ...inputBase, flex: 1, fontFamily: MONO }}
+            <div style={{ fontSize: 15, fontWeight: 700, color: T.text, marginBottom: 16 }}>⚙️ Nastavení Gemini AI</div>
+
+            {/* Worker URL – doporučeno */}
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: T.muted, marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
+                🌐 Cloudflare Worker URL
+                <span style={{ fontSize: 11, background: "rgba(99,102,241,0.15)", color: "#a5b4fc", borderRadius: 4, padding: "1px 7px", fontWeight: 700 }}>DOPORUČENO</span>
+              </div>
+              <input type="url" placeholder="https://investbook-worker.your-name.workers.dev"
+                value={workerUrl}
+                onChange={e => { setWorkerUrl(e.target.value); setGeminiTestResult(null); }}
+                style={{ ...inputBase, fontFamily: MONO }}
               />
-              <button onClick={() => discoverModels(geminiKey)} disabled={geminiTesting || !geminiKey.trim()}
-                title="Zjistí dostupné modely pro tvůj API klíč a automaticky vybere nejlepší"
-                style={{ padding: "9px 14px", borderRadius: 8, border: "1px solid rgba(99,102,241,0.5)", background: "rgba(99,102,241,0.1)", color: "#a5b4fc", cursor: "pointer", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" }}>
-                {geminiTesting ? "…" : "🔍 Zjistit modely"}
-              </button>
-              <button onClick={() => testKey(geminiKey)} disabled={geminiTesting || !geminiKey.trim()}
-                style={{ padding: "9px 16px", borderRadius: 8, border: "1px solid " + T.border, background: T.card, color: T.muted, cursor: "pointer", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" }}>
-                {geminiTesting ? "Testuji…" : "🧪 Test"}
-              </button>
-              <button onClick={() => { localStorage.setItem("ib_gemini_key", geminiKey); setShowGeminiSettings(false); setGeminiTestResult(null); }}
-                style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>
-                💾 Uložit
-              </button>
+              <div style={{ fontSize: 11, color: T.subtle, marginTop: 5, lineHeight: 1.6 }}>
+                Worker volá Gemini na straně serveru – API klíč zůstane skrytý. Nahraj soubor <strong style={{ color: T.text }}>investbook-worker.js</strong> na Cloudflare Workers a sem vlož URL.
+              </div>
             </div>
+
+            {/* Přímý API klíč – fallback */}
+            <div style={{ marginBottom: 14 }}>
+              <div style={{ fontSize: 13, fontWeight: 600, color: T.muted, marginBottom: 6 }}>🔑 Gemini API klíč (přímé volání – fallback)</div>
+              <div style={{ background: "rgba(34,197,94,0.06)", border: "1px solid rgba(34,197,94,0.2)", borderRadius: 8, padding: "10px 14px", marginBottom: 10, fontSize: 12, color: T.muted, lineHeight: 1.7 }}>
+                1. Jdi na <a href="https://aistudio.google.com/app/apikey" target="_blank" style={{ color: T.blue }}>aistudio.google.com/app/apikey</a> → „Create API key"<br/>
+                <span style={{ color: T.subtle }}>Gemini Flash: zdarma · 15 req/min · 1M tokenů/den</span>
+              </div>
+              <div style={{ display: "flex", gap: 10 }}>
+                <input type="password" placeholder="AIza..." value={geminiKey}
+                  onChange={e => { setGeminiKey(e.target.value); setGeminiTestResult(null); }}
+                  style={{ ...inputBase, flex: 1, fontFamily: MONO }}
+                />
+                <button onClick={() => discoverModels(geminiKey)} disabled={geminiTesting || !geminiKey.trim()}
+                  title="Zjistí dostupné modely pro tvůj API klíč a automaticky vybere nejlepší"
+                  style={{ padding: "9px 14px", borderRadius: 8, border: "1px solid rgba(99,102,241,0.5)", background: "rgba(99,102,241,0.1)", color: "#a5b4fc", cursor: "pointer", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" }}>
+                  {geminiTesting ? "…" : "🔍 Zjistit modely"}
+                </button>
+                <button onClick={() => testKey(geminiKey)} disabled={geminiTesting || !geminiKey.trim()}
+                  style={{ padding: "9px 16px", borderRadius: 8, border: "1px solid " + T.border, background: T.card, color: T.muted, cursor: "pointer", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" }}>
+                  {geminiTesting ? "Testuji…" : "🧪 Test"}
+                </button>
+              </div>
+            </div>
+
             {geminiTestResult && (
-              <div style={{ padding: "10px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600,
+              <div style={{ padding: "10px 14px", borderRadius: 8, fontSize: 13, fontWeight: 600, marginBottom: 10,
                 background: geminiTestResult.ok ? "rgba(34,197,94,0.08)" : "rgba(239,68,68,0.08)",
                 border: "1px solid " + (geminiTestResult.ok ? "rgba(34,197,94,0.25)" : "rgba(239,68,68,0.25)"),
                 color: geminiTestResult.ok ? T.green : "#f87171" }}>
                 {geminiTestResult.msg}
               </div>
             )}
+
+            <button onClick={() => {
+              localStorage.setItem("ib_gemini_key", geminiKey);
+              localStorage.setItem("ib_worker_url", workerUrl);
+              setShowGeminiSettings(false);
+              setGeminiTestResult(null);
+            }} style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 700 }}>
+              💾 Uložit nastavení
+            </button>
           </div>
         )}
 
-        {!geminiKey ? (
+        {!geminiKey && !workerUrl ? (
           <div style={{ ...C, textAlign: "center", padding: "56px 32px" }}>
             <div style={{ fontSize: 56, marginBottom: 16 }}>🤖</div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: T.text, marginBottom: 8 }}>Nastav Gemini API klíč</div>
-            <div style={{ color: T.muted, fontSize: 14, marginBottom: 20 }}>Klíč je zdarma na <a href="https://aistudio.google.com/app/apikey" target="_blank" style={{ color: T.blue }}>aistudio.google.com</a></div>
+            <div style={{ fontSize: 18, fontWeight: 700, color: T.text, marginBottom: 8 }}>Nastav Gemini AI</div>
+            <div style={{ color: T.muted, fontSize: 14, marginBottom: 20 }}>Použij Worker URL (doporučeno) nebo API klíč zdarma z <a href="https://aistudio.google.com/app/apikey" target="_blank" style={{ color: T.blue }}>aistudio.google.com</a></div>
             <button onClick={() => setShowGeminiSettings(true)}
               style={{ padding: "10px 24px", borderRadius: 10, border: "none", background: "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "#fff", cursor: "pointer", fontSize: 14, fontWeight: 700 }}>
               ⚙️ Nastavit klíč
