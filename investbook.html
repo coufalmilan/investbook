@@ -741,8 +741,11 @@ function InvestBook() {
   const fetchMktData = useCallback(async () => {
     setMarketLoading(true);
     const syms = MKT_SYMS.map(s => encodeURIComponent(s.sym)).join(",");
+    // Yahoo Finance blokuje přímé requesty z GitHub Pages (CORS) → routujeme přes allorigins proxy
+    const yahooUrl = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${syms}`;
+    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`;
     try {
-      const r = await fetch(`https://query2.finance.yahoo.com/v7/finance/quote?symbols=${syms}`);
+      const r = await fetch(proxyUrl);
       if (r.ok) {
         const d = await r.json();
         const quotes = d?.quoteResponse?.result || [];
@@ -2299,9 +2302,8 @@ ${allRows.slice().sort((a,b)=>b.valueCZK-a.valueCZK).map(p => {
               <select value={geminiModel} onChange={e => setGeminiModel(e.target.value)}
                 style={{ background: T.card, border: "1px solid " + T.border, color: T.text, borderRadius: 8, padding: "6px 10px", fontSize: 13, cursor: "pointer", outline: "none", fontFamily: MONO }}>
                 <option value="gemini-2.0-flash">gemini-2.0-flash ⚡</option>
+                <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite 🪶</option>
                 <option value="gemini-2.5-pro-exp-03-25">gemini-2.5-pro-exp 🧠</option>
-                <option value="gemini-1.5-flash">gemini-1.5-flash</option>
-                <option value="gemini-1.5-pro">gemini-1.5-pro</option>
               </select>
             )}
             <button onClick={() => setShowGeminiSettings(s => !s)}
