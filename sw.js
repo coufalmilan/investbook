@@ -1,5 +1,5 @@
 // InvestBook Service Worker – offline cache
-const CACHE = 'investbook-v1';
+const CACHE = 'investbook-v32';
 const ASSETS = [
   './investbook.html',
   './manifest.json',
@@ -22,13 +22,22 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  // Fonts, Google APIs a Sheets vždy ze sítě
   const url = e.request.url;
-  if (url.includes('googleapis.com') || url.includes('fonts.') || url.includes('gstatic')) {
+  if (
+    url.includes('googleapis.com') ||
+    url.includes('fonts.') ||
+    url.includes('gstatic') ||
+    url.includes('yahoo.com') ||
+    url.includes('allorigins.win') ||
+    url.includes('corsproxy.io') ||
+    url.includes('codetabs.com') ||
+    url.includes('generativelanguage') ||
+    url.includes('cdnjs.cloudflare.com') ||
+    url.includes('accounts.google.com')
+  ) {
     e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
     return;
   }
-  // Vlastní soubory: cache-first, fallback na síť
   e.respondWith(
     caches.match(e.request).then(cached => cached || fetch(e.request).then(resp => {
       if (resp && resp.status === 200 && resp.type !== 'opaque') {
