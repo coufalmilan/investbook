@@ -1,5 +1,5 @@
 // InvestBook Service Worker – offline cache
-const CACHE = 'investbook-v25';
+const CACHE = 'investbook-v26';
 const ASSETS = [
   './investbook.html',
   './manifest.json',
@@ -22,7 +22,7 @@ self.addEventListener('activate', e => {
 });
 
 self.addEventListener('fetch', e => {
-  // Vždy ze sítě: Google APIs, Fonts, Yahoo Finance, Gemini, CDN, allorigins proxy
+  // Vždy ze sítě: Google APIs, Fonts, Yahoo Finance, Gemini, CDN, CORS proxy servery
   const url = e.request.url;
   if (
     url.includes('googleapis.com') ||
@@ -30,6 +30,7 @@ self.addEventListener('fetch', e => {
     url.includes('gstatic') ||
     url.includes('yahoo.com') ||
     url.includes('allorigins.win') ||
+    url.includes('corsproxy.io') ||
     url.includes('generativelanguage') ||
     url.includes('cdnjs.cloudflare.com') ||
     url.includes('accounts.google.com')

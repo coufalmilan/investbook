@@ -740,23 +740,30 @@ function InvestBook() {
   ];
   const fetchMktData = useCallback(async () => {
     setMarketLoading(true);
-    const syms = MKT_SYMS.map(s => encodeURIComponent(s.sym)).join(",");
-    // Yahoo Finance blokuje přímé requesty z GitHub Pages (CORS) → routujeme přes allorigins proxy
+    // Pozor: symboly NESMÍ být pre-encodované, jinak proxy dostane double-encoded URL (%255E místo %5E)
+    const syms = MKT_SYMS.map(s => s.sym).join(",");
     const yahooUrl = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${syms}`;
-    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`;
-    try {
-      const r = await fetch(proxyUrl);
-      if (r.ok) {
+    // Zkoušíme dva CORS proxy za sebou – pokud první selže, použijeme druhý
+    const proxies = [
+      `https://corsproxy.io/?url=${encodeURIComponent(yahooUrl)}`,
+      `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
+    ];
+    for (const proxyUrl of proxies) {
+      try {
+        const r = await fetch(proxyUrl);
+        if (!r.ok) continue;
         const d = await r.json();
-        const quotes = d?.quoteResponse?.result || [];
+        const quotes = d?.quoteResponse?.result;
+        if (!quotes?.length) continue;
         const map = {};
         quotes.forEach(q => {
           const m = MKT_SYMS.find(s => s.sym === q.symbol);
           if (m) map[q.symbol] = { label: m.label, grp: m.grp, price: q.regularMarketPrice, change: q.regularMarketChange, pct: q.regularMarketChangePercent, currency: q.currency };
         });
         setMarketData(map);
-      }
-    } catch {}
+        break; // úspěch – nepotřebujeme druhý proxy
+      } catch {}
+    }
     setMarketLoading(false);
   }, []);
   const loadMktNews = useCallback(async () => {
