@@ -628,6 +628,7 @@ function InvestBook() {
   const [showGeminiSettings, setShowGeminiSettings] = useState(false);
   const [geminiTestResult,   setGeminiTestResult]   = useState(null);
   const [geminiTesting,      setGeminiTesting]      = useState(false);
+  const [discoveredModels,   setDiscoveredModels]   = useState([]);
   const aiBottomRef = useRef(null);
   useEffect(() => { aiBottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [aiMessages]);
 
@@ -2278,17 +2279,42 @@ ${allRows.slice().sort((a,b)=>b.valueCZK-a.valueCZK).map(p => {
       } finally { setAiAnalysisLoading(false); }
     };
 
-    // Test API klíče
+    // Zjisti dostupné modely pro daný klíč přes ListModels API
+    const discoverModels = async (key) => {
+      if (!key.trim()) return;
+      setGeminiTesting(true); setGeminiTestResult(null);
+      try {
+        const r = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key.trim()}&pageSize=50`);
+        if (!r.ok) { const e = await r.json(); throw new Error(e.error?.message || "Chyba API"); }
+        const d = await r.json();
+        const models = (d.models || [])
+          .filter(m => m.supportedGenerationMethods?.includes("generateContent"))
+          .map(m => m.name.replace("models/", ""))
+          .sort();
+        if (models.length) {
+          setDiscoveredModels(models);
+          // Preferuj flash modely (rychlé a levné), pak cokoli jiného
+          const preferred = models.find(m => m.includes("flash")) || models[0];
+          setGeminiModel(preferred);
+          setGeminiTestResult({ ok: true, msg: `✅ Nalezeno ${models.length} modelů. Vybrán: ${preferred}` });
+        } else {
+          setGeminiTestResult({ ok: false, msg: "❌ Klíč nemá žádné modely s generateContent." });
+        }
+      } catch(e) { setGeminiTestResult({ ok: false, msg: `❌ ${e.message}` }); }
+      finally { setGeminiTesting(false); }
+    };
+
+    // Test API klíče (používá aktuálně vybraný model)
     const testKey = async (key) => {
       if (!key.trim()) return;
       setGeminiTesting(true); setGeminiTestResult(null);
       try {
-        const url = `${GEMINI_BASE}/gemini-2.5-pro-exp-03-25:generateContent?key=${key.trim()}`;
+        const url = `${GEMINI_BASE}/${geminiModel}:generateContent?key=${key.trim()}`;
         const res = await fetch(url, {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: "Odpověz jedním slovem: OK" }] }] })
         });
-        if (res.ok) setGeminiTestResult({ ok: true, msg: "✅ Klíč funguje! Gemini je připojeno." });
+        if (res.ok) setGeminiTestResult({ ok: true, msg: `✅ Klíč funguje s modelem ${geminiModel}!` });
         else { const e = await res.json(); setGeminiTestResult({ ok: false, msg: `❌ ${e.error?.message || "Neplatný klíč"}` }); }
       } catch(e) { setGeminiTestResult({ ok: false, msg: `❌ Síťová chyba: ${e.message}` }); }
       finally { setGeminiTesting(false); }
@@ -2309,11 +2335,16 @@ ${allRows.slice().sort((a,b)=>b.valueCZK-a.valueCZK).map(p => {
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
             {geminiKey && (
               <select value={geminiModel} onChange={e => setGeminiModel(e.target.value)}
-                style={{ background: T.card, border: "1px solid " + T.border, color: T.text, borderRadius: 8, padding: "6px 10px", fontSize: 13, cursor: "pointer", outline: "none", fontFamily: MONO }}>
-                <option value="gemini-2.5-pro-exp-03-25">gemini-2.5-pro-exp 🧠</option>
-                <option value="gemini-2.5-flash-preview-04-17">gemini-2.5-flash ⚡</option>
-                <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite 🪶</option>
-                <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+                style={{ background: T.card, border: "1px solid " + T.border, color: T.text, borderRadius: 8, padding: "6px 10px", fontSize: 13, cursor: "pointer", outline: "none", fontFamily: MONO, maxWidth: 220 }}>
+                {discoveredModels.length > 0
+                  ? discoveredModels.map(m => <option key={m} value={m}>{m}</option>)
+                  : <>
+                      <option value="gemini-2.5-pro-exp-03-25">gemini-2.5-pro-exp 🧠</option>
+                      <option value="gemini-2.5-flash-preview-04-17">gemini-2.5-flash ⚡</option>
+                      <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite 🪶</option>
+                      <option value="gemini-2.0-flash">gemini-2.0-flash</option>
+                    </>
+                }
               </select>
             )}
             <button onClick={() => setShowGeminiSettings(s => !s)}
@@ -2333,14 +2364,19 @@ ${allRows.slice().sort((a,b)=>b.valueCZK-a.valueCZK).map(p => {
               2. Klikni „Create API key" → vyber projekt → zkopíruj klíč<br/>
               <span style={{ color: T.subtle, fontSize: 12 }}>Gemini 2.0 Flash: zdarma · 15 req/min · 1M tokenů/den</span>
             </div>
-            <div style={{ display: "flex", gap: 10, marginBottom: geminiTestResult ? 12 : 0 }}>
+            <div style={{ display: "flex", gap: 10, marginBottom: 10 }}>
               <input type="password" placeholder="AIza..." value={geminiKey}
                 onChange={e => { setGeminiKey(e.target.value); setGeminiTestResult(null); }}
                 style={{ ...inputBase, flex: 1, fontFamily: MONO }}
               />
+              <button onClick={() => discoverModels(geminiKey)} disabled={geminiTesting || !geminiKey.trim()}
+                title="Zjistí dostupné modely pro tvůj API klíč a automaticky vybere nejlepší"
+                style={{ padding: "9px 14px", borderRadius: 8, border: "1px solid rgba(99,102,241,0.5)", background: "rgba(99,102,241,0.1)", color: "#a5b4fc", cursor: "pointer", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" }}>
+                {geminiTesting ? "…" : "🔍 Zjistit modely"}
+              </button>
               <button onClick={() => testKey(geminiKey)} disabled={geminiTesting || !geminiKey.trim()}
                 style={{ padding: "9px 16px", borderRadius: 8, border: "1px solid " + T.border, background: T.card, color: T.muted, cursor: "pointer", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" }}>
-                {geminiTesting ? "Testuji…" : "🧪 Otestovat"}
+                {geminiTesting ? "Testuji…" : "🧪 Test"}
               </button>
               <button onClick={() => { localStorage.setItem("ib_gemini_key", geminiKey); setShowGeminiSettings(false); setGeminiTestResult(null); }}
                 style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>
