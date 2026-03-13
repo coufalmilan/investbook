@@ -753,46 +753,56 @@ function InvestBook() {
   const [marketNewsDate,    setMarketNewsDate]    = useState(() => {
     try { return JSON.parse(localStorage.getItem("ib_mkt_news")||"null")?.date || null; } catch { return null; }
   });
+  // Stooq symboly (Worker volá Stooq server-side – žádný CORS problém)
   const MKT_SYMS = [
-    { sym: "^GSPC",   label: "S&P 500",   grp: "index" },
-    { sym: "^IXIC",   label: "NASDAQ",    grp: "index" },
-    { sym: "^DJI",    label: "Dow Jones", grp: "index" },
-    { sym: "^GDAXI",  label: "DAX",       grp: "index" },
-    { sym: "^VIX",    label: "VIX",       grp: "vix"   },
-    { sym: "SXR8.DE", label: "SXR8",      grp: "etf"   },
-    { sym: "BTC-USD", label: "Bitcoin",   grp: "crypto" },
-    { sym: "GC=F",    label: "Zlato",     grp: "commodity" },
+    { sym: "^spx",    stooq: "^SPX",    label: "S&P 500",   grp: "index" },
+    { sym: "^ndx",    stooq: "^NDX",    label: "NASDAQ",    grp: "index" },
+    { sym: "^dji",    stooq: "^DJI",    label: "Dow Jones", grp: "index" },
+    { sym: "^dax",    stooq: "^DAX",    label: "DAX",       grp: "index" },
+    { sym: "^vix",    stooq: "^VIX",    label: "VIX",       grp: "vix"   },
+    { sym: "sxr8.de", stooq: "SXR8.DE", label: "SXR8",      grp: "etf"   },
+    { sym: "btc.v",   stooq: "BTC.V",   label: "Bitcoin",   grp: "crypto" },
+    { sym: "xauusd",  stooq: "XAUUSD",  label: "Zlato",     grp: "commodity" },
   ];
   const fetchMktData = useCallback(async () => {
     setMarketLoading(true);
-    // Pozor: symboly NESMÍ být pre-encodované, jinak proxy dostane double-encoded URL (%255E místo %5E)
-    const syms = MKT_SYMS.map(s => s.sym).join(",");
-    const yahooUrl = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${syms}`;
-    // Zkoušíme tři CORS proxy za sebou – corsproxy.io nemá ?url=, jen ?URL
-    const enc = encodeURIComponent(yahooUrl);
-    const proxies = [
-      `https://corsproxy.io/?${enc}`,
-      `https://api.allorigins.win/raw?url=${enc}`,
-      `https://api.codetabs.com/v1/proxy?quest=${enc}`,
-    ];
-    for (const proxyUrl of proxies) {
+
+    // ── Přes Worker → Stooq (bez CORS, žádný API klíč) ───────────────────────
+    if (workerUrl) {
       try {
-        const r = await fetch(proxyUrl);
-        if (!r.ok) continue;
-        const d = await r.json();
-        const quotes = d?.quoteResponse?.result;
-        if (!quotes?.length) continue;
-        const map = {};
-        quotes.forEach(q => {
-          const m = MKT_SYMS.find(s => s.sym === q.symbol);
-          if (m) map[q.symbol] = { label: m.label, grp: m.grp, price: q.regularMarketPrice, change: q.regularMarketChange, pct: q.regularMarketChangePercent, currency: q.currency };
+        const url = workerUrl.startsWith("http") ? workerUrl : "https://" + workerUrl;
+        const stooqSymbols = MKT_SYMS.map(s => s.sym).join(",");
+        const r = await fetch(url, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ stooqSymbols }),
         });
-        setMarketData(map);
-        break; // úspěch – nepotřebujeme druhý proxy
+        if (r.ok) {
+          const d = await r.json();
+          const symbols = d?.symbols;
+          if (symbols?.length) {
+            const map = {};
+            symbols.forEach(q => {
+              const stooqSym = q.symbol?.toUpperCase();
+              const m = MKT_SYMS.find(s => s.stooq === stooqSym);
+              if (m) {
+                const price = q.close ?? q.open ?? null;
+                const change = (q.close != null && q.open != null) ? q.close - q.open : null;
+                const pct = (change != null && q.open) ? (change / q.open) * 100 : null;
+                map[m.sym] = { label: m.label, grp: m.grp, price, change, pct, currency: "" };
+              }
+            });
+            if (Object.keys(map).length > 0) {
+              setMarketData(map);
+              setMarketLoading(false);
+              return;
+            }
+          }
+        }
       } catch {}
     }
     setMarketLoading(false);
-  }, []);
+  }, [workerUrl]);
   const loadMktNews = useCallback(async () => {
     if (!geminiKey && !workerUrl) return;
     setMarketNewsLoading(true);
