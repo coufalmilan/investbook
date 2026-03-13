@@ -759,7 +759,6 @@ function InvestBook() {
     { sym: "^ndx",    stooq: "^NDX",    label: "NASDAQ",    grp: "index" },
     { sym: "^dji",    stooq: "^DJI",    label: "Dow Jones", grp: "index" },
     { sym: "^dax",    stooq: "^DAX",    label: "DAX",       grp: "index" },
-    { sym: "^vix",    stooq: "^VIX",    label: "VIX",       grp: "vix"   },
     { sym: "sxr8.de", stooq: "SXR8.DE", label: "SXR8",      grp: "etf"   },
     { sym: "btc.v",   stooq: "BTC.V",   label: "Bitcoin",   grp: "crypto" },
     { sym: "xauusd",  stooq: "XAUUSD",  label: "Zlato",     grp: "commodity" },
@@ -1934,13 +1933,12 @@ function InvestBook() {
               {marketLoading ? "⏳" : "🔄"} Aktualizovat
             </button>
           </div>
-          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(148px, 1fr))", gap: 10 }}>
+          <div className="ib-mkt-grid" style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 10 }}>
             {MKT_SYMS.map(({ sym, label, grp }) => {
               const d = marketData[sym];
-              const isVix = grp === "vix";
-              const gc = d ? (d.pct >= 0 ? (isVix ? T.red : T.green) : (isVix ? T.green : T.red)) : T.border;
+              const gc = d ? (d.pct >= 0 ? T.green : T.red) : T.border;
               return (
-                <div key={sym} style={{ background: T.surface, border: "1px solid " + T.border, borderRadius: 10, padding: "12px 14px", borderLeft: "3px solid " + gc }}>
+                <div className="ib-mkt-card" key={sym} style={{ background: T.surface, border: "1px solid " + T.border, borderRadius: 10, padding: "12px 14px", borderLeft: "3px solid " + gc }}>
                   <div style={{ fontSize: 10, color: T.muted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4 }}>{label}</div>
                   {d ? (
                     <React.Fragment>
@@ -2517,7 +2515,7 @@ ${allRows.slice().sort((a,b)=>b.valueCZK-a.valueCZK).map(p => {
             </div>
 
             {/* Pravý sloupec: Chat */}
-            <div style={{ ...C, display: "flex", flexDirection: "column", height: 600 }}>
+            <div className="ib-ai-chat" style={{ ...C, display: "flex", flexDirection: "column", height: 600 }}>
               <div style={{ fontSize: 15, fontWeight: 700, color: T.text, marginBottom: 12 }}>💬 AI Chat</div>
 
               {/* Zprávy */}
@@ -2601,57 +2599,74 @@ ${allRows.slice().sort((a,b)=>b.valueCZK-a.valueCZK).map(p => {
         .ib-hdr-currency { display: flex; }
         .ib-hdr-divider  { display: block; }
 
+        /* ── Motorola Edge 50 Neo & podobné (≤ 480 px) ── */
         @media (max-width: 480px) {
           /* Základní layout */
-          .ib-main   { padding: 12px 12px 76px 12px !important; max-width: 100% !important; }
-          .ib-header { padding: 0 12px !important; height: 48px !important; }
+          .ib-main   { padding: 10px 10px 72px 10px !important; max-width: 100% !important; }
+          .ib-header { padding: 0 10px !important; height: 48px !important; }
 
           /* Gridy */
           .ib-grid4  { grid-template-columns: 1fr 1fr !important; gap: 8px !important; }
           .ib-grid2  { grid-template-columns: 1fr !important; gap: 10px !important; }
           .ib-grid3  { grid-template-columns: 1fr !important; gap: 10px !important; }
 
-          /* Header – skryj FX kurzy, nech jen menu a měnu */
+          /* Header – skryj FX kurzy a divider, nech logo + menu + měna */
           .ib-hdr-fx       { display: none !important; }
           .ib-hdr-divider  { display: none !important; }
           .ib-nav          { display: none !important; }
 
-          /* Spodní tab bar */
+          /* Spodní tab bar – větší touch cíle */
           .ib-tab-bar {
             display: flex !important;
             position: fixed; bottom: 0; left: 0; right: 0; z-index: 200;
             background: rgba(15,15,19,0.98);
             border-top: 1px solid rgba(255,255,255,0.08);
-            padding: 6px 0 calc(6px + env(safe-area-inset-bottom));
+            padding: 4px 0 calc(4px + env(safe-area-inset-bottom));
+          }
+
+          /* ── Tržní data: horizontální scroll, 1 řádek ── */
+          .ib-mkt-grid {
+            display: flex !important;
+            overflow-x: auto !important;
+            -webkit-overflow-scrolling: touch !important;
+            scrollbar-width: none !important;
+            gap: 8px !important;
+            padding-bottom: 4px !important;
+          }
+          .ib-mkt-grid::-webkit-scrollbar { display: none; }
+          .ib-mkt-card {
+            min-width: 100px !important;
+            flex-shrink: 0 !important;
           }
 
           /* Typografie */
-          .ib-hero-value { font-size: 32px !important; letter-spacing: -0.02em !important; }
+          .ib-hero-value { font-size: 28px !important; letter-spacing: -0.02em !important; }
+          .ib-hero-sub   { font-size: 10px !important; }
+          .ib-hero-row   { gap: 14px !important; flex-wrap: wrap !important; }
 
           /* StatCard kompaktnější */
-          .ib-statcard { padding: 12px 14px !important; border-radius: 12px !important; }
-          .ib-statcard-val { font-size: 17px !important; }
-          .ib-statcard-lbl { font-size: 10px !important; }
+          .ib-statcard     { padding: 10px 12px !important; border-radius: 10px !important; }
+          .ib-statcard-val { font-size: 15px !important; }
+          .ib-statcard-lbl { font-size: 9px !important; }
 
           /* Tabulky – horizontální scroll */
-          .ib-table-wrap { overflow-x: auto; -webkit-overflow-scrolling: touch; border-radius: 12px; }
-          .ib-table-wrap table { min-width: 540px; }
+          .ib-table-wrap { overflow-x: auto !important; -webkit-overflow-scrolling: touch !important; border-radius: 10px !important; }
+          .ib-table-wrap table { min-width: 560px !important; }
 
           /* Karty */
-          .ib-card { border-radius: 12px !important; padding: 14px 14px !important; }
+          .ib-card { border-radius: 10px !important; padding: 12px 12px !important; }
 
           /* Penzijko KPI – 2 sloupce místo 5 */
           .ib-pension-kpi { grid-template-columns: 1fr 1fr !important; }
-
-          /* Hero gap */
-          .ib-hero-row { gap: 20px !important; }
-          .ib-hero-sub { font-size: 11px !important; }
 
           /* Projekce – 1 sloupec */
           .ib-proj-grid { grid-template-columns: 1fr !important; }
 
           /* Grafy – nižší výška */
-          .ib-chart-tall { height: 180px !important; }
+          .ib-chart-tall { height: 170px !important; }
+
+          /* AI chat – přizpůsob výšku viewportu */
+          .ib-ai-chat { height: calc(100vh - 190px) !important; min-height: 300px !important; }
         }
 
         @media (min-width: 481px) {
@@ -2668,7 +2683,7 @@ ${allRows.slice().sort((a,b)=>b.valueCZK-a.valueCZK).map(p => {
             <div style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(135deg," + T.green + "," + T.blue + ")", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, color: "#000" }}>i</div>
             <div>
               <span style={{ fontSize: 17, fontWeight: 700, color: T.text, letterSpacing: "-0.01em" }}>InvestBook</span>
-              <span style={{ fontSize: 10, color: T.muted, marginLeft: 6, fontFamily: "'DM Mono',monospace" }}>v3.3</span>
+              <span style={{ fontSize: 10, color: T.muted, marginLeft: 6, fontFamily: "'DM Mono',monospace" }}>v3.4</span>
             </div>
           </div>
           <nav className="ib-nav" style={{ gap: 2 }}>
