@@ -617,7 +617,7 @@ function InvestBook() {
 
   // ── GEMINI AI STATE ──────────────────────────────────────────────────────────
   const [geminiKey,   setGeminiKey]   = useState(() => localStorage.getItem("ib_gemini_key") || "");
-  const [geminiModel, setGeminiModel] = useState("gemini-2.0-flash-lite");
+  const [geminiModel, setGeminiModel] = useState("gemini-2.5-pro-exp-03-25");
   const [aiMessages,  setAiMessages]  = useState([
     { role: "assistant", content: "Ahoj! Jsem tvůj AI investiční asistent napojený na tvé portfolio. Zeptej se mě na cokoliv – analýzu pozic, doporučení nebo strategii. 📈" }
   ]);
@@ -743,10 +743,12 @@ function InvestBook() {
     // Pozor: symboly NESMÍ být pre-encodované, jinak proxy dostane double-encoded URL (%255E místo %5E)
     const syms = MKT_SYMS.map(s => s.sym).join(",");
     const yahooUrl = `https://query2.finance.yahoo.com/v7/finance/quote?symbols=${syms}`;
-    // Zkoušíme dva CORS proxy za sebou – pokud první selže, použijeme druhý
+    // Zkoušíme tři CORS proxy za sebou – corsproxy.io nemá ?url=, jen ?URL
+    const enc = encodeURIComponent(yahooUrl);
     const proxies = [
-      `https://corsproxy.io/?url=${encodeURIComponent(yahooUrl)}`,
-      `https://api.allorigins.win/raw?url=${encodeURIComponent(yahooUrl)}`,
+      `https://corsproxy.io/?${enc}`,
+      `https://api.allorigins.win/raw?url=${enc}`,
+      `https://api.codetabs.com/v1/proxy?quest=${enc}`,
     ];
     for (const proxyUrl of proxies) {
       try {
@@ -2281,7 +2283,7 @@ ${allRows.slice().sort((a,b)=>b.valueCZK-a.valueCZK).map(p => {
       if (!key.trim()) return;
       setGeminiTesting(true); setGeminiTestResult(null);
       try {
-        const url = `${GEMINI_BASE}/gemini-2.0-flash-lite:generateContent?key=${key.trim()}`;
+        const url = `${GEMINI_BASE}/gemini-2.5-pro-exp-03-25:generateContent?key=${key.trim()}`;
         const res = await fetch(url, {
           method: "POST", headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ contents: [{ role: "user", parts: [{ text: "Odpověz jedním slovem: OK" }] }] })
@@ -2308,9 +2310,10 @@ ${allRows.slice().sort((a,b)=>b.valueCZK-a.valueCZK).map(p => {
             {geminiKey && (
               <select value={geminiModel} onChange={e => setGeminiModel(e.target.value)}
                 style={{ background: T.card, border: "1px solid " + T.border, color: T.text, borderRadius: 8, padding: "6px 10px", fontSize: 13, cursor: "pointer", outline: "none", fontFamily: MONO }}>
-                <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite ⚡</option>
                 <option value="gemini-2.5-pro-exp-03-25">gemini-2.5-pro-exp 🧠</option>
-                <option value="gemini-2.0-flash">gemini-2.0-flash (starší)</option>
+                <option value="gemini-2.5-flash-preview-04-17">gemini-2.5-flash ⚡</option>
+                <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite 🪶</option>
+                <option value="gemini-2.0-flash">gemini-2.0-flash</option>
               </select>
             )}
             <button onClick={() => setShowGeminiSettings(s => !s)}

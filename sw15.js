@@ -1,5 +1,5 @@
 // InvestBook Service Worker – offline cache
-const CACHE = 'investbook-v27';
+const CACHE = 'investbook-v28';
 const ASSETS = [
   './investbook.html',
   './manifest.json',
@@ -31,6 +31,7 @@ self.addEventListener('fetch', e => {
     url.includes('yahoo.com') ||
     url.includes('allorigins.win') ||
     url.includes('corsproxy.io') ||
+    url.includes('codetabs.com') ||
     url.includes('generativelanguage') ||
     url.includes('cdnjs.cloudflare.com') ||
     url.includes('accounts.google.com')
