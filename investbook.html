@@ -652,7 +652,7 @@ function InvestBook() {
   const [geminiTestResult,   setGeminiTestResult]   = useState(null);
   const [geminiTesting,      setGeminiTesting]      = useState(false);
   const [discoveredModels,   setDiscoveredModels]   = useState([]);
-  const [workerUrl,          setWorkerUrl]          = useState(() => localStorage.getItem("ib_worker_url") || "");
+  const [workerUrl,          setWorkerUrl]          = useState(() => localStorage.getItem("ib_worker_url") || "https://old-frog-37dc.coufal-milan.workers.dev");
   const aiBottomRef = useRef(null);
   useEffect(() => { aiBottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [aiMessages]);
 
@@ -1928,7 +1928,7 @@ function InvestBook() {
         {/* Tržní indexy */}
         <div style={{ ...C, marginBottom: 16 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-            <SectionTitle title="Tržní indexy a ETF" sub="Data z Yahoo Finance" />
+            <SectionTitle title="Tržní indexy a ETF" sub="Data ze Stooq (Cloudflare Worker)" />
             <button onClick={fetchMktData} disabled={marketLoading}
               style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid " + T.border, background: "transparent", color: marketLoading ? T.muted : T.blue, cursor: marketLoading ? "not-allowed" : "pointer", fontSize: 13, flexShrink: 0 }}>
               {marketLoading ? "⏳" : "🔄"} Aktualizovat
