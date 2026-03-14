@@ -778,6 +778,7 @@ function InvestBook() {
         });
         if (r.ok) {
           const d = await r.json();
+          if (d?.errors?.length) console.warn("Market data errors:", d.errors);
           const symbols = d?.symbols;
           if (symbols?.length) {
             const map = {};
@@ -798,7 +799,7 @@ function InvestBook() {
             }
           }
         }
-      } catch {}
+      } catch (e) { console.warn("Market fetch error:", e.message); }
     }
     setMarketLoading(false);
   }, [workerUrl]);
