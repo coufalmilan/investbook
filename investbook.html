@@ -1083,7 +1083,7 @@ function InvestBook() {
         {(() => {
           const hodnotaMajetku = totalValue + zustatek;
           const cistyMajetek   = hodnotaMajetku - hypoteka;
-          return (
+          return (<>
             <div className="ib-grid4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 12 }}>
               <StatCard label="Investováno celkem"      value={fmt(dispInvested)}    color={T.muted}  accent={T.subtle} />
               <StatCard label="Výnos celkem"            value={fmt(dispGain)}        color={T.green}  accent={T.green}  sub={"+" + dispGainPct.toFixed(2) + " %"} />
@@ -1114,7 +1114,7 @@ function InvestBook() {
                 </div>
               </div>
             )}
-          );
+          </>);
         })()}
 
           {/* Graf + tabulka */}
