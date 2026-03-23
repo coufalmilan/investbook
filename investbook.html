@@ -375,21 +375,23 @@ const DEGIRO_POSITIONS_INIT = [
   { id: 103, name: "CSG.AS (CSG NV)",                           broker: "DEGIRO", invested: 645.90,   value: 645.90,   currency: "EUR", fx: DEGIRO_FX, start: 2026, annReturn: null, category: "Akcie", shares: 20 , ticker: "CSG.AS" },
 ];
 
+// pinShares: true = počet akcií je ručně ověřen (po splitu nebo doplnění).
+// Při CSV importu se tyto hodnoty NEPŘEPÍŠÍ — CSV může mít pre-split nebo neúplná data.
 const ETORO_POSITIONS_INIT = [
-  { id: 201, name: "NVDA (NVIDIA Corp)",                        broker: "eToro", invested: 1424.0, value: 1424.0, currency: "USD", fx: ETORO_FX,  start: 2021, annReturn: null, category: "Akcie", shares: 51.42  , ticker: "NVDA" },
-  { id: 202, name: "META (Meta Platforms Inc)",                 broker: "eToro", invested: 1551.1, value: 1551.1, currency: "USD", fx: ETORO_FX,  start: 2021, annReturn: null, category: "Akcie", shares: 5.03   , ticker: "META" },
-  { id: 203, name: "MSFT (Microsoft Corp)",                     broker: "eToro", invested: 824.64,  value: 824.64,  currency: "USD", fx: ETORO_FX,  start: 2021, annReturn: null, category: "Akcie", shares: 3.06   , ticker: "MSFT" },
-  { id: 204, name: "TSLA (Tesla Inc)",                          broker: "eToro", invested: 1698.15, value: 1698.15, currency: "USD", fx: ETORO_FX,  start: 2021, annReturn: null, category: "Akcie", shares: 7.18   , ticker: "TSLA" },
-  { id: 205, name: "AAPL (Apple Inc)",                          broker: "eToro", invested: 551.0,  value: 551.0,  currency: "USD", fx: ETORO_FX,  start: 2021, annReturn: null, category: "Akcie", shares: 4.27   , ticker: "AAPL" },
-  { id: 206, name: "AMZN (Amazon.com Inc)",                     broker: "eToro", invested: 1197.43, value: 1197.43, currency: "USD", fx: ETORO_FX,  start: 2021, annReturn: null, category: "Akcie", shares: 7.95   , ticker: "AMZN" },
-  { id: 207, name: "GOOG (Alphabet Inc)",                       broker: "eToro", invested: 863.61,  value: 863.61,  currency: "USD", fx: ETORO_FX,  start: 2021, annReturn: null, category: "Akcie", shares: 6.95   , ticker: "GOOG" },
-  { id: 208, name: "TSM (Taiwan Semiconductor Manufacturing)",  broker: "eToro", invested: 442.79,  value: 442.79,  currency: "USD", fx: ETORO_FX,  start: 2025, annReturn: null, category: "Akcie", shares: 1.47   , ticker: "TSM" },
-  { id: 209, name: "LRCX (Lam Research Corp)",                  broker: "eToro", invested: 486.29,  value: 486.29,  currency: "USD", fx: ETORO_FX,  start: 2024, annReturn: null, category: "Akcie", shares: 5.8   , ticker: "LRCX" },
-  { id: 210, name: "ABBV (AbbVie Inc)",                         broker: "eToro", invested: 250.65,  value: 250.65,  currency: "USD", fx: ETORO_FX,  start: 2021, annReturn: null, category: "Akcie", shares: 2.23   , ticker: "ABBV" },
-  { id: 211, name: "RHM.DE (Rheinmetall AG)",                   broker: "eToro", invested: 950.39,  value: 950.39,  currency: "EUR", fx: DEGIRO_FX, start: 2025, annReturn: null, category: "Akcie", shares: 0.81   , ticker: "RHM.DE" },
-  { id: 212, name: "CSG.AS (CSG NV)",                           broker: "eToro", invested: 1016.08, value: 1016.08, currency: "USD", fx: ETORO_FX,  start: 2026, annReturn: null, category: "Akcie", shares: 27.23  , ticker: "CSG.AS" },
-  { id: 213, name: "BA-.L (Boeing Co)",                         broker: "eToro", invested: 295.09,  value: 295.09,  currency: "USD", fx: ETORO_FX,  start: 2025, annReturn: null, category: "Akcie", shares: 12.31  , ticker: "BA-.L" },
-  { id: 214, name: "CSPX.L (iShares Core S&P 500 UCITS ETF)",  broker: "eToro", invested: 7504.02, value: 7504.02, currency: "USD", fx: ETORO_FX,  start: 2022, annReturn: null, category: "ETF",   shares: 16.1408,  ticker: "CSPX.L" },
+  { id: 201, name: "NVDA (NVIDIA Corp)",                        broker: "eToro", invested: 1424.0,  value: 1424.0,  currency: "USD", fx: ETORO_FX,  start: 2021, annReturn: null, category: "Akcie", shares: 51.42,   ticker: "NVDA",   pinShares: true  }, // split 10:1 (2024-06)
+  { id: 202, name: "META (Meta Platforms Inc)",                 broker: "eToro", invested: 1551.1,  value: 1551.1,  currency: "USD", fx: ETORO_FX,  start: 2021, annReturn: null, category: "Akcie", shares: 5.03,    ticker: "META"   },
+  { id: 203, name: "MSFT (Microsoft Corp)",                     broker: "eToro", invested: 824.64,  value: 824.64,  currency: "USD", fx: ETORO_FX,  start: 2021, annReturn: null, category: "Akcie", shares: 3.06,    ticker: "MSFT"   },
+  { id: 204, name: "TSLA (Tesla Inc)",                          broker: "eToro", invested: 1698.15, value: 1698.15, currency: "USD", fx: ETORO_FX,  start: 2021, annReturn: null, category: "Akcie", shares: 7.18,    ticker: "TSLA",  pinShares: true  }, // split 3:1 (2022) + 5:1 (2020)
+  { id: 205, name: "AAPL (Apple Inc)",                          broker: "eToro", invested: 551.0,   value: 551.0,   currency: "USD", fx: ETORO_FX,  start: 2021, annReturn: null, category: "Akcie", shares: 4.27,    ticker: "AAPL"   },
+  { id: 206, name: "AMZN (Amazon.com Inc)",                     broker: "eToro", invested: 1197.43, value: 1197.43, currency: "USD", fx: ETORO_FX,  start: 2021, annReturn: null, category: "Akcie", shares: 7.95,    ticker: "AMZN",  pinShares: true  }, // split 20:1 (2022)
+  { id: 207, name: "GOOG (Alphabet Inc)",                       broker: "eToro", invested: 863.61,  value: 863.61,  currency: "USD", fx: ETORO_FX,  start: 2021, annReturn: null, category: "Akcie", shares: 6.95,    ticker: "GOOG",  pinShares: true  }, // split 20:1 (2022)
+  { id: 208, name: "TSM (Taiwan Semiconductor Manufacturing)",  broker: "eToro", invested: 442.79,  value: 442.79,  currency: "USD", fx: ETORO_FX,  start: 2025, annReturn: null, category: "Akcie", shares: 2.14,    ticker: "TSM",   pinShares: true  }, // aktualizováno dle Delta
+  { id: 209, name: "LRCX (Lam Research Corp)",                  broker: "eToro", invested: 486.29,  value: 486.29,  currency: "USD", fx: ETORO_FX,  start: 2024, annReturn: null, category: "Akcie", shares: 6.85,    ticker: "LRCX",  pinShares: true  }, // aktualizováno dle Delta
+  { id: 210, name: "ABBV (AbbVie Inc)",                         broker: "eToro", invested: 250.65,  value: 250.65,  currency: "USD", fx: ETORO_FX,  start: 2021, annReturn: null, category: "Akcie", shares: 2.23,    ticker: "ABBV"   },
+  { id: 211, name: "RHM.DE (Rheinmetall AG)",                   broker: "eToro", invested: 950.39,  value: 950.39,  currency: "EUR", fx: DEGIRO_FX, start: 2025, annReturn: null, category: "Akcie", shares: 0.9,     ticker: "RHM.DE", pinShares: true }, // aktualizováno dle Delta
+  { id: 212, name: "CSG.AS (CSG NV)",                           broker: "eToro", invested: 1016.08, value: 1016.08, currency: "USD", fx: ETORO_FX,  start: 2026, annReturn: null, category: "Akcie", shares: 27.23,   ticker: "CSG.AS" },
+  { id: 213, name: "BA-.L (Boeing Co)",                         broker: "eToro", invested: 295.09,  value: 295.09,  currency: "USD", fx: ETORO_FX,  start: 2025, annReturn: null, category: "Akcie", shares: 19.74,   ticker: "BA-.L", pinShares: true  }, // aktualizováno dle Delta
+  { id: 214, name: "CSPX.L (iShares Core S&P 500 UCITS ETF)",  broker: "eToro", invested: 7504.02, value: 7504.02, currency: "USD", fx: ETORO_FX,  start: 2022, annReturn: null, category: "ETF",   shares: 16.1408, ticker: "CSPX.L" },
 ];
 
 const CRYPTO_POSITIONS_INIT = [
@@ -415,10 +417,18 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v3.7";
+const APP_VERSION = "v3.8";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v3.8", date: "23. 3. 2026", changes: [
+    "Karta 'Výnos celkem' nahrazena kartou 'Roční výnos (p.a.)' v CZK",
+    "Odstraněn p.a. banner pod kartami",
+    "Aktualizovány počty akcií dle Delta: TSM 2.14, LRCX 6.85, RHM.DE 0.9, BA-.L 19.74",
+    "Přidán příznak pinShares — ručně ověřené pozice (NVDA, TSLA, AMZN, GOOG, TSM, LRCX, RHM.DE, BA-.L)",
+    "CSV import respektuje pinShares — nepřepíše ověřené počty akcií",
+    "SW bumped na v38",
+  ]},
   { version: "v3.7", date: "23. 3. 2026", changes: [
     "Přidán banner průměrného ročního výnosu (p.a.) pod stat karty",
     "Oprava: graf Vývoj portfolia – data jsou správně načítána z PORTFOLIO_HISTORY",
@@ -1117,34 +1127,15 @@ function InvestBook() {
         {(() => {
           const hodnotaMajetku = totalValue + zustatek;
           const cistyMajetek   = hodnotaMajetku - hypoteka;
-          return (<>
-            <div className="ib-grid4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 12 }}>
-              <StatCard label="Investováno celkem"      value={fmt(dispInvested)}    color={T.muted}  accent={T.subtle} />
-              <StatCard label="Výnos celkem"            value={fmt(dispGain)}        color={T.green}  accent={T.green}  sub={(dispGainPct >= 0 ? "+" : "") + dispGainPct.toFixed(2) + " %"} />
+          const annGainCZK     = Math.round(dispInvested * dispAvgAnn / 100);
+          return (
+            <div className="ib-grid4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 20 }}>
+              <StatCard label="Investováno celkem"      value={fmt(dispInvested)}   color={T.muted}  accent={T.subtle} />
+              <StatCard label="Roční výnos (p.a.)"      value={fmt(annGainCZK)}     color={T.amber}  accent={T.amber}  sub={(dispAvgAnn >= 0 ? "+" : "") + dispAvgAnn.toFixed(2) + " % p.a."} />
               <StatCard label={isFiltered ? "Hodnota " + cat.label : "Hodnota majetku"} value={isFiltered ? fmt(fValue) : fmt(hodnotaMajetku)} color={T.text} accent={T.blue} sub={!isFiltered && zustatek > 0 ? "vč. hotovosti " + fmt(zustatek) : null} />
-              <StatCard label="Čistý majetek −hypotéka" value={fmt(cistyMajetek)}    color={T.amber}  accent={T.amber}  sub={"hypotéka " + fmt(hypoteka)} />
+              <StatCard label="Čistý majetek −hypotéka" value={fmt(cistyMajetek)}   color={T.amber}  accent={T.amber}  sub={"hypotéka " + fmt(hypoteka)} />
             </div>
-            {/* Roční výnos p.a. banner */}
-            <div style={{ background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.2)", borderRadius: 12, padding: "10px 18px", marginBottom: 20, display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
-              <div style={{ fontSize: 12, color: T.muted, letterSpacing: "0.08em", fontWeight: 600, textTransform: "uppercase", flexShrink: 0 }}>Průměrný roční výnos (p.a.)</div>
-              <div style={{ display: "flex", gap: 24, alignItems: "center", flexWrap: "wrap" }}>
-                <div>
-                  <span style={{ fontSize: 22, fontWeight: 800, color: T.amber, fontFamily: "'DM Mono',monospace", letterSpacing: "-0.02em" }}>
-                    {dispAvgAnn >= 0 ? "+" : ""}{dispAvgAnn.toFixed(2)} %
-                  </span>
-                  <span style={{ fontSize: 12, color: T.subtle, marginLeft: 8 }}>celkem{isFiltered ? " · " + cat.label : ""}</span>
-                </div>
-                {showNoCrypto && !isFiltered && (
-                  <div>
-                    <span style={{ fontSize: 18, fontWeight: 700, color: T.blue, fontFamily: "'DM Mono',monospace" }}>
-                      {dispAvgAnnNC >= 0 ? "+" : ""}{dispAvgAnnNC.toFixed(2)} %
-                    </span>
-                    <span style={{ fontSize: 12, color: T.subtle, marginLeft: 8 }}>bez crypto</span>
-                  </div>
-                )}
-              </div>
-            </div>
-          </>);
+          );
         })()}
 
           {/* Graf + tabulka */}
@@ -1633,17 +1624,29 @@ function InvestBook() {
                     const rows = parseCSV(evt.target.result);
                     const agg  = aggregateCSV(rows);
                     if (!agg.length) { setGsMsg("✗ CSV neobsahuje platné transakce"); return; }
+                    // Sestavíme lookup pinShares pozic podle tickeru — pro ochranu ručně ověřených počtů
+                    const ALL_INIT = [...DEGIRO_POSITIONS_INIT, ...ETORO_POSITIONS_INIT, ...CRYPTO_POSITIONS_INIT];
+                    const pinnedByTicker = {};
+                    for (const p of ALL_INIT) {
+                      if (p.pinShares && p.ticker) pinnedByTicker[p.ticker.toUpperCase()] = p.shares;
+                    }
                     let id = 500;
-                    const newPos = agg.map(p => ({
-                      id: id++, name: p.name, broker: p.broker, category: p.category,
-                      invested: Math.round(p.invested * 100) / 100,
-                      value:    Math.round(p.invested * 100) / 100,
-                      currency: p.currency,
-                      fx: p.currency === 'EUR' ? DEGIRO_FX : p.currency === 'GBP' ? GBP_FX : ETORO_FX,
-                      start: p.start, annReturn: null,
-                      shares: Math.round(p.shares * 1000000) / 1000000,
-                      ticker: p.ticker,
-                    }));
+                    const newPos = agg.map(p => {
+                      const pinned = pinnedByTicker[p.ticker?.toUpperCase()];
+                      // Pokud je ticker pinnutý, použij init shares (ignoruj CSV hodnotu)
+                      const finalShares = pinned != null ? pinned : Math.round(p.shares * 1000000) / 1000000;
+                      return {
+                        id: id++, name: p.name, broker: p.broker, category: p.category,
+                        invested: Math.round(p.invested * 100) / 100,
+                        value:    Math.round(p.invested * 100) / 100,
+                        currency: p.currency,
+                        fx: p.currency === 'EUR' ? DEGIRO_FX : p.currency === 'GBP' ? GBP_FX : ETORO_FX,
+                        start: p.start, annReturn: null,
+                        shares: finalShares,
+                        ticker: p.ticker,
+                        pinShares: pinned != null,
+                      };
+                    });
                     setImportedRows(newPos);
                     setGsMsg("✓ CSV načteno — " + newPos.length + " pozic. Ulož do Sheets.");
                     setTimeout(() => setGsMsg(""), 5000);
