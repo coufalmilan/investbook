@@ -415,6 +415,22 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
+const APP_VERSION = "v3.6";
+
+// ─── CHANGELOG ────────────────────────────────────────────────────────────────
+const CHANGELOG = [
+  { version: "v3.6", date: "23. 3. 2026", changes: [
+    "Popis 'nerealizovaný zisk' přejmenován na 'nerealizovaný výnos celkem'",
+    "Přidáno řazení pozic v mobilním zobrazení (lišta s tlačítky nad kartami)",
+    "Service Worker bumped na v36",
+  ]},
+  { version: "v3.5", date: "2026", changes: [
+    "Přidána analýza portfolia pomocí Gemini AI",
+    "Importy pozic z DEGIRO, eToro a Crypto",
+    "Podpora více měn (CZK, EUR, USD)",
+    "Přidány penzijní účty",
+  ]},
+];
 
 // ─── DESIGN TOKENS ───────────────────────────────────────────────────────────
 const T = {
@@ -590,6 +606,7 @@ function StatCard({ label, value, sub, color, accent }) {
 // ─── MAIN ─────────────────────────────────────────────────────────────────────
 function InvestBook() {
   const [activeTab, setActiveTab] = useState("portfolio");
+  const [showChangelog, setShowChangelog] = useState(false);
   const [period, setPeriod] = useState("YTD");
   const [tblSort, setTblSort] = useState("value");
   const [tblDir, setTblDir] = useState("desc");
@@ -1049,7 +1066,7 @@ function InvestBook() {
             </div>
             <div style={{ paddingBottom: 4 }}>
               <div style={{ fontSize: 31, fontWeight: 700, color: T.green, letterSpacing: "-0.02em" }}>{dispGain >= 0 ? "+" : ""}{fmt(dispGain)}</div>
-              <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>nerealizovaný zisk</div>
+              <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>nerealizovaný výnos celkem</div>
             </div>
             <div style={{ paddingBottom: 4 }}>
               <div style={{ fontSize: 31, fontWeight: 700, color: T.amber, letterSpacing: "-0.02em" }}>{dispAvgAnn >= 0 ? "+" : ""}{dispAvgAnn.toFixed(2)} %</div>
@@ -1061,21 +1078,6 @@ function InvestBook() {
                 <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>prům. výnos bez crypto</div>
               </div>
             )}
-            {ytdGain !== null && (
-              <div style={{ paddingBottom: 4 }}>
-                <div style={{ fontSize: 31, fontWeight: 700, color: ytdGain >= 0 ? T.green : T.red, letterSpacing: "-0.02em" }}>
-                  {ytdGain >= 0 ? "+" : ""}{fmt(ytdGain)}
-                </div>
-                <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>
-                  výnos {NOW_YEAR}
-                  {ytdGainPct !== null && (
-                    <span style={{ marginLeft: 6, color: ytdGainPct >= 0 ? T.green : T.red, fontWeight: 600 }}>
-                      ({ytdGainPct >= 0 ? "+" : ""}{ytdGainPct.toFixed(1)} %)
-                    </span>
-                  )}
-                </div>
-              </div>
-            )}
           </div>
         </div>
 
@@ -1083,38 +1085,14 @@ function InvestBook() {
         {(() => {
           const hodnotaMajetku = totalValue + zustatek;
           const cistyMajetek   = hodnotaMajetku - hypoteka;
-          return (<>
-            <div className="ib-grid4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 12 }}>
+          return (
+            <div className="ib-grid4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 20 }}>
               <StatCard label="Investováno celkem"      value={fmt(dispInvested)}    color={T.muted}  accent={T.subtle} />
               <StatCard label="Výnos celkem"            value={fmt(dispGain)}        color={T.green}  accent={T.green}  sub={"+" + dispGainPct.toFixed(2) + " %"} />
               <StatCard label={isFiltered ? "Hodnota " + cat.label : "Hodnota majetku"} value={isFiltered ? fmt(fValue) : fmt(hodnotaMajetku)} color={T.text} accent={T.blue} sub={!isFiltered && zustatek > 0 ? "vč. hotovosti " + fmt(zustatek) : null} />
               <StatCard label="Čistý majetek −hypotéka" value={fmt(cistyMajetek)}    color={T.amber}  accent={T.amber}  sub={"hypotéka " + fmt(hypoteka)} />
             </div>
-            {ytdGain !== null && (
-              <div style={{ background: ytdGain >= 0 ? "rgba(34,197,94,0.06)" : "rgba(239,68,68,0.06)", border: "1px solid " + (ytdGain >= 0 ? "rgba(34,197,94,0.2)" : "rgba(239,68,68,0.2)"), borderRadius: 12, padding: "10px 16px", marginBottom: 20, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
-                <div style={{ fontSize: 12, color: T.muted, letterSpacing: "0.08em", fontWeight: 600, textTransform: "uppercase" }}>Výnos {NOW_YEAR} (YTD)</div>
-                <div style={{ display: "flex", gap: 20, alignItems: "center" }}>
-                  <div>
-                    <span style={{ fontSize: 22, fontWeight: 800, color: ytdGain >= 0 ? T.green : T.red, fontFamily: "'DM Mono',monospace", letterSpacing: "-0.02em" }}>
-                      {ytdGain >= 0 ? "+" : ""}{fmt(ytdGain)}
-                    </span>
-                  </div>
-                  {ytdGainPct !== null && (
-                    <div>
-                      <span style={{ fontSize: 18, fontWeight: 700, color: ytdGainPct >= 0 ? T.green : T.red, fontFamily: "'DM Mono',monospace" }}>
-                        {ytdGainPct >= 0 ? "+" : ""}{ytdGainPct.toFixed(2)} %
-                      </span>
-                    </div>
-                  )}
-                  {ytdStartValue != null && (
-                    <div style={{ fontSize: 12, color: T.subtle }}>
-                      od {fmt(ytdStartValue)} → {fmt(dispValue)}
-                    </div>
-                  )}
-                </div>
-              </div>
-            )}
-          </>);
+          );
         })()}
 
           {/* Graf + tabulka */}
@@ -2791,7 +2769,8 @@ ${allRows.slice().sort((a,b)=>b.valueCZK-a.valueCZK).map(p => {
             <div style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(135deg," + T.green + "," + T.blue + ")", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, color: "#000" }}>i</div>
             <div>
               <span style={{ fontSize: 17, fontWeight: 700, color: T.text, letterSpacing: "-0.01em" }}>InvestBook</span>
-              <span style={{ fontSize: 10, color: T.muted, marginLeft: 6, fontFamily: "'DM Mono',monospace" }}>v3.5</span>
+              <span onClick={() => setShowChangelog(true)} title="Zobrazit changelog"
+                style={{ fontSize: 10, color: T.blue, marginLeft: 6, fontFamily: "'DM Mono',monospace", cursor: "pointer", textDecoration: "underline dotted", textUnderlineOffset: 3 }}>{APP_VERSION}</span>
             </div>
           </div>
           <nav className="ib-nav" style={{ gap: 2 }}>
@@ -2850,6 +2829,39 @@ ${allRows.slice().sort((a,b)=>b.valueCZK-a.valueCZK).map(p => {
           {activeTab === "ai"        && tabAI()}
         </main>
       </div>
+
+      {/* ── Changelog modal ─────────────────────────────── */}
+      {showChangelog && (
+        <div onClick={() => setShowChangelog(false)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 16, padding: 28, maxWidth: 480, width: "100%", maxHeight: "80vh", overflowY: "auto" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 20 }}>
+              <div>
+                <div style={{ fontSize: 17, fontWeight: 700, color: T.text }}>InvestBook changelog</div>
+                <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>Historie verzí</div>
+              </div>
+              <button onClick={() => setShowChangelog(false)}
+                style={{ background: "rgba(255,255,255,0.06)", border: "none", color: T.muted, borderRadius: 8, width: 32, height: 32, cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+            </div>
+            {CHANGELOG.map((entry, i) => (
+              <div key={entry.version} style={{ marginBottom: i < CHANGELOG.length - 1 ? 20 : 0 }}>
+                <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: 8 }}>
+                  <span style={{ fontSize: 13, fontWeight: 700, color: T.blue, fontFamily: "'DM Mono',monospace",
+                    background: T.blue + "15", border: "1px solid " + T.blue + "40", borderRadius: 6, padding: "2px 8px" }}>{entry.version}</span>
+                  <span style={{ fontSize: 12, color: T.subtle }}>{entry.date}</span>
+                </div>
+                <ul style={{ margin: 0, paddingLeft: 18, display: "flex", flexDirection: "column", gap: 4 }}>
+                  {entry.changes.map((c, j) => (
+                    <li key={j} style={{ fontSize: 13, color: T.muted, lineHeight: 1.5 }}>{c}</li>
+                  ))}
+                </ul>
+                {i < CHANGELOG.length - 1 && <div style={{ height: 1, background: T.border, marginTop: 20 }} />}
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
