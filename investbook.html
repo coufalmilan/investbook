@@ -1021,6 +1021,17 @@ function InvestBook() {
           const dispAvgAnn   = isFiltered ? (hasPrices ? fAvgAnn    : avgAnnReturn)         : avgAnnReturn;
           const dispAvgAnnNC = isFiltered ? (hasPrices ? fAvgAnnNC  : avgAnnReturnNoCrypto)  : avgAnnReturnNoCrypto;
 
+          // YTD výnos – porovnání s hodnotou na začátku roku
+          const ytdStartEntry = PORTFOLIO_HISTORY.slice().reverse().find(h => {
+            const [y, m] = h.d.split("-");
+            return parseInt(y) === NOW_YEAR && m === "01";
+          });
+          const ytdStartValue = ytdStartEntry
+            ? (isFiltered && cat.chartKey !== "v" ? (ytdStartEntry[cat.chartKey] || ytdStartEntry.v) : ytdStartEntry.v)
+            : null;
+          const ytdGain    = ytdStartValue != null ? dispValue - ytdStartValue : null;
+          const ytdGainPct = (ytdStartValue != null && ytdStartValue > 0) ? (ytdGain / ytdStartValue) * 100 : null;
+
           return (<>
         {/* Hero */}
         <div style={{ marginBottom: 28 }}>
@@ -1050,6 +1061,21 @@ function InvestBook() {
                 <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>prům. výnos bez crypto</div>
               </div>
             )}
+            {ytdGain !== null && (
+              <div style={{ paddingBottom: 4 }}>
+                <div style={{ fontSize: 31, fontWeight: 700, color: ytdGain >= 0 ? T.green : T.red, letterSpacing: "-0.02em" }}>
+                  {ytdGain >= 0 ? "+" : ""}{fmt(ytdGain)}
+                </div>
+                <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>
+                  výnos {NOW_YEAR}
+                  {ytdGainPct !== null && (
+                    <span style={{ marginLeft: 6, color: ytdGainPct >= 0 ? T.green : T.red, fontWeight: 600 }}>
+                      ({ytdGainPct >= 0 ? "+" : ""}{ytdGainPct.toFixed(1)} %)
+                    </span>
+                  )}
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -1058,12 +1084,36 @@ function InvestBook() {
           const hodnotaMajetku = totalValue + zustatek;
           const cistyMajetek   = hodnotaMajetku - hypoteka;
           return (
-            <div className="ib-grid4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 20 }}>
+            <div className="ib-grid4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 12 }}>
               <StatCard label="Investováno celkem"      value={fmt(dispInvested)}    color={T.muted}  accent={T.subtle} />
               <StatCard label="Výnos celkem"            value={fmt(dispGain)}        color={T.green}  accent={T.green}  sub={"+" + dispGainPct.toFixed(2) + " %"} />
               <StatCard label={isFiltered ? "Hodnota " + cat.label : "Hodnota majetku"} value={isFiltered ? fmt(fValue) : fmt(hodnotaMajetku)} color={T.text} accent={T.blue} sub={!isFiltered && zustatek > 0 ? "vč. hotovosti " + fmt(zustatek) : null} />
               <StatCard label="Čistý majetek −hypotéka" value={fmt(cistyMajetek)}    color={T.amber}  accent={T.amber}  sub={"hypotéka " + fmt(hypoteka)} />
             </div>
+            {ytdGain !== null && (
+              <div style={{ background: ytdGain >= 0 ? "rgba(34,197,94,0.06)" : "rgba(239,68,68,0.06)", border: "1px solid " + (ytdGain >= 0 ? "rgba(34,197,94,0.2)" : "rgba(239,68,68,0.2)"), borderRadius: 12, padding: "10px 16px", marginBottom: 20, display: "flex", alignItems: "center", gap: 16, flexWrap: "wrap" }}>
+                <div style={{ fontSize: 12, color: T.muted, letterSpacing: "0.08em", fontWeight: 600, textTransform: "uppercase" }}>Výnos {NOW_YEAR} (YTD)</div>
+                <div style={{ display: "flex", gap: 20, alignItems: "center" }}>
+                  <div>
+                    <span style={{ fontSize: 22, fontWeight: 800, color: ytdGain >= 0 ? T.green : T.red, fontFamily: "'DM Mono',monospace", letterSpacing: "-0.02em" }}>
+                      {ytdGain >= 0 ? "+" : ""}{fmt(ytdGain)}
+                    </span>
+                  </div>
+                  {ytdGainPct !== null && (
+                    <div>
+                      <span style={{ fontSize: 18, fontWeight: 700, color: ytdGainPct >= 0 ? T.green : T.red, fontFamily: "'DM Mono',monospace" }}>
+                        {ytdGainPct >= 0 ? "+" : ""}{ytdGainPct.toFixed(2)} %
+                      </span>
+                    </div>
+                  )}
+                  {ytdStartValue != null && (
+                    <div style={{ fontSize: 12, color: T.subtle }}>
+                      od {fmt(ytdStartValue)} → {fmt(dispValue)}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
           );
         })()}
 
@@ -1148,9 +1198,27 @@ function InvestBook() {
                   <div style={{ fontSize: 15, fontWeight: 700, color: T.text, marginBottom: 2 }}>Přehled investic
                     {activeCat !== "vse" && <span style={{ marginLeft: 8, fontSize: 13, color: cat.color, fontWeight: 700 }}>· {cat.label}</span>}
                   </div>
-                  <div style={{ fontSize: 13, color: T.muted }}>Klikni na hlavičku pro seřazení · {sortedRows.length} pozic</div>
+                  <div style={{ fontSize: 13, color: T.muted }}>{isMobile ? sortedRows.length + " pozic" : "Klikni na hlavičku pro seřazení · " + sortedRows.length + " pozic"}</div>
                 </div>
               </div>
+              {isMobile && (
+                /* Mobile: sort bar */
+                <div style={{ display: "flex", gap: 6, marginBottom: 12, overflowX: "auto", paddingBottom: 4, WebkitOverflowScrolling: "touch" }}>
+                  {COLS.filter(c => c.key !== "name" && c.key !== "invested").map(c => (
+                    <button key={c.key} onClick={() => onSort(c.key)}
+                      style={{
+                        flexShrink: 0, padding: "5px 10px", borderRadius: 8,
+                        border: "1px solid " + (tblSort === c.key ? cat.color : "rgba(255,255,255,0.1)"),
+                        background: tblSort === c.key ? cat.color + "22" : "rgba(255,255,255,0.04)",
+                        color: tblSort === c.key ? cat.color : T.muted,
+                        fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap",
+                        fontFamily: "'DM Mono',monospace"
+                      }}>
+                      {c.label}{arrow(c.key)}
+                    </button>
+                  ))}
+                </div>
+              )}
               {isMobile ? (
                 /* Mobile: card list */
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
