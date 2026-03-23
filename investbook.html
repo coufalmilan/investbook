@@ -415,10 +415,17 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v3.6";
+const APP_VERSION = "v3.7";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v3.7", date: "23. 3. 2026", changes: [
+    "Přidán banner průměrného ročního výnosu (p.a.) pod stat karty",
+    "Oprava: graf Vývoj portfolia – data jsou správně načítána z PORTFOLIO_HISTORY",
+    "Automatická korekce stock splitů při CSV importu (NVDA 10:1, TSLA 3:1+5:1, AMZN 20:1, GOOG 20:1)",
+    "Přidána konstanta STOCK_SPLITS – snadné přidání dalších splitů do budoucna",
+    "SW bumped na v37",
+  ]},
   { version: "v3.6", date: "23. 3. 2026", changes: [
     "Popis 'nerealizovaný zisk' přejmenován na 'nerealizovaný výnos celkem'",
     "Přidáno řazení pozic v mobilním zobrazení (lišta s tlačítky nad kartami)",
@@ -483,6 +490,19 @@ const investedCZK = (pos) => {
 };
 
 // ─── CSV PARSER ──────────────────────────────────────────────────────────────
+// ─── KNOWN STOCK SPLITS ───────────────────────────────────────────────────────
+// Přidej sem každý split: ticker = symbol v CSV, date = datum splitu (YYYY-MM-DD), ratio = počet nových za 1 starou
+const STOCK_SPLITS = [
+  { ticker: "NVDA",   date: "2024-06-10", ratio: 10  }, // NVIDIA 10:1
+  { ticker: "TSLA",   date: "2022-08-25", ratio: 3   }, // Tesla 3:1
+  { ticker: "TSLA",   date: "2020-08-31", ratio: 5   }, // Tesla předchozí split 5:1
+  { ticker: "AMZN",   date: "2022-06-06", ratio: 20  }, // Amazon 20:1
+  { ticker: "GOOG",   date: "2022-07-18", ratio: 20  }, // Alphabet 20:1
+  { ticker: "GOOGL",  date: "2022-07-18", ratio: 20  },
+  { ticker: "SHOP",   date: "2022-07-04", ratio: 10  }, // Shopify 10:1
+  { ticker: "CGC",    date: "2023-12-20", ratio: 0.1 }, // reverse split 1:10
+];
+
 function parseCSV(text) {
   const lines = text.split(/\r?\n/).filter(l => l.trim());
   if (!lines.length) return [];
@@ -516,11 +536,12 @@ function aggregateCSV(rows) {
     const ticker  = baseCur.split(' ')[0].trim();
     const name    = baseCur;
     const quoteCur = (r['Quote currency'] || 'USD').trim();
-    const baseAmt  = parseFloat(r['Base amount'])  || 0;
+    let baseAmt  = parseFloat(r['Base amount'])  || 0;
     const quoteAmt = parseFloat(r['Quote amount']) || 0;
     let broker = (r['Broker'] || '').trim();
     if (!broker || broker === 'DGA') broker = 'Crypto';
     const year = parseInt((r['Date'] || '2024').substring(0, 4));
+    const txDate = (r['Date'] || '').substring(0, 10); // YYYY-MM-DD
     const key  = broker + '||' + ticker;
     if (!positions[key]) {
       const cat = baseType === 'CRYPTO' ? 'Crypto' : (baseType === 'FUND' ? 'ETF' : 'Akcie');
@@ -528,6 +549,17 @@ function aggregateCSV(rows) {
     }
     const p = positions[key];
     if (year < p.start) p.start = year;
+
+    // Aplikuj historické splity: transakce PŘED datem splitu mají starý počet akcií
+    // → vynásob split ratio aby odpovídal dnešnímu počtu
+    if (txDate) {
+      for (const split of STOCK_SPLITS) {
+        if (ticker.toUpperCase() === split.ticker.toUpperCase() && txDate < split.date) {
+          baseAmt *= split.ratio;
+        }
+      }
+    }
+
     if (way === 'BUY')  { p.shares += baseAmt; p.invested += quoteAmt; }
     else                { p.shares -= baseAmt; p.invested -= quoteAmt; }
   }
@@ -1085,14 +1117,34 @@ function InvestBook() {
         {(() => {
           const hodnotaMajetku = totalValue + zustatek;
           const cistyMajetek   = hodnotaMajetku - hypoteka;
-          return (
-            <div className="ib-grid4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 20 }}>
+          return (<>
+            <div className="ib-grid4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 12 }}>
               <StatCard label="Investováno celkem"      value={fmt(dispInvested)}    color={T.muted}  accent={T.subtle} />
-              <StatCard label="Výnos celkem"            value={fmt(dispGain)}        color={T.green}  accent={T.green}  sub={"+" + dispGainPct.toFixed(2) + " %"} />
+              <StatCard label="Výnos celkem"            value={fmt(dispGain)}        color={T.green}  accent={T.green}  sub={(dispGainPct >= 0 ? "+" : "") + dispGainPct.toFixed(2) + " %"} />
               <StatCard label={isFiltered ? "Hodnota " + cat.label : "Hodnota majetku"} value={isFiltered ? fmt(fValue) : fmt(hodnotaMajetku)} color={T.text} accent={T.blue} sub={!isFiltered && zustatek > 0 ? "vč. hotovosti " + fmt(zustatek) : null} />
               <StatCard label="Čistý majetek −hypotéka" value={fmt(cistyMajetek)}    color={T.amber}  accent={T.amber}  sub={"hypotéka " + fmt(hypoteka)} />
             </div>
-          );
+            {/* Roční výnos p.a. banner */}
+            <div style={{ background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.2)", borderRadius: 12, padding: "10px 18px", marginBottom: 20, display: "flex", alignItems: "center", gap: 20, flexWrap: "wrap" }}>
+              <div style={{ fontSize: 12, color: T.muted, letterSpacing: "0.08em", fontWeight: 600, textTransform: "uppercase", flexShrink: 0 }}>Průměrný roční výnos (p.a.)</div>
+              <div style={{ display: "flex", gap: 24, alignItems: "center", flexWrap: "wrap" }}>
+                <div>
+                  <span style={{ fontSize: 22, fontWeight: 800, color: T.amber, fontFamily: "'DM Mono',monospace", letterSpacing: "-0.02em" }}>
+                    {dispAvgAnn >= 0 ? "+" : ""}{dispAvgAnn.toFixed(2)} %
+                  </span>
+                  <span style={{ fontSize: 12, color: T.subtle, marginLeft: 8 }}>celkem{isFiltered ? " · " + cat.label : ""}</span>
+                </div>
+                {showNoCrypto && !isFiltered && (
+                  <div>
+                    <span style={{ fontSize: 18, fontWeight: 700, color: T.blue, fontFamily: "'DM Mono',monospace" }}>
+                      {dispAvgAnnNC >= 0 ? "+" : ""}{dispAvgAnnNC.toFixed(2)} %
+                    </span>
+                    <span style={{ fontSize: 12, color: T.subtle, marginLeft: 8 }}>bez crypto</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          </>);
         })()}
 
           {/* Graf + tabulka */}
