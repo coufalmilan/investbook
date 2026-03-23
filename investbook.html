@@ -370,9 +370,9 @@ const ETORO_FX  = 20.57; // USD→CZK
 const GBP_FX = 25.80; // GBP→CZK approximate
 
 const DEGIRO_POSITIONS_INIT = [
-  { id: 101, name: "SXR8.DE (iShares Core S&P 500 UCITS ETF)", broker: "DEGIRO", invested: 24113.18, value: 24113.18, currency: "EUR", fx: DEGIRO_FX, start: 2024, annReturn: null, category: "ETF",   shares: 42 , ticker: "SXR8.DE" },
-  { id: 102, name: "DFND.PA (iShares Global Aerospace & Defence UCITS ETF)", broker: "DEGIRO", invested: 393.17, value: 393.17, currency: "EUR", fx: DEGIRO_FX, start: 2026, annReturn: null, category: "ETF",   shares: 45 , ticker: "DFND.PA" },
-  { id: 103, name: "CSG.AS (CSG NV)",                           broker: "DEGIRO", invested: 645.90,   value: 645.90,   currency: "EUR", fx: DEGIRO_FX, start: 2026, annReturn: null, category: "Akcie", shares: 20 , ticker: "CSG.AS" },
+  { id: 101, name: "SXR8.DE (iShares Core S&P 500 UCITS ETF)", broker: "DEGIRO", invested: 25360.14, value: 25360.14, currency: "EUR", fx: DEGIRO_FX, start: 2024, annReturn: null, category: "ETF", shares: 44, ticker: "SXR8.DE" }, // aktualizováno z CSV: +1 (03/2026) + auto-korekce = 44
+  { id: 102, name: "DFND.PA (iShares Global Aerospace & Defence UCITS ETF)", broker: "DEGIRO", invested: 573.52, value: 573.52, currency: "EUR", fx: DEGIRO_FX, start: 2026, annReturn: null, category: "ETF", shares: 65, ticker: "DFND.PA" }, // aktualizováno z CSV: +20 (03/2026) + auto-korekce = 65
+  // CSG.AS DEGIRO (id:103): 20 ks prodáno 2026-03-03, pozice uzavřena — odstraněno
 ];
 
 // pinShares: true = počet akcií je ručně ověřen (po splitu nebo doplnění).
@@ -389,7 +389,7 @@ const ETORO_POSITIONS_INIT = [
   { id: 209, name: "LRCX (Lam Research Corp)",                  broker: "eToro", invested: 486.29,  value: 486.29,  currency: "USD", fx: ETORO_FX,  start: 2024, annReturn: null, category: "Akcie", shares: 6.85,    ticker: "LRCX",  pinShares: true  }, // aktualizováno dle Delta
   { id: 210, name: "ABBV (AbbVie Inc)",                         broker: "eToro", invested: 250.65,  value: 250.65,  currency: "USD", fx: ETORO_FX,  start: 2021, annReturn: null, category: "Akcie", shares: 2.23,    ticker: "ABBV"   },
   { id: 211, name: "RHM.DE (Rheinmetall AG)",                   broker: "eToro", invested: 950.39,  value: 950.39,  currency: "EUR", fx: DEGIRO_FX, start: 2025, annReturn: null, category: "Akcie", shares: 0.9,     ticker: "RHM.DE", pinShares: true }, // aktualizováno dle Delta
-  { id: 212, name: "CSG.AS (CSG NV)",                           broker: "eToro", invested: 1016.08, value: 1016.08, currency: "USD", fx: ETORO_FX,  start: 2026, annReturn: null, category: "Akcie", shares: 27.23,   ticker: "CSG.AS" },
+  { id: 212, name: "CSG.AS (CSG NV)",                           broker: "eToro", invested: 1561.62, value: 1561.62, currency: "EUR", fx: DEGIRO_FX, start: 2026, annReturn: null, category: "Akcie", shares: 31.95,   ticker: "CSG.AS", pinShares: true }, // aktualizováno z CSV 23/3/2026: 31.952 ks
   { id: 213, name: "BA-.L (Boeing Co)",                         broker: "eToro", invested: 295.09,  value: 295.09,  currency: "USD", fx: ETORO_FX,  start: 2025, annReturn: null, category: "Akcie", shares: 19.74,   ticker: "BA-.L", pinShares: true  }, // aktualizováno dle Delta
   { id: 214, name: "CSPX.L (iShares Core S&P 500 UCITS ETF)",  broker: "eToro", invested: 7504.02, value: 7504.02, currency: "USD", fx: ETORO_FX,  start: 2022, annReturn: null, category: "ETF",   shares: 16.1408, ticker: "CSPX.L" },
 ];
@@ -417,10 +417,18 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v3.8";
+const APP_VERSION = "v3.9";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v3.9", date: "23. 3. 2026", changes: [
+    "Graf: dynamický živý bod pro aktuální měsíc (přímo z hodnot pozic)",
+    "DEGIRO: SXR8.DE aktualizován na 44 ks, DFND.PA na 65 ks",
+    "DEGIRO: odstraněna CSG.AS (20 ks prodáno 2026-03-03)",
+    "eToro CSG.AS: aktualizováno na 31.95 ks (ověřeno CSV + Delta), pinShares=true",
+    "CSV import: pinShares správně chrání NVDA, TSLA, LRCX a další před neúplnou historií v CSV",
+    "SW bumped na v39",
+  ]},
   { version: "v3.8", date: "23. 3. 2026", changes: [
     "Karta 'Výnos celkem' nahrazena kartou 'Roční výnos (p.a.)' v CZK",
     "Odstraněn p.a. banner pod kartami",
@@ -1041,7 +1049,20 @@ function InvestBook() {
     const catData    = Object.keys(catMap).map(k => ({ name: k, value: catMap[k] }));
     const gain    = totalValue - totalInvested;
     const gainPct = totalInvested > 0 ? (gain / totalInvested) * 100 : 0;
-    const histData = filterHistory(period);
+
+    // Dynamický živý bod pro aktuální měsíc — přidá se do grafu pokud není v historii
+    const nowMonth = `${NOW_YEAR}-${String(new Date().getMonth()+1).padStart(2,'0')}`;
+    const livePoint = (() => {
+      const liveFond   = allRows.filter(p => ["Fond","ETF","Portfolio"].includes(p.category)).reduce((s,p) => s+p.valueCZK, 0);
+      const liveAkcie  = allRows.filter(p => p.category === "Akcie").reduce((s,p) => s+p.valueCZK, 0);
+      const liveCrypto = allRows.filter(p => p.category === "Crypto").reduce((s,p) => s+p.valueCZK, 0);
+      const liveV      = Math.round(liveFond + liveAkcie + liveCrypto + zustatek);
+      return { d: nowMonth, v: liveV, fond: Math.round(liveFond), akcie: Math.round(liveAkcie), crypto: Math.round(liveCrypto), isLive: true };
+    })();
+    const histBase  = filterHistory(period);
+    const lastHistD = histBase.length > 0 ? histBase[histBase.length-1].d : "";
+    // Přidej živý bod jen pokud aktuální měsíc ještě v historii není
+    const histData  = lastHistD < nowMonth ? [...histBase, livePoint] : histBase;
 
 
 
