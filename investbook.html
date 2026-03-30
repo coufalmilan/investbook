@@ -296,15 +296,85 @@ async function typeInto(fullText, setFn) {
 }
 
 function renderMD(text) {
-  return text
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-    .replace(/\*(.+?)\*/g,   "<em>$1</em>")
-    .replace(/^### (.+)/gm,  "<b style='color:#a5b4fc;font-size:14px'>$1</b>")
-    .replace(/^## (.+)/gm,   "<b style='color:#a5b4fc;font-size:14px'>$1</b>")
-    .replace(/^- (.+)/gm,    "<li>$1</li>")
-    .replace(/(<li>.*<\/li>\n?)+/g, s => `<ul style='padding-left:18px;margin:6px 0'>${s}</ul>`)
-    .replace(/\n\n/g, "<br/><br/>")
-    .replace(/\n/g,   "<br/>");
+  if (!text) return "";
+  const inlineFmt = s => s
+    .replace(/\*\*(.+?)\*\*/g, "<strong style='color:#e2e8f0;font-weight:700'>$1</strong>")
+    .replace(/\*(.+?)\*/g,     "<em style='color:#c4ccd8'>$1</em>")
+    .replace(/`(.+?)`/g,       "<code style='background:rgba(255,255,255,0.08);padding:1px 6px;border-radius:4px;font-family:DM Mono,monospace;font-size:11px;color:#a5b4fc'>$1</code>");
+
+  const lines = text.split('\n');
+  let html = '';
+  let inList = false, listType = null;
+
+  const closeList = () => {
+    if (inList) { html += `</${listType}>`; inList = false; listType = null; }
+  };
+  const openList = (type, style) => {
+    if (!inList || listType !== type) { closeList(); html += `<${type} style="${style}">`; inList = true; listType = type; }
+  };
+
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
+    const t   = raw.trim();
+
+    if (t === '') {
+      closeList();
+      // Collapse multiple blank lines into one gap
+      if (i + 1 < lines.length && lines[i + 1].trim() !== '') html += '<div style="height:8px"></div>';
+      continue;
+    }
+
+    // H2 — hlavní sekce s barevným pruhem vlevo
+    const h2 = t.match(/^## (.+)/);
+    if (h2) {
+      closeList();
+      html += `<div style="display:flex;align-items:center;gap:10px;margin:22px 0 10px;padding:9px 14px;background:rgba(99,102,241,0.1);border-left:3px solid #6366f1;border-radius:0 8px 8px 0">` +
+              `<span style="font-size:13px;font-weight:700;color:#a5b4fc;line-height:1.4">${inlineFmt(h2[1])}</span></div>`;
+      continue;
+    }
+
+    // H3 — podsekce
+    const h3 = t.match(/^### (.+)/);
+    if (h3) {
+      closeList();
+      html += `<div style="font-size:11px;font-weight:700;color:#6366f1;letter-spacing:0.08em;text-transform:uppercase;margin:14px 0 6px">${inlineFmt(h3[1])}</div>`;
+      continue;
+    }
+
+    // Horizontální linka
+    if (/^---+$/.test(t)) {
+      closeList();
+      html += `<hr style="border:none;border-top:1px solid rgba(255,255,255,0.07);margin:14px 0"/>`;
+      continue;
+    }
+
+    // Číslovaný seznam
+    const num = t.match(/^(\d+)[.)]\s+(.+)/);
+    if (num) {
+      openList('ol', 'padding:0;margin:8px 0;list-style:none;display:flex;flex-direction:column;gap:6px');
+      html += `<li style="display:flex;gap:10px;align-items:flex-start">` +
+              `<span style="color:#6366f1;font-weight:700;font-family:'DM Mono',monospace;min-width:22px;flex-shrink:0;margin-top:1px">${num[1]}.</span>` +
+              `<span style="color:#94a3b8;line-height:1.65">${inlineFmt(num[2])}</span></li>`;
+      continue;
+    }
+
+    // Odrážkový seznam
+    const bul = t.match(/^[-•*]\s+(.+)/);
+    if (bul) {
+      openList('ul', 'padding:0;margin:8px 0;list-style:none;display:flex;flex-direction:column;gap:5px');
+      html += `<li style="display:flex;gap:9px;align-items:flex-start">` +
+              `<span style="color:#6366f1;flex-shrink:0;margin-top:8px;width:5px;height:5px;border-radius:50%;background:#6366f1;display:inline-block"></span>` +
+              `<span style="color:#94a3b8;line-height:1.65">${inlineFmt(bul[1])}</span></li>`;
+      continue;
+    }
+
+    // Normální odstavec
+    closeList();
+    html += `<p style="margin:5px 0;color:#94a3b8;line-height:1.75">${inlineFmt(t)}</p>`;
+  }
+
+  closeList();
+  return html;
 }
 
 
@@ -417,10 +487,14 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.4";
+const APP_VERSION = "v4.5";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.5", date: "30. 3. 2026", changes: [
+    "AI tab: přepracované renderMD — nadpisy ## jako barevné sekce s pruhem vlevo, číslované i odrážkové seznamy jako čisté bloky, inline bold/italic/code",
+    "AI prompt: systémová instrukce nyní explicitně požaduje Markdown strukturu (##, -, **)",
+  ]},
   { version: "v4.4", date: "30. 3. 2026", changes: [
     "Vývoj portfolia: přidáno tlačítko 2R (2 roky) mezi 1R a 3R",
     "Analýza: odstraněny 4 StatCards (Největší/Nejmenší/Nejstarší/Nejnovější pozice)",
@@ -2830,7 +2904,7 @@ ${allRows.slice().sort((a,b)=>b.valueCZK-a.valueCZK).map(p => {
       setAiAnalysis("");
       const userMsg = `Analyzuj mé portfolio:\n${portfolioCtx}\n\nProsím uveď:\n1. **Celkové hodnocení** – zdraví portfolia, diverzifikace\n2. **Nejsilnější pozice** (top 3 s zdůvodněním)\n3. **Nejslabší / riziková pozice** (top 3 s doporučením)\n4. **Konkrétní akce** – co přikoupit, co prodat, co držet\n5. **Strategie** na příštích 12 měsíců`;
       try {
-        const txt = await callGemini(geminiKey, "Jsi zkušený portfolio manažer. Odpovídej v češtině, strukturovaně.", [{ role: "user", content: userMsg }], geminiModel, workerUrl);
+        const txt = await callGemini(geminiKey, "Jsi zkušený portfolio manažer. Odpovídej v češtině, strukturovaně pomocí Markdown: ## pro hlavní sekce, - pro odrážky, **tučně** pro klíčové pojmy. Každou sekci začni na novém řádku.", [{ role: "user", content: userMsg }], geminiModel, workerUrl);
         setAiAnalysis(txt);
       } catch(e) {
         setAiAnalysis(`❌ Chyba: ${e.message}`);
@@ -3035,7 +3109,7 @@ ${allRows.slice().sort((a,b)=>b.valueCZK-a.valueCZK).map(p => {
                 </div>
               )}
               {aiAnalysis && (
-                <div style={{ fontSize: 13, lineHeight: 1.75, color: T.muted }} dangerouslySetInnerHTML={{ __html: renderMD(aiAnalysis) }} />
+                <div style={{ fontSize: 13 }} dangerouslySetInnerHTML={{ __html: renderMD(aiAnalysis) }} />
               )}
             </>)}
 
@@ -3064,7 +3138,7 @@ ${allRows.slice().sort((a,b)=>b.valueCZK-a.valueCZK).map(p => {
                 </div>
               )}
               {marketNews && !marketNewsLoading && (
-                <div style={{ fontSize: 13, lineHeight: 1.75, color: T.muted }} dangerouslySetInnerHTML={{ __html: renderMD(marketNews) }} />
+                <div style={{ fontSize: 13 }} dangerouslySetInnerHTML={{ __html: renderMD(marketNews) }} />
               )}
             </>)}
           </div>
