@@ -338,7 +338,7 @@ const PORTFOLIO_HISTORY = [
 ];
 
 function filterHistory(period) {
-  const cutoffs = { "1M": new Date(2026,0,1), "YTD": new Date(2026,0,1), "1R": new Date(2025,1,1), "3R": new Date(2023,1,1), "MAX": new Date(2000,0,1) };
+  const cutoffs = { "1M": new Date(2026,0,1), "YTD": new Date(2026,0,1), "1R": new Date(2025,1,1), "2R": new Date(2024,1,1), "3R": new Date(2023,1,1), "MAX": new Date(2000,0,1) };
   const cutoff = cutoffs[period] || cutoffs["YTD"];
   return PORTFOLIO_HISTORY.filter(p => new Date(p.d + "-01") >= cutoff);
 }
@@ -417,10 +417,16 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.3";
+const APP_VERSION = "v4.4";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.4", date: "30. 3. 2026", changes: [
+    "Vývoj portfolia: přidáno tlačítko 2R (2 roky) mezi 1R a 3R",
+    "Analýza: odstraněny 4 StatCards (Největší/Nejmenší/Nejstarší/Nejnovější pozice)",
+    "Analýza: nová karta Statistiky portfolia — počet pozic, roky investování, průměrná velikost, Win/Loss ratio",
+    "Analýza: nová karta Koncentrace portfolia — podíl Top 1 / Top 3 / Top 5 pozic na celkové hodnotě s progress bary",
+  ]},
   { version: "v4.3", date: "30. 3. 2026", changes: [
     "Roční výkonnost portfolia: odstraněny sloupce sloupcového grafu, ponechána jen tabulka",
     "Celý web: přidáno řazení podle sloupců do všech tabulek (Ruční pozice, Importované pozice, Penzijko přírůstky, Roční výkonnost)",
@@ -1296,7 +1302,7 @@ ${posLines}`;
                   <div style={{ fontSize: 13, color: T.muted }}>historický vývoj hodnoty</div>
                 </div>
                 <div className="ib-period-row" style={{ display: "flex", gap: 4 }}>
-                  {["1M","YTD","1R","3R","MAX"].map(p => (
+                  {["1M","YTD","1R","2R","3R","MAX"].map(p => (
                     <button key={p} onClick={() => setPeriod(p)}
                       style={{ padding: "4px 10px", borderRadius: 6, border: "none", cursor: "pointer", fontFamily: "'DM Mono',monospace", fontSize: 12, fontWeight: 600, transition: "all 0.12s",
                         background: period === p ? T.blue : "rgba(255,255,255,0.05)",
@@ -2014,29 +2020,11 @@ ${posLines}`;
       );
     };
 
-    // Největší a nejmenší pozice
-    const biggest  = sorted[0];
-    const smallest = sorted[sorted.length - 1];
-
     return (
       <div>
         <div style={{ marginBottom: 28 }}>
           <h1 style={{ fontSize: 27, fontWeight: 800, color: T.text, letterSpacing: "-0.02em" }}>Analýza portfolia</h1>
           <div style={{ fontSize: 14, color: T.muted, marginTop: 4 }}>{posCount} pozic · průměrné držení {avgHold.toFixed(1)} let</div>
-        </div>
-
-        {/* Stats cards row */}
-        <div className="ib-grid4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 16 }}>
-          <StatCard label="Největší pozice"
-            value={biggest ? biggest.name.split("(")[0].trim() : "—"}
-            sub={biggest ? fmt(biggest.valueCZK) + " · " + ((biggest.valueCZK/totalValue)*100).toFixed(1) + "%" : ""}
-            color={T.green} accent={T.green} />
-          <StatCard label="Nejmenší pozice"
-            value={smallest ? smallest.name.split("(")[0].trim() : "—"}
-            sub={smallest ? fmt(smallest.valueCZK) + " · " + ((smallest.valueCZK/totalValue)*100).toFixed(1) + "%" : ""}
-            color={T.muted} accent={T.subtle} />
-          <StatCard label="Nejstarší pozice"  value={oldest ? oldest.name.split("(")[0].trim() : "—"} sub={oldest ? String(oldest.start) : ""} color={T.muted} accent={T.subtle} />
-          <StatCard label="Nejnovější pozice" value={newest ? newest.name.split("(")[0].trim() : "—"} sub={newest ? String(newest.start) : ""} color={T.muted} accent={T.subtle} />
         </div>
 
         {/* Koláče Podle brokera + Podle kategorie */}
@@ -2075,6 +2063,69 @@ ${posLines}`;
             </div>
           ))}
         </div>
+
+        {/* Statistiky portfolia + Koncentrace */}
+        {(() => {
+          const yearsInvesting = oldest ? NOW_YEAR - oldest.start : 0;
+          const avgPos = posCount > 0 ? Math.round(totalValue / posCount) : 0;
+          const lossCount = posCount - profitable;
+          const winPct = posCount > 0 ? (profitable / posCount * 100) : 0;
+
+          const top1val = sorted.slice(0, 1).reduce((s, p) => s + p.valueCZK, 0);
+          const top3val = sorted.slice(0, 3).reduce((s, p) => s + p.valueCZK, 0);
+          const top5val = sorted.slice(0, 5).reduce((s, p) => s + p.valueCZK, 0);
+          const top1pct = totalValue > 0 ? top1val / totalValue * 100 : 0;
+          const top3pct = totalValue > 0 ? top3val / totalValue * 100 : 0;
+          const top5pct = totalValue > 0 ? top5val / totalValue * 100 : 0;
+
+          const statRows = [
+            { label: "Počet pozic", value: posCount + " pozic" },
+            { label: "Roky investování", value: yearsInvesting + " let", sub: "od " + (oldest?.start || NOW_YEAR) },
+            { label: "Průměrná velikost pozice", value: fmt(avgPos) },
+            { label: "Win / Loss", value: profitable + " zisk  ·  " + lossCount + " ztráta", sub: winPct.toFixed(0) + "% pozic v zisku", highlight: winPct >= 50 ? T.green : T.red },
+          ];
+
+          const concRows = [
+            { label: "Top 1 pozice",  val: top1val, pct: top1pct, names: sorted.slice(0,1).map(p => p.name.split("(")[0].trim()) },
+            { label: "Top 3 pozice",  val: top3val, pct: top3pct, names: sorted.slice(0,3).map(p => p.name.split("(")[0].trim()) },
+            { label: "Top 5 pozic",   val: top5val, pct: top5pct, names: sorted.slice(0,5).map(p => p.name.split("(")[0].trim()) },
+          ];
+
+          return (
+            <div className="ib-grid2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
+              {/* Statistiky */}
+              <div style={{ ...C }}>
+                <SectionTitle title="📊 Statistiky portfolia" sub="Na základě importovaných a ručních pozic" />
+                {statRows.map((row, idx) => (
+                  <div key={row.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: idx < statRows.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none" }}>
+                    <span style={{ fontSize: 13, color: T.muted }}>{row.label}</span>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: 14, fontWeight: 600, color: row.highlight || T.text, fontFamily: "'DM Mono',monospace" }}>{row.value}</div>
+                      {row.sub && <div style={{ fontSize: 11, color: row.highlight || T.subtle, marginTop: 2 }}>{row.sub}</div>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Koncentrace */}
+              <div style={{ ...C }}>
+                <SectionTitle title="🎯 Koncentrace portfolia" sub="Podíl největších pozic na celkové hodnotě" />
+                {concRows.map(row => (
+                  <div key={row.label} style={{ marginBottom: 16 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
+                      <span style={{ fontSize: 13, color: T.muted }}>{row.label}</span>
+                      <span style={{ fontSize: 15, fontWeight: 700, color: row.pct > 50 ? T.amber : T.text, fontFamily: "'DM Mono',monospace" }}>{row.pct.toFixed(1)} %</span>
+                    </div>
+                    <div style={{ height: 6, borderRadius: 3, background: "rgba(255,255,255,0.07)", overflow: "hidden" }}>
+                      <div style={{ height: "100%", width: Math.min(100, row.pct) + "%", borderRadius: 3, background: row.pct > 50 ? T.amber : T.blue, transition: "width 0.4s ease" }} />
+                    </div>
+                    <div style={{ fontSize: 11, color: T.subtle, marginTop: 5, lineHeight: 1.4 }}>{row.names.join(" · ")}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Nejlepší vs. nejhorší pozice */}
         {(() => {
