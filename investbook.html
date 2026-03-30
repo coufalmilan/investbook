@@ -417,10 +417,16 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.2";
+const APP_VERSION = "v4.3";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.3", date: "30. 3. 2026", changes: [
+    "Roční výkonnost portfolia: odstraněny sloupce sloupcového grafu, ponechána jen tabulka",
+    "Celý web: přidáno řazení podle sloupců do všech tabulek (Ruční pozice, Importované pozice, Penzijko přírůstky, Roční výkonnost)",
+    "Přehled → karta Výnos: přepnuto na YTD výnos aktuálního roku místo historického p.a. průměru",
+    "Graf Vývoj portfolia: zobrazuje hodnotu na začátku a konci zvoleného období s absolutní a procentní změnou",
+  ]},
   { version: "v4.2", date: "29. 3. 2026", changes: [
     "Hodnocení rizikovosti: automaticky se spustí při každém načtení stránky",
     "Hodnocení rizikovosti: komentáře jsou nyní delší a detailnější (2–3 věty)",
@@ -740,6 +746,18 @@ function InvestBook() {
   const [riskSortCol,   setRiskSortCol]   = useState("risk");
   const [riskSortDir,   setRiskSortDir]   = useState("asc");
   const [expandedRiskRow, setExpandedRiskRow] = useState(null);
+  // Sort state for Roční výkonnost table
+  const [yrSort,  setYrSort]  = useState("yr");
+  const [yrDir,   setYrDir]   = useState("asc");
+  // Sort state for Ruční pozice (ČSOB) table
+  const [manSort, setManSort] = useState("value");
+  const [manDir,  setManDir]  = useState("desc");
+  // Sort state for Importované pozice table
+  const [impSort, setImpSort] = useState("valueCZK");
+  const [impDir,  setImpDir]  = useState("desc");
+  // Sort state for Penzijko přírůstky table
+  const [penSort, setPenSort] = useState("label");
+  const [penDir,  setPenDir]  = useState("asc");
   useEffect(() => { aiBottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [aiMessages]);
 
   // Manual positions (ČSOB + Portu)
@@ -1216,11 +1234,17 @@ ${posLines}`;
         {(() => {
           const hodnotaMajetku = totalValue + zustatek;
           const cistyMajetek   = hodnotaMajetku - hypoteka;
-          const annGainCZK     = Math.round(dispInvested * dispAvgAnn / 100);
+          // YTD stat card — výnos za aktuální rok
+          const ytdCardPct  = ytdGainPct != null ? ytdGainPct : null;
+          const ytdCardAbs  = ytdGain    != null ? Math.round(ytdGain) : null;
+          const ytdCardColor = ytdCardPct != null ? (ytdCardPct >= 0 ? T.green : T.red) : T.amber;
           return (
             <div className="ib-grid4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 20 }}>
               <StatCard label="Investováno celkem"      value={fmt(dispInvested)}   color={T.muted}  accent={T.subtle} />
-              <StatCard label="Roční výnos (p.a.)"      value={fmt(annGainCZK)}     color={T.amber}  accent={T.amber}  sub={(dispAvgAnn >= 0 ? "+" : "") + dispAvgAnn.toFixed(2) + " % p.a."} />
+              <StatCard label={"Výnos " + NOW_YEAR + " (YTD)"}
+                value={ytdCardPct != null ? (ytdCardPct >= 0 ? "+" : "") + ytdCardPct.toFixed(2) + " %" : "—"}
+                color={ytdCardColor} accent={ytdCardColor}
+                sub={ytdCardAbs != null ? (ytdCardAbs >= 0 ? "+" : "") + fmt(ytdCardAbs) : "data chybí"} />
               <StatCard label={isFiltered ? "Hodnota " + cat.label : "Hodnota majetku"} value={isFiltered ? fmt(fValue) : fmt(hodnotaMajetku)} color={T.text} accent={T.blue} sub={!isFiltered && zustatek > 0 ? "vč. hotovosti " + fmt(zustatek) : null} />
               <StatCard label="Čistý majetek −hypotéka" value={fmt(cistyMajetek)}   color={T.amber}  accent={T.amber}  sub={"hypotéka " + fmt(hypoteka)} />
             </div>
@@ -1299,6 +1323,32 @@ ${posLines}`;
                     activeDot={{ r: 4, fill: cat.color, strokeWidth: 0 }} />
                 </AreaChart>
               </ResponsiveContainer>
+              {/* Hodnoty na začátku a konci zobrazeného období */}
+              {histData.length >= 2 && (() => {
+                const first = histData[0];
+                const last  = histData[histData.length - 1];
+                const startV = first[cat.chartKey] ?? first.v;
+                const endV   = last[cat.chartKey]  ?? last.v;
+                const delta  = endV - startV;
+                const deltaPct = startV > 0 ? (delta / startV) * 100 : 0;
+                const gc = delta >= 0 ? T.green : T.red;
+                return (
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, padding: "8px 4px", borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+                    <div>
+                      <div style={{ fontSize: 10, color: T.subtle, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Začátek · {first.d}</div>
+                      <div style={{ fontSize: 14, color: T.muted, fontFamily: "'DM Mono',monospace", fontWeight: 600 }}>{fmt(startV)}</div>
+                    </div>
+                    <div style={{ textAlign: "center" }}>
+                      <div style={{ fontSize: 13, color: gc, fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>{delta >= 0 ? "+" : ""}{fmt(delta)}</div>
+                      <div style={{ fontSize: 12, color: gc, fontFamily: "'DM Mono',monospace" }}>{delta >= 0 ? "+" : ""}{deltaPct.toFixed(1)} %</div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: 10, color: T.subtle, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Konec · {last.d}</div>
+                      <div style={{ fontSize: 14, color: T.text, fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>{fmt(endV)}</div>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
 
             {/* Tabulka */}
@@ -1647,20 +1697,43 @@ ${posLines}`;
         {/* Price fetch status banner */}
 
         {/* MANUAL POSITIONS (ČSOB + Portu) */}
+        {(() => {
+          const MAN_COLS = [
+            { key: "name",     label: "Název",           align: "left",   sortFn: (a,b) => a.name.localeCompare(b.name) },
+            { key: "broker",   label: "Broker",          align: "left",   sortFn: (a,b) => a.broker.localeCompare(b.broker) },
+            { key: "category", label: "Kategorie",       align: "left",   sortFn: (a,b) => a.category.localeCompare(b.category) },
+            { key: "value",    label: "Hodnota (CZK)",   align: "right",  sortFn: (a,b) => (a.value||0) - (b.value||0) },
+            { key: "gain",     label: "Výnos CZK",       align: "right",  sortFn: (a,b) => ((a.value||0)-(a.invested||0)) - ((b.value||0)-(b.invested||0)) },
+            { key: "gainPct",  label: "Výnos %",         align: "right",  sortFn: (a,b) => { const gp = p => p.invested > 0 ? ((p.value||0)-(p.invested||0))/p.invested*100 : 0; return gp(a)-gp(b); } },
+            { key: "invested", label: "Investováno",     align: "right",  sortFn: (a,b) => (a.invested||0) - (b.invested||0) },
+            { key: "start",    label: "Start",           align: "right",  sortFn: (a,b) => (a.start||0) - (b.start||0) },
+          ];
+          const manCol = MAN_COLS.find(c => c.key === manSort) || MAN_COLS[3];
+          const onManSort = key => { if (manSort === key) setManDir(d => d === "asc" ? "desc" : "asc"); else { setManSort(key); setManDir("desc"); } };
+          const manArrow = key => manSort === key ? (manDir === "asc" ? " ↑" : " ↓") : "";
+          const sortedManual = manualRows.slice().sort((a,b) => manDir === "asc" ? manCol.sortFn(a,b) : manCol.sortFn(b,a));
+        return (<>
         <div style={{ fontSize: 11, color: T.muted, letterSpacing: "0.1em", fontWeight: 600, marginBottom: 8, textTransform: "uppercase" }}>
-          Ruční pozice — ČSOB
+          Ruční pozice — ČSOB · <span style={{ color: T.subtle, fontWeight: 400 }}>klikni na záhlaví pro seřazení</span>
         </div>
         <div className="ib-table-wrap" style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 14, overflow: "hidden", marginBottom: 20 }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ borderBottom: "1px solid " + T.border }}>
-                {["Název","Broker","Kategorie","Hodnota (CZK)","Výnos CZK","Výnos %","Investováno (CZK)","Start",""].map((h, i) => (
-                  <th key={i} style={{ padding: "9px 12px", textAlign: i <= 2 ? "left" : i === 8 ? "center" : "right", fontSize: 11, color: i === 6 ? T.subtle : T.muted, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
+                {MAN_COLS.map((h, i) => (
+                  <th key={h.key} onClick={() => onManSort(h.key)}
+                    style={{ padding: "9px 12px", textAlign: h.align, fontSize: 11, cursor: "pointer", userSelect: "none",
+                      color: manSort === h.key ? T.text : (h.key === "invested" ? T.subtle : T.muted),
+                      fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", whiteSpace: "nowrap",
+                      transition: "color 0.1s" }}>
+                    {h.label}{manArrow(h.key)}
+                  </th>
                 ))}
+                <th style={{ padding: "9px 8px", textAlign: "center", fontSize: 11, color: T.muted }}></th>
               </tr>
             </thead>
             <tbody>
-              {manualRows.map(pos => {
+              {sortedManual.map(pos => {
                 const gain    = (pos.value || 0) - (pos.invested || 0);
                 const gainPct = pos.invested > 0 ? (gain / pos.invested) * 100 : 0;
                 const gc = gain >= 0 ? T.green : T.red;
@@ -1697,11 +1770,30 @@ ${posLines}`;
             </tfoot>
           </table>
         </div>
+        </>); })()}
 
         {/* IMPORTED POSITIONS (DEGIRO + eToro + Crypto) */}
+        {(() => {
+          const IMP_COLS = [
+            { key: "name",     label: "Název / Ticker", align: "left",  sortFn: (a,b) => (a.ticker||a.name||"").localeCompare(b.ticker||b.name||"") },
+            { key: "broker",   label: "Broker",         align: "left",  sortFn: (a,b) => (a.broker||"").localeCompare(b.broker||"") },
+            { key: "category", label: "Kategorie",      align: "left",  sortFn: (a,b) => (a.category||"").localeCompare(b.category||"") },
+            { key: "shares",   label: "Kusy",           align: "right", sortFn: (a,b) => (a.shares||0) - (b.shares||0) },
+            { key: "invested", label: "Investováno",    align: "right", sortFn: (a,b) => (a.invested||0) - (b.invested||0) },
+            { key: "invCZK",   label: "Invest. CZK",   align: "right", sortFn: (a,b) => { const r = p => (isFinite(p.fx)&&p.fx>0)?p.fx:(p.currency==="EUR"?DEGIRO_FX:p.currency==="GBP"?GBP_FX:ETORO_FX); return (a.invested||0)*r(a)-(b.invested||0)*r(b); } },
+            { key: "valueCZK", label: "Hodnota CZK",   align: "right", sortFn: (a,b) => { const val = p => { const r=(isFinite(p.fx)&&p.fx>0)?p.fx:(p.currency==="EUR"?DEGIRO_FX:p.currency==="GBP"?GBP_FX:ETORO_FX); const iCZK=(p.invested||0)*r; return (isFinite(p.priceCZK)&&p.priceCZK>0&&isFinite(p.shares)&&p.shares>0)?p.priceCZK*p.shares:iCZK; }; return val(a)-val(b); } },
+            { key: "gainCZK",  label: "Výnos CZK",     align: "right", sortFn: (a,b) => { const gain = p => { const r=(isFinite(p.fx)&&p.fx>0)?p.fx:(p.currency==="EUR"?DEGIRO_FX:p.currency==="GBP"?GBP_FX:ETORO_FX); const iCZK=(p.invested||0)*r; const v=(isFinite(p.priceCZK)&&p.priceCZK>0&&isFinite(p.shares)&&p.shares>0)?p.priceCZK*p.shares:iCZK; return v-iCZK; }; return gain(a)-gain(b); } },
+            { key: "gainPct",  label: "Výnos %",       align: "right", sortFn: (a,b) => { const gp = p => { if(!p.invested||p.invested<=0) return 0; const r=(isFinite(p.fx)&&p.fx>0)?p.fx:(p.currency==="EUR"?DEGIRO_FX:p.currency==="GBP"?GBP_FX:ETORO_FX); const vOrig=(isFinite(p.priceCZK)&&p.priceCZK>0&&isFinite(p.shares)&&p.shares>0)?(p.priceCZK*p.shares)/r:p.invested; return ((vOrig-p.invested)/p.invested)*100; }; return gp(a)-gp(b); } },
+            { key: "start",    label: "Od",            align: "right", sortFn: (a,b) => (a.start||0) - (b.start||0) },
+          ];
+          const impCol = IMP_COLS.find(c => c.key === impSort) || IMP_COLS[6];
+          const onImpSort = key => { if (impSort === key) setImpDir(d => d === "asc" ? "desc" : "asc"); else { setImpSort(key); setImpDir("desc"); } };
+          const impArrow = key => impSort === key ? (impDir === "asc" ? " ↑" : " ↓") : "";
+          const sortedImported = importedRows.slice().sort((a,b) => impDir === "asc" ? impCol.sortFn(a,b) : impCol.sortFn(b,a));
+          return (<>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
           <div style={{ fontSize: 11, color: T.muted, letterSpacing: "0.1em", fontWeight: 600, textTransform: "uppercase" }}>
-            Importované pozice — DEGIRO · eToro · Crypto
+            Importované pozice — DEGIRO · eToro · Crypto · <span style={{ color: T.subtle, fontWeight: 400 }}>klikni na záhlaví pro seřazení</span>
           </div>
           <div className="ib-pos-actions" style={{ display: "flex", gap: 8, alignItems: "center" }}>
             <input id="csvFileInput" type="file" accept=".csv" style={{ display:"none" }}
@@ -1763,13 +1855,19 @@ ${posLines}`;
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ borderBottom: "1px solid " + T.border }}>
-                {["Název / Ticker","Broker","Kategorie","Kusy","Investováno","Invest. CZK","Hodnota CZK","Výnos CZK","Výnos %","Od"].map((h, i) => (
-                  <th key={i} style={{ padding: "9px 12px", textAlign: i <= 2 ? "left" : "right", fontSize: 10, color: T.muted, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
+                {IMP_COLS.map(h => (
+                  <th key={h.key} onClick={() => onImpSort(h.key)}
+                    style={{ padding: "9px 12px", textAlign: h.align, fontSize: 10, cursor: "pointer", userSelect: "none",
+                      color: impSort === h.key ? T.text : T.muted,
+                      fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", whiteSpace: "nowrap",
+                      transition: "color 0.1s" }}>
+                    {h.label}{impArrow(h.key)}
+                  </th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {importedRows.map(pos => {
+              {sortedImported.map(pos => {
                 const rate     = (isFinite(pos.fx) && pos.fx > 0) ? pos.fx : (pos.currency === "EUR" ? DEGIRO_FX : pos.currency === "GBP" ? GBP_FX : ETORO_FX);
                 const invCZK   = isFinite(pos.invested) ? pos.invested * rate : 0;
                 const hasPrice = isFinite(pos.priceCZK) && pos.priceCZK > 0 && isFinite(pos.shares) && pos.shares > 0;
@@ -1824,6 +1922,7 @@ ${posLines}`;
             </tfoot>
           </table>
         </div>
+          </>); })()}
 
         {/* Majetek a závazky */}
         {(() => {
@@ -2040,48 +2139,46 @@ ${posLines}`;
 
           const maxGrowth = Math.max(...yearData.map(d => Math.abs(d.growthPct)));
 
+          // Sortable columns for yearly performance table
+          const YR_COLS = [
+            { key: "yr",         label: "Rok",               align: "left",  sortFn: (a,b) => a.yr.localeCompare(b.yr) },
+            { key: "cur",        label: "Hodnota portfolia", align: "right", sortFn: (a,b) => a.cur - b.cur },
+            { key: "growthPct",  label: "Meziroční %",       align: "right", sortFn: (a,b) => a.growthPct - b.growthPct },
+            { key: "growthAbs",  label: "Přírůstek",         align: "right", sortFn: (a,b) => a.growthAbs - b.growthAbs },
+          ];
+          const yrCol = YR_COLS.find(c => c.key === yrSort) || YR_COLS[0];
+          const onYrSort = key => { if (yrSort === key) setYrDir(d => d === "asc" ? "desc" : "asc"); else { setYrSort(key); setYrDir("asc"); } };
+          const yrArrow = key => yrSort === key ? (yrDir === "asc" ? " ↑" : " ↓") : "";
+          const sortedYearData = yearData.slice().sort((a,b) => yrDir === "asc" ? yrCol.sortFn(a,b) : yrCol.sortFn(b,a));
+
           return (
             <div style={{ ...C, marginBottom: 16 }}>
-              <SectionTitle title="Roční výkonnost portfolia" sub="Meziroční změna hodnoty portfolia" />
-
-              {/* Bar chart meziroční % */}
-              <ResponsiveContainer width="100%" height={180}>
-                <BarChart data={yearData} margin={{ left: 4, right: 4, top: 4, bottom: 0 }} barCategoryGap="30%">
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-                  <XAxis dataKey="yr" tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.tick }} axisLine={false} tickLine={false} />
-                  <YAxis tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.tick }} axisLine={false} tickLine={false} width={40}
-                    tickFormatter={v => v.toFixed(0) + "%"} />
-                  <Tooltip {...ttStyle} wrapperStyle={{ maxWidth: 180, zIndex: 10 }} formatter={(v) => [v.toFixed(1) + " %", "Meziroční růst"]} />
-                  <Bar dataKey="growthPct" radius={[4,4,0,0]}>
-                    {yearData.map((d, i) => <Cell key={i} fill={d.growthPct >= 0 ? T.green : T.red} fillOpacity={0.8} />)}
-                  </Bar>
-                </BarChart>
-              </ResponsiveContainer>
+              <SectionTitle title="Roční výkonnost portfolia" sub="Meziroční změna hodnoty portfolia · klikni na záhlaví pro seřazení" />
 
               {/* Tabulka po letech */}
-              <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch", marginTop: 16 }}>
+              <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch", marginTop: 8 }}>
                 <table style={{ width: "100%", minWidth: 320, borderCollapse: "collapse" }}>
                   <thead>
                     <tr style={{ borderBottom: "1px solid " + T.border }}>
-                      {[
-                        { label: "Rok",               align: "left"  },
-                        { label: "Hodnota portfolia", align: "right" },
-                        { label: "Meziroční %",       align: "right" },
-                        { label: "Přírůstek",         align: "right" },
-                      ].map(h => (
-                        <th key={h.label} style={{ padding: "6px 12px", textAlign: h.align, fontSize: 10, color: T.subtle,
-                          fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", whiteSpace: "nowrap" }}>
-                          {h.label}
+                      {YR_COLS.map(h => (
+                        <th key={h.key} onClick={() => onYrSort(h.key)}
+                          style={{ padding: "6px 12px", textAlign: h.align, fontSize: 10, cursor: "pointer", userSelect: "none",
+                            color: yrSort === h.key ? T.text : T.subtle,
+                            fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", whiteSpace: "nowrap",
+                            transition: "color 0.1s" }}>
+                          {h.label}{yrArrow(h.key)}
                         </th>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {yearData.map((d, i) => {
+                    {sortedYearData.map((d, i) => {
                       const gc   = d.growthPct >= 0 ? T.green : T.red;
                       const barW = Math.abs(d.growthPct) / maxGrowth * 100;
                       return (
-                        <tr key={d.yr} style={{ borderBottom: "1px solid rgba(255,255,255,0.03)", background: i % 2 === 0 ? "rgba(255,255,255,0.01)" : "transparent" }}>
+                        <tr key={d.yr} style={{ borderBottom: "1px solid rgba(255,255,255,0.03)", background: i % 2 === 0 ? "rgba(255,255,255,0.01)" : "transparent" }}
+                          onMouseEnter={e => { e.currentTarget.style.background = "rgba(255,255,255,0.025)"; }}
+                          onMouseLeave={e => { e.currentTarget.style.background = i % 2 === 0 ? "rgba(255,255,255,0.01)" : "transparent"; }}>
                           <td style={{ padding: "10px 12px", fontSize: 14, color: T.text, fontWeight: 700, whiteSpace: "nowrap" }}>{d.yr}</td>
                           <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: T.text, fontFamily: "'DM Mono',monospace", fontWeight: 600, whiteSpace: "nowrap" }}>{fmt(d.cur)}</td>
                           <td style={{ padding: "10px 12px", textAlign: "right", minWidth: 90 }}>
@@ -2459,22 +2556,44 @@ ${posLines}`;
         </div>
 
         {/* Meziroční přírůstky tabulka */}
-        {entries.length >= 2 && (
+        {entries.length >= 2 && (() => {
+          // Enrich entries with computed diff/diffPct for sorting
+          const enriched = entries.map((e, i) => {
+            const prev = i > 0 ? entries[i-1].amount : null;
+            const diff = prev !== null ? e.amount - prev : null;
+            const diffPct = prev !== null && prev > 0 ? ((e.amount - prev) / prev * 100) : null;
+            return { ...e, diff, diffPct };
+          });
+          const PEN_COLS = [
+            { key: "label",   label: "Období",      align: "left",  sortFn: (a,b) => (a.label||"").localeCompare(b.label||"") },
+            { key: "amount",  label: "Hodnota",     align: "right", sortFn: (a,b) => (a.amount||0) - (b.amount||0) },
+            { key: "diff",    label: "Přírůstek",   align: "right", sortFn: (a,b) => (a.diff??-Infinity) - (b.diff??-Infinity) },
+            { key: "diffPct", label: "Přírůstek %", align: "right", sortFn: (a,b) => (a.diffPct??-Infinity) - (b.diffPct??-Infinity) },
+          ];
+          const penCol = PEN_COLS.find(c => c.key === penSort) || PEN_COLS[0];
+          const onPenSort = key => { if (penSort === key) setPenDir(d => d === "asc" ? "desc" : "asc"); else { setPenSort(key); setPenDir("asc"); } };
+          const penArrow = key => penSort === key ? (penDir === "asc" ? " ↑" : " ↓") : "";
+          const sortedEntries = enriched.slice().sort((a,b) => penDir === "asc" ? penCol.sortFn(a,b) : penCol.sortFn(b,a));
+          return (
           <div style={{ ...C }}>
-            <SectionTitle title="Mezizáznamové přírůstky" sub="Změna hodnoty mezi záznamy" />
+            <SectionTitle title="Mezizáznamové přírůstky" sub="Změna hodnoty mezi záznamy · klikni na záhlaví pro seřazení" />
             <table style={{ width: "100%", borderCollapse: "collapse" }}>
               <thead>
                 <tr style={{ borderBottom: "1px solid " + T.border }}>
-                  {["Období","Hodnota","Přírůstek","Přírůstek %"].map((h, i) => (
-                    <th key={i} style={{ padding: "7px 12px", textAlign: i === 0 ? "left" : "right", fontSize: 10, color: T.muted, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase" }}>{h}</th>
+                  {PEN_COLS.map(h => (
+                    <th key={h.key} onClick={() => onPenSort(h.key)}
+                      style={{ padding: "7px 12px", textAlign: h.align, fontSize: 10, cursor: "pointer", userSelect: "none",
+                        color: penSort === h.key ? T.text : T.muted,
+                        fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase",
+                        transition: "color 0.1s" }}>
+                      {h.label}{penArrow(h.key)}
+                    </th>
                   ))}
                 </tr>
               </thead>
               <tbody>
-                {entries.map((e, i) => {
-                  const prev = i > 0 ? entries[i-1].amount : null;
-                  const diff = prev !== null ? e.amount - prev : null;
-                  const diffPct = prev !== null && prev > 0 ? ((e.amount - prev) / prev * 100) : null;
+                {sortedEntries.map((e) => {
+                  const { diff, diffPct } = e;
                   const gc = diff !== null ? (diff >= 0 ? T.green : T.red) : T.muted;
                   return (
                     <tr key={e.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.03)" }}
@@ -2505,7 +2624,7 @@ ${posLines}`;
               </tfoot>
             </table>
           </div>
-        )}
+          ); })()}
 
         {/* Projekce */}
         {(() => {
