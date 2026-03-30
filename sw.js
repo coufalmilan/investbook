@@ -1,5 +1,5 @@
 // InvestBook Service Worker – offline cache
-const CACHE = 'investbook-v35';
+const CACHE = 'investbook-v36';
 const ASSETS = [
   './investbook.html',
   './manifest.json',
@@ -43,14 +43,17 @@ self.addEventListener('fetch', e => {
     e.respondWith(fetch(e.request).catch(() => caches.match(e.request)));
     return;
   }
+
   // Vlastní soubory: cache-first, fallback na síť
   e.respondWith(
-    caches.match(e.request).then(cached => cached || fetch(e.request).then(resp => {
-      if (resp && resp.status === 200 && resp.type !== 'opaque') {
-        const clone = resp.clone();
-        caches.open(CACHE).then(c => c.put(e.request, clone));
-      }
-      return resp;
-    }))
+    caches.match(e.request).then(cached =>
+      cached || fetch(e.request).then(resp => {
+        if (resp && resp.status === 200 && resp.type !== 'opaque') {
+          const clone = resp.clone();
+          caches.open(CACHE).then(c => c.put(e.request, clone));
+        }
+        return resp;
+      })
+    )
   );
 });
