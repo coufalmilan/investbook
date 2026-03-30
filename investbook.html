@@ -758,6 +758,8 @@ function InvestBook() {
   // Sort state for Penzijko přírůstky table
   const [penSort, setPenSort] = useState("label");
   const [penDir,  setPenDir]  = useState("asc");
+  // AI tab panel selector
+  const [aiPanel, setAiPanel] = useState("analysis");
   useEffect(() => { aiBottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [aiMessages]);
 
   // Manual positions (ČSOB + Portu)
@@ -2925,7 +2927,7 @@ ${allRows.slice().sort((a,b)=>b.valueCZK-a.valueCZK).map(p => {
 
         {!geminiKey && !workerUrl ? (
           <div style={{ ...C, textAlign: "center", padding: "56px 32px" }}>
-            <div style={{ fontSize: 56, marginBottom: 16 }}>🤖</div>
+            <div style={{ fontSize: 52, marginBottom: 16 }}>🤖</div>
             <div style={{ fontSize: 18, fontWeight: 700, color: T.text, marginBottom: 8 }}>Nastav Gemini AI</div>
             <div style={{ color: T.muted, fontSize: 14, marginBottom: 20 }}>Použij Worker URL (doporučeno) nebo API klíč zdarma z <a href="https://aistudio.google.com/app/apikey" target="_blank" style={{ color: T.blue }}>aistudio.google.com</a></div>
             <button onClick={() => setShowGeminiSettings(true)}
@@ -2933,147 +2935,152 @@ ${allRows.slice().sort((a,b)=>b.valueCZK-a.valueCZK).map(p => {
               ⚙️ Nastavit klíč
             </button>
           </div>
-        ) : (
-          <div className="ib-ai-grid" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+        ) : (<>
 
-            {/* Levý sloupec: Analýza portfolia */}
-            <div style={{ display: "flex", flexDirection: "column", gap: 16 }}>
-              <div style={{ ...C }}>
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12 }}>
-                  <div>
-                    <div style={{ fontSize: 15, fontWeight: 700, color: T.text }}>📊 Analýza portfolia</div>
-                    <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>Gemini analyzuje všech {allRows.length} pozic</div>
-                  </div>
-                  <button onClick={analyzePortfolio} disabled={aiAnalysisLoading}
-                    style={{ padding: "8px 16px", borderRadius: 8, border: "none", background: aiAnalysisLoading ? "rgba(99,102,241,0.3)" : "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "#fff", cursor: aiAnalysisLoading ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
-                    {aiAnalysisLoading
-                      ? <><span style={{ display: "inline-block", animation: "pulse 1s infinite" }}>⏳</span> Analyzuji…</>
-                      : "🔍 Analyzovat"}
-                  </button>
-                </div>
-                {!aiAnalysis && !aiAnalysisLoading && (
-                  <div style={{ color: T.subtle, fontSize: 13, textAlign: "center", padding: "24px 0" }}>
-                    Klikni „Analyzovat" a Gemini ti doporučí co koupit, prodat nebo držet.
-                  </div>
-                )}
-                {aiAnalysisLoading && (
-                  <div style={{ color: T.muted, fontSize: 13, padding: "20px 0", textAlign: "center" }}>
-                    <span style={{ animation: "pulse 1s infinite", display: "inline-block" }}>🤖</span> Gemini analyzuje tvoje portfolio…
-                  </div>
-                )}
-                {aiAnalysis && (
-                  <div style={{ fontSize: 13, lineHeight: 1.7, color: T.muted }} dangerouslySetInnerHTML={{ __html: renderMD(aiAnalysis) }} />
-                )}
-              </div>
+          {/* ── Analýza + Zprávy – jedna karta s přepínačem ────────────── */}
+          <div style={{ ...C, marginBottom: 16 }}>
 
-              {/* Portfolio souhrn pro AI */}
-              <div style={{ ...C }}>
-                <div style={{ fontSize: 13, fontWeight: 600, color: T.muted, marginBottom: 10, textTransform: "uppercase", letterSpacing: "0.08em" }}>Kontext předaný AI</div>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
-                  {[
-                    { l: "Celková hodnota",  v: fmtCZK(totalVal) },
-                    { l: "Investováno",      v: fmtCZK(totalInv) },
-                    { l: "Celkový zisk",     v: fmtCZK(totalGain) + " (" + gainPct + "%)" },
-                    { l: "Počet pozic",      v: allRows.length },
-                    { l: "Kategorie",        v: [...new Set(allRows.map(p => p.category))].join(", ") },
-                    { l: "Brokéři",          v: [...new Set(allRows.map(p => p.broker))].join(", ") },
-                  ].map(r => (
-                    <div key={r.l} style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", borderBottom: "1px solid rgba(255,255,255,0.04)", fontSize: 12 }}>
-                      <span style={{ color: T.subtle }}>{r.l}</span>
-                      <span style={{ color: T.text, fontFamily: MONO }}>{r.v}</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
+            {/* Tab přepínač */}
+            <div style={{ display: "flex", gap: 6, marginBottom: 18, borderBottom: "1px solid " + T.border, paddingBottom: 14 }}>
+              {[
+                { key: "analysis", icon: "📊", label: "Analýza portfolia" },
+                { key: "news",     icon: "📰", label: "Zprávy portfolia"  },
+              ].map(tab => (
+                <button key={tab.key} onClick={() => setAiPanel(tab.key)}
+                  style={{
+                    padding: "7px 18px", borderRadius: 8, border: "none", cursor: "pointer",
+                    fontSize: 13, fontWeight: 700, transition: "all 0.15s",
+                    background: aiPanel === tab.key ? "linear-gradient(135deg,#6366f1,#8b5cf6)" : "rgba(255,255,255,0.05)",
+                    color: aiPanel === tab.key ? "#fff" : T.muted,
+                    boxShadow: aiPanel === tab.key ? "0 2px 8px rgba(99,102,241,0.35)" : "none",
+                  }}>
+                  {tab.icon} {tab.label}
+                </button>
+              ))}
             </div>
 
-            {/* Pravý sloupec: Chat */}
-            <div className="ib-ai-chat" style={{ ...C, display: "flex", flexDirection: "column", height: 600 }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: T.text, marginBottom: 12 }}>💬 AI Chat</div>
-
-              {/* Zprávy */}
-              <div style={{ flex: 1, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10, marginBottom: 12, paddingRight: 2 }}>
-                {aiMessages.map((m, i) => (
-                  <div key={i} style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start", gap: 8 }}>
-                    {m.role === "assistant" && (
-                      <div style={{ width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg,#6366f1,#8b5cf6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0, marginTop: 2 }}>🤖</div>
-                    )}
-                    <div style={{
-                      maxWidth: "80%", padding: "10px 14px", borderRadius: m.role === "user" ? "12px 12px 4px 12px" : "4px 12px 12px 12px",
-                      background: m.role === "user" ? "rgba(99,102,241,0.2)" : T.bg,
-                      border: "1px solid " + (m.role === "user" ? "rgba(99,102,241,0.4)" : T.border),
-                      fontSize: 13, lineHeight: 1.6, color: T.text,
-                    }}>
-                      {m.role === "assistant"
-                        ? <><span dangerouslySetInnerHTML={{ __html: renderMD(m.content) }} />{m.typing && <span style={{ display: "inline-block", width: 6, height: 14, background: T.blue, borderRadius: 2, marginLeft: 3, animation: "pulse 0.7s infinite" }} />}</>
-                        : m.content
-                      }
-                    </div>
-                  </div>
-                ))}
-                <div ref={aiBottomRef} />
-              </div>
-
-              {/* Návrhy (jen na začátku) */}
-              {aiMessages.length <= 1 && (
-                <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 10 }}>
-                  {SUGGESTIONS.map(s => (
-                    <button key={s} onClick={() => setAiInput(s)}
-                      style={{ padding: "4px 10px", borderRadius: 6, border: "1px solid " + T.border, background: T.bg, color: T.muted, cursor: "pointer", fontSize: 12, fontFamily: "'DM Sans',sans-serif" }}>
-                      {s}
-                    </button>
-                  ))}
-                </div>
-              )}
-
-              {/* Input */}
-              <div style={{ display: "flex", gap: 8 }}>
-                <input value={aiInput} onChange={e => setAiInput(e.target.value)}
-                  onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); } }}
-                  placeholder="Zeptej se na své portfolio…"
-                  disabled={aiLoading}
-                  style={{ ...inputBase, flex: 1 }}
-                />
-                <button onClick={sendChat} disabled={aiLoading || !aiInput.trim()}
-                  style={{ padding: "9px 16px", borderRadius: 8, border: "none", background: aiLoading || !aiInput.trim() ? "rgba(99,102,241,0.3)" : "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "#fff", cursor: aiLoading || !aiInput.trim() ? "not-allowed" : "pointer", fontSize: 16 }}>
-                  {aiLoading ? "⏳" : "➤"}
+            {/* Panel: Analýza portfolia */}
+            {aiPanel === "analysis" && (<>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                <div style={{ fontSize: 12, color: T.muted }}>Gemini analyzuje všech <strong style={{ color: T.text }}>{allRows.length}</strong> pozic</div>
+                <button onClick={analyzePortfolio} disabled={aiAnalysisLoading}
+                  style={{ padding: "8px 18px", borderRadius: 8, border: "none",
+                    background: aiAnalysisLoading ? "rgba(99,102,241,0.3)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
+                    color: "#fff", cursor: aiAnalysisLoading ? "not-allowed" : "pointer",
+                    fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+                  {aiAnalysisLoading
+                    ? <><span style={{ animation: "pulse 1s infinite", display: "inline-block" }}>⏳</span> Analyzuji…</>
+                    : "🔍 Analyzovat portfolio"}
                 </button>
               </div>
-            </div>
-          </div>
-        )}
-
-        {/* ── Zprávy portfolia ─────────────────────────────────────────────────── */}
-        {(geminiKey || workerUrl) && (
-          <div style={{ ...C, marginTop: 16 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-              <div>
-                <div style={{ fontSize: 15, fontWeight: 600, color: T.text }}>📰 Zprávy portfolia</div>
-                <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>
-                  {marketNewsDate ? `Načteno: ${marketNewsDate}` : "Denní AI přehled novinek k tvým pozicím"}
+              {!aiAnalysis && !aiAnalysisLoading && (
+                <div style={{ color: T.subtle, fontSize: 13, textAlign: "center", padding: "32px 0" }}>
+                  Klikni <strong style={{ color: T.text }}>Analyzovat portfolio</strong> — Gemini doporučí co koupit, prodat nebo držet.
                 </div>
+              )}
+              {aiAnalysisLoading && (
+                <div style={{ color: T.muted, fontSize: 13, padding: "28px 0", textAlign: "center" }}>
+                  <span style={{ animation: "pulse 1s infinite", display: "inline-block", marginRight: 8 }}>🤖</span>Gemini analyzuje tvoje portfolio…
+                </div>
+              )}
+              {aiAnalysis && (
+                <div style={{ fontSize: 13, lineHeight: 1.75, color: T.muted }} dangerouslySetInnerHTML={{ __html: renderMD(aiAnalysis) }} />
+              )}
+            </>)}
+
+            {/* Panel: Zprávy portfolia */}
+            {aiPanel === "news" && (<>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                <div style={{ fontSize: 12, color: T.muted }}>
+                  {marketNewsDate ? <span>Načteno: <strong style={{ color: T.text }}>{marketNewsDate}</strong></span> : "Denní AI přehled novinek k tvým pozicím"}
+                </div>
+                <button onClick={loadMktNews} disabled={marketNewsLoading}
+                  style={{ padding: "8px 18px", borderRadius: 8, border: "none",
+                    background: marketNewsLoading ? "rgba(99,102,241,0.3)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
+                    color: "#fff", cursor: marketNewsLoading ? "not-allowed" : "pointer",
+                    fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>
+                  {marketNewsLoading ? <><span style={{ animation: "pulse 1s infinite", display: "inline-block" }}>⏳</span> Načítám…</> : "📰 Načíst zprávy"}
+                </button>
               </div>
-              <button onClick={loadMktNews} disabled={marketNewsLoading}
-                style={{ padding: "7px 14px", borderRadius: 8, border: "none",
-                  background: marketNewsLoading ? "rgba(99,102,241,0.25)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
-                  color: "#fff", cursor: marketNewsLoading ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap", flexShrink: 0 }}>
-                {marketNewsLoading ? "⏳ Načítám..." : "📰 Načíst zprávy"}
+              {!marketNews && !marketNewsLoading && (
+                <div style={{ color: T.subtle, fontSize: 13, textAlign: "center", padding: "32px 0" }}>
+                  Klikni <strong style={{ color: T.text }}>Načíst zprávy</strong> — Gemini vygeneruje denní přehled novinek k tvým pozicím.
+                </div>
+              )}
+              {marketNewsLoading && (
+                <div style={{ color: T.muted, fontSize: 13, padding: "28px 0", textAlign: "center" }}>
+                  <span style={{ animation: "pulse 1s infinite", display: "inline-block", marginRight: 8 }}>🤖</span>Gemini generuje přehled zpráv…
+                </div>
+              )}
+              {marketNews && !marketNewsLoading && (
+                <div style={{ fontSize: 13, lineHeight: 1.75, color: T.muted }} dangerouslySetInnerHTML={{ __html: renderMD(marketNews) }} />
+              )}
+            </>)}
+          </div>
+
+          {/* ── AI Chat – plná šířka ────────────────────────────────────── */}
+          <div style={{ ...C, display: "flex", flexDirection: "column" }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: T.text, marginBottom: 14, paddingBottom: 12, borderBottom: "1px solid " + T.border }}>💬 AI Chat</div>
+
+            {/* Zprávy */}
+            <div style={{ minHeight: 120, maxHeight: 480, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10, marginBottom: 14, paddingRight: 4 }}>
+              {aiMessages.length === 0 && (
+                <div style={{ color: T.subtle, fontSize: 13, textAlign: "center", padding: "32px 0" }}>
+                  Zeptej se na cokoli o svém portfoliu…
+                </div>
+              )}
+              {aiMessages.map((m, i) => (
+                <div key={i} style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start", gap: 8 }}>
+                  {m.role === "assistant" && (
+                    <div style={{ width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg,#6366f1,#8b5cf6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0, marginTop: 2 }}>🤖</div>
+                  )}
+                  <div style={{
+                    maxWidth: "82%", padding: "10px 14px",
+                    borderRadius: m.role === "user" ? "12px 12px 4px 12px" : "4px 12px 12px 12px",
+                    background: m.role === "user" ? "rgba(99,102,241,0.18)" : T.bg,
+                    border: "1px solid " + (m.role === "user" ? "rgba(99,102,241,0.35)" : T.border),
+                    fontSize: 13, lineHeight: 1.65, color: T.text,
+                  }}>
+                    {m.role === "assistant"
+                      ? <><span dangerouslySetInnerHTML={{ __html: renderMD(m.content) }} />{m.typing && <span style={{ display: "inline-block", width: 6, height: 14, background: T.blue, borderRadius: 2, marginLeft: 3, animation: "pulse 0.7s infinite" }} />}</>
+                      : m.content}
+                  </div>
+                </div>
+              ))}
+              <div ref={aiBottomRef} />
+            </div>
+
+            {/* Návrhy (jen na začátku) */}
+            {aiMessages.length === 0 && (
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+                {SUGGESTIONS.map(s => (
+                  <button key={s} onClick={() => setAiInput(s)}
+                    style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid " + T.border, background: "rgba(255,255,255,0.04)", color: T.muted, cursor: "pointer", fontSize: 12, fontFamily: "'DM Sans',sans-serif", transition: "all 0.1s" }}
+                    onMouseEnter={e => { e.currentTarget.style.background = "rgba(99,102,241,0.12)"; e.currentTarget.style.color = T.text; }}
+                    onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.04)"; e.currentTarget.style.color = T.muted; }}>
+                    {s}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            {/* Input */}
+            <div style={{ display: "flex", gap: 8 }}>
+              <input value={aiInput} onChange={e => setAiInput(e.target.value)}
+                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); } }}
+                placeholder="Zeptej se na své portfolio…"
+                disabled={aiLoading}
+                style={{ ...inputBase, flex: 1 }}
+              />
+              <button onClick={sendChat} disabled={aiLoading || !aiInput.trim()}
+                style={{ padding: "9px 18px", borderRadius: 8, border: "none",
+                  background: aiLoading || !aiInput.trim() ? "rgba(99,102,241,0.25)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
+                  color: "#fff", cursor: aiLoading || !aiInput.trim() ? "not-allowed" : "pointer", fontSize: 16 }}>
+                {aiLoading ? "⏳" : "➤"}
               </button>
             </div>
-            {marketNewsLoading && (
-              <div style={{ color: T.muted, fontSize: 13, padding: "20px 0", textAlign: "center" }}>Gemini generuje přehled zpráv…</div>
-            )}
-            {marketNews && !marketNewsLoading && (
-              <div style={{ fontSize: 14, color: T.text, lineHeight: 1.75 }}
-                dangerouslySetInnerHTML={{ __html: renderMD(marketNews) }} />
-            )}
-            {!marketNews && !marketNewsLoading && (
-              <div style={{ color: T.muted, fontSize: 13, textAlign: "center", padding: "24px 0" }}>
-                Klikni na <strong style={{ color: T.text }}>📰 Načíst zprávy</strong> pro denní AI přehled.
-              </div>
-            )}
           </div>
-        )}
+        </>)}
       </div>
     );
   };
