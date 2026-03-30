@@ -417,10 +417,15 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.1";
+const APP_VERSION = "v4.2";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.2", date: "29. 3. 2026", changes: [
+    "Hodnocení rizikovosti: automaticky se spustí při každém načtení stránky",
+    "Hodnocení rizikovosti: komentáře jsou nyní delší a detailnější (2–3 věty)",
+    "Roční výkonnost portfolia: odstraněny modré čárové grafy (zobrazovaly se v předchozí verzi)",
+  ]},
   { version: "v4.1", date: "29. 3. 2026", changes: [
     "Hodnocení rizikovosti: kliknutím na titul se rozbalí plný text Hlavního faktoru a Komentáře",
     "Roční výnosnost portfolia: nový přehledný responzivní design tabulky s integrovaným grafem",
@@ -772,6 +777,55 @@ function InvestBook() {
       return s + (p.priceCZK && p.shares ? Math.round(p.priceCZK * p.shares) : Math.round((p.invested||0)*fx));
     }, 0);
   const totalInvested = allRows.reduce((s, p) => s + p.investedCZK, 0);
+
+  // ── assessRisk – vyhodnocení rizikovosti, volatelné odkudkoli ────────────
+  const assessRisk = useCallback(async () => {
+    if (!geminiKey && !workerUrl) return;
+    setRiskLoading(true);
+    setRiskResult("");
+    const totalVal = allRows.reduce((s, p) => s + p.valueCZK, 0);
+    const rows = allRows.slice().sort((a, b) => b.valueCZK - a.valueCZK);
+    const posLines = rows.map(p => {
+      const konc = totalVal > 0 ? ((p.valueCZK / totalVal) * 100).toFixed(1) : "0";
+      const yrs  = Math.max(1, NOW_YEAR - (p.start || NOW_YEAR));
+      const gp   = p.gainPctOrig != null ? p.gainPctOrig.toFixed(1) : "?";
+      const ratio = p.gainPctOrig != null ? (p.gainPctOrig / 100 + 1) : 1;
+      const cagr = ratio > 0 ? ((Math.pow(ratio, 1 / yrs) - 1) * 100).toFixed(1) : "?";
+      return `${p.name} | kat: ${p.category} | hodnota: ${Math.round(p.valueCZK)} CZK | konc: ${konc}% | výnos: ${gp}% | CAGR: ${cagr}% | roky: ${yrs}`;
+    }).join("\n");
+    const prompt = `Jsi zkušený portfolio analytik. Zhodnoť riziko každé pozice. Pro KAŽDOU pozici uveď PŘESNĚ JEDEN řádek v tomto formátu (8 polí oddělených |):
+
+TICKER | Riziko | P/E | Volatilita | Hlavní faktor | Trend | Doporučení | Komentář
+
+Kde:
+- Riziko: Nízké / Střední / Vysoké
+- P/E: aktuální P/E poměr jako číslo (např. 28.5), pro ETF/Crypto/Fond napiš N/A
+- Volatilita: Nízká / Střední / Vysoká
+- Hlavní faktor: nejdůležitější rizikový faktor (max 6 slov)
+- Trend: ↑ (rostoucí) / → (neutrální) / ↓ (klesající)
+- Doporučení: Držet / Přikoupit / Zvážit prodej
+- Komentář: 2–3 věty s konkrétním postřehem o pozici – zmiň klíčové riziko, aktuální situaci firmy/trhu a výhled. Buď upřímný, neboj se uvést i negativa. (cca 30–50 slov)
+
+DŮLEŽITÉ: Odpovídej POUZE tabulkou, žádný úvod ani závěr. Každá pozice = 1 řádek.
+
+Pozice:
+${posLines}`;
+    try {
+      const txt = await callGemini(geminiKey, "Jsi portfolio analytik. Odpovídej v češtině.", [{ role: "user", content: prompt }], geminiModel, workerUrl);
+      setRiskResult(txt);
+    } catch(e) {
+      setRiskResult(`❌ Chyba: ${e.message}`);
+    } finally { setRiskLoading(false); }
+  }, [geminiKey, workerUrl, geminiModel, allRows]);
+
+  // Auto-spustit hodnocení rizikovosti při každém načtení stránky
+  const riskAutoRunDone = useRef(false);
+  useEffect(() => {
+    if (!riskAutoRunDone.current && (geminiKey || workerUrl) && allRows.length > 0) {
+      riskAutoRunDone.current = true;
+      assessRisk();
+    }
+  }, [geminiKey, workerUrl, allRows.length, assessRisk]);
 
   const ttStyle = {
     contentStyle: { background: T.card, border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, fontFamily: "'DM Mono',monospace", fontSize: 13, boxShadow: "0 8px 32px rgba(0,0,0,0.5)" },
@@ -2123,46 +2177,6 @@ function InvestBook() {
 
         {/* ── HODNOCENÍ RIZIKOVOSTI ───────────────────────────────────────────── */}
         {(() => {
-          const totalVal = allRows.reduce((s, p) => s + p.valueCZK, 0);
-
-          const assessRisk = async () => {
-            if (!geminiKey && !workerUrl) return;
-            setRiskLoading(true);
-            setRiskResult("");
-            const rows = allRows.slice().sort((a, b) => b.valueCZK - a.valueCZK);
-            const posLines = rows.map(p => {
-              const konc = totalVal > 0 ? ((p.valueCZK / totalVal) * 100).toFixed(1) : "0";
-              const yrs  = Math.max(1, NOW_YEAR - (p.start || NOW_YEAR));
-              const gp   = p.gainPctOrig != null ? p.gainPctOrig.toFixed(1) : "?";
-              const ratio = p.gainPctOrig != null ? (p.gainPctOrig / 100 + 1) : 1;
-              const cagr = ratio > 0 ? ((Math.pow(ratio, 1 / yrs) - 1) * 100).toFixed(1) : "?";
-              return `${p.name} | kat: ${p.category} | hodnota: ${Math.round(p.valueCZK)} CZK | konc: ${konc}% | výnos: ${gp}% | CAGR: ${cagr}% | roky: ${yrs}`;
-            }).join("\n");
-            const prompt = `Jsi zkušený portfolio analytik. Zhodnoť riziko každé pozice. Pro KAŽDOU pozici uveď PŘESNĚ JEDEN řádek v tomto formátu (7 polí oddělených |):
-
-TICKER | Riziko | P/E | Volatilita | Hlavní faktor | Trend | Doporučení | Komentář
-
-Kde:
-- Riziko: Nízké / Střední / Vysoké
-- P/E: aktuální P/E poměr jako číslo (např. 28.5), pro ETF/Crypto/Fond napiš N/A
-- Volatilita: Nízká / Střední / Vysoká
-- Hlavní faktor: nejdůležitější rizikový faktor (max 6 slov)
-- Trend: ↑ (rostoucí) / → (neutrální) / ↓ (klesající)
-- Doporučení: Držet / Přikoupit / Zvážit prodej
-- Komentář: 1 věta s klíčovým postřehem o pozici (max 12 slov)
-
-DŮLEŽITÉ: Odpovídej POUZE tabulkou, žádný úvod ani závěr. Každá pozice = 1 řádek.
-
-Pozice:
-${posLines}`;
-            try {
-              const txt = await callGemini(geminiKey, "Jsi portfolio analytik. Odpovídej stručně v češtině.", [{ role: "user", content: prompt }], geminiModel, workerUrl);
-              setRiskResult(txt);
-            } catch(e) {
-              setRiskResult(`❌ Chyba: ${e.message}`);
-            } finally { setRiskLoading(false); }
-          };
-
           const getRiskColor = (s) => {
             const low = (s||"").toLowerCase();
             if (low.includes("nízk")) return T.green;
