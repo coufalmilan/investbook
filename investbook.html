@@ -1144,7 +1144,7 @@ ${posLines}`;
       const liveFond   = allRows.filter(p => ["Fond","ETF","Portfolio"].includes(p.category)).reduce((s,p) => s+p.valueCZK, 0);
       const liveAkcie  = allRows.filter(p => p.category === "Akcie").reduce((s,p) => s+p.valueCZK, 0);
       const liveCrypto = allRows.filter(p => p.category === "Crypto").reduce((s,p) => s+p.valueCZK, 0);
-      const liveV      = Math.round(liveFond + liveAkcie + liveCrypto + zustatek);
+      const liveV      = Math.round(liveFond + liveAkcie + liveCrypto);
       return { d: nowMonth, v: liveV, fond: Math.round(liveFond), akcie: Math.round(liveAkcie), crypto: Math.round(liveCrypto), isLive: true };
     })();
     const histBase  = filterHistory(period);
