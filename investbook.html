@@ -1485,7 +1485,20 @@ ${posLines}`;
                             <div style={{ width: 8, height: 8, borderRadius: 2, background: CAT_COLOR[p.category] || T.muted, flexShrink: 0 }} />
                             <div>
                               <span style={{ fontSize: 15, color: T.text, fontWeight: 600 }}>{p.name.split("(")[0].trim()}</span>
-                              {p.shares != null && p.shares > 0 && <div style={{ fontSize: 11, color: T.subtle, fontFamily: "'DM Mono',monospace", marginTop: 1 }}>{Number.isInteger(p.shares) ? p.shares : p.shares.toFixed(4)} ks</div>}
+                              {p.shares != null && p.shares > 0 && (() => {
+                    const rate2 = (isFinite(p.fx) && p.fx > 0) ? p.fx : (p.currency === "EUR" ? DEGIRO_FX : p.currency === "GBP" ? GBP_FX : ETORO_FX);
+                    const avgNat2 = p.invested > 0 ? p.invested / p.shares : null;
+                    const curNat2 = (isFinite(p.priceCZK) && p.priceCZK > 0 && rate2 > 0) ? p.priceCZK / rate2 : null;
+                    const fmtP2 = v => v >= 1000 ? v.toLocaleString("cs-CZ",{maximumFractionDigits:2}) : v >= 10 ? v.toFixed(2) : v >= 0.1 ? v.toFixed(4) : v.toFixed(6);
+                    const upC = curNat2 != null && avgNat2 != null ? (curNat2 >= avgNat2 ? T.green : T.red) : T.muted;
+                    return (
+                      <div style={{ fontSize: 11, color: T.subtle, fontFamily: "'DM Mono',monospace", marginTop: 1 }}>
+                        {Number.isInteger(p.shares) ? p.shares : p.shares.toFixed(4)} ks
+                        {avgNat2 != null && p.currency && <span style={{ fontSize: 10, color: T.muted, marginLeft: 5 }}>· ⌀ {fmtP2(avgNat2)}</span>}
+                        {curNat2 != null && p.currency && <span style={{ fontSize: 10, color: upC, marginLeft: 4 }}>▸ {fmtP2(curNat2)} {p.currency}</span>}
+                      </div>
+                    );
+                  })()}
                             </div>
                           </div>
                           <span style={{ fontSize: 13, color: T.muted }}>{idx + 1}</span>
@@ -1569,7 +1582,20 @@ ${posLines}`;
                                 <div style={{ width: 8, height: 8, borderRadius: 2, background: CAT_COLOR[p.category] || T.muted, flexShrink: 0 }} />
                                 <div>
                                   <span style={{ fontSize: 15, color: T.text, fontWeight: 600 }}>{p.name.split("(")[0].trim()}</span>
-                                  {p.shares != null && p.shares > 0 && <div style={{ fontSize: 11, color: T.subtle, fontFamily: "'DM Mono',monospace", marginTop: 1 }}>{Number.isInteger(p.shares) ? p.shares : p.shares.toFixed(4)} ks</div>}
+                                  {p.shares != null && p.shares > 0 && (() => {
+                    const rate2 = (isFinite(p.fx) && p.fx > 0) ? p.fx : (p.currency === "EUR" ? DEGIRO_FX : p.currency === "GBP" ? GBP_FX : ETORO_FX);
+                    const avgNat2 = p.invested > 0 ? p.invested / p.shares : null;
+                    const curNat2 = (isFinite(p.priceCZK) && p.priceCZK > 0 && rate2 > 0) ? p.priceCZK / rate2 : null;
+                    const fmtP2 = v => v >= 1000 ? v.toLocaleString("cs-CZ",{maximumFractionDigits:2}) : v >= 10 ? v.toFixed(2) : v >= 0.1 ? v.toFixed(4) : v.toFixed(6);
+                    const upC = curNat2 != null && avgNat2 != null ? (curNat2 >= avgNat2 ? T.green : T.red) : T.muted;
+                    return (
+                      <div style={{ fontSize: 11, color: T.subtle, fontFamily: "'DM Mono',monospace", marginTop: 1 }}>
+                        {Number.isInteger(p.shares) ? p.shares : p.shares.toFixed(4)} ks
+                        {avgNat2 != null && p.currency && <span style={{ fontSize: 10, color: T.muted, marginLeft: 5 }}>· ⌀ {fmtP2(avgNat2)}</span>}
+                        {curNat2 != null && p.currency && <span style={{ fontSize: 10, color: upC, marginLeft: 4 }}>▸ {fmtP2(curNat2)} {p.currency}</span>}
+                      </div>
+                    );
+                  })()}
                                 </div>
                               </div>
                             </td>
