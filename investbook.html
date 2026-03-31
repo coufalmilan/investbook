@@ -459,7 +459,7 @@ const ETORO_POSITIONS_INIT = [
   { id: 209, name: "LRCX (Lam Research Corp)",                  broker: "eToro", invested: 486.29,  value: 486.29,  currency: "USD", fx: ETORO_FX,  start: 2024, annReturn: null, category: "Akcie", shares: 6.85,    ticker: "LRCX",  pinShares: true  }, // aktualizováno dle Delta
   { id: 210, name: "ABBV (AbbVie Inc)",                         broker: "eToro", invested: 250.65,  value: 250.65,  currency: "USD", fx: ETORO_FX,  start: 2021, annReturn: null, category: "Akcie", shares: 2.23,    ticker: "ABBV"   },
   { id: 211, name: "RHM.DE (Rheinmetall AG)",                   broker: "eToro", invested: 950.39,  value: 950.39,  currency: "EUR", fx: DEGIRO_FX, start: 2025, annReturn: null, category: "Akcie", shares: 0.9,     ticker: "RHM.DE", pinShares: true }, // aktualizováno dle Delta
-  { id: 212, name: "CSG.AS (CSG NV)",                           broker: "eToro", invested: 1561.62, value: 1561.62, currency: "EUR", fx: DEGIRO_FX, start: 2026, annReturn: null, category: "Akcie", shares: 31.95,   ticker: "CSG.AS", pinShares: true }, // aktualizováno z CSV 23/3/2026: 31.952 ks
+  { id: 212, name: "CSG.AS (CSG NV)",                           broker: "eToro", invested: 2069.43, value: 2069.43, currency: "EUR", fx: DEGIRO_FX, start: 2026, annReturn: null, category: "Akcie", shares: 72.23,   ticker: "CSG.AS", pinShares: true }, // aktualizováno 31/3/2026: 72.23 ks @ avg 28.65 EUR (eToro + Delta)
   { id: 213, name: "BA-.L (Boeing Co)",                         broker: "eToro", invested: 295.09,  value: 295.09,  currency: "USD", fx: ETORO_FX,  start: 2025, annReturn: null, category: "Akcie", shares: 19.74,   ticker: "BA-.L", pinShares: true  }, // aktualizováno dle Delta
   { id: 214, name: "CSPX.L (iShares Core S&P 500 UCITS ETF)",  broker: "eToro", invested: 7504.02, value: 7504.02, currency: "USD", fx: ETORO_FX,  start: 2022, annReturn: null, category: "ETF",   shares: 16.1408, ticker: "CSPX.L" },
 ];
@@ -487,12 +487,15 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.7";
+const APP_VERSION = "v4.8";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.8", date: "31. 3. 2026", changes: [
+    "Data: CSG.AS (eToro) opraven počet kusů 31.95 → 72.23 a investováno 1 561 → 2 069 EUR (ověřeno dle eToro + Delta)",
+  ]},
   { version: "v4.7", date: "31. 3. 2026", changes: [
-    "Pozice: průměrná nákupní cena/ks (⌀) a aktuální cena/ks (▸) jako malý text pod počtem kusů v importovaných pozicích — aktuální cena je zelená/červená dle srovnání s průměrem",
+    "Přehled investic: průměrná nákupní cena/ks (⌀) a aktuální cena/ks (▸) jako malý text pod počtem kusů — aktuální cena zelená/červená dle porovnání s průměrem",
     "Konfigurovatelný Google Sheet ID — každý uživatel může připojit vlastní sheet (uloží se do localStorage, nastaví se v ⚙️)",
   ]},
   { version: "v4.5", date: "30. 3. 2026", changes: [
