@@ -487,10 +487,14 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.6";
+const APP_VERSION = "v4.7";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.7", date: "31. 3. 2026", changes: [
+    "Pozice: průměrná nákupní cena/ks (⌀) a aktuální cena/ks (▸) jako malý text pod počtem kusů v importovaných pozicích — aktuální cena je zelená/červená dle srovnání s průměrem",
+    "Konfigurovatelný Google Sheet ID — každý uživatel může připojit vlastní sheet (uloží se do localStorage, nastaví se v ⚙️)",
+  ]},
   { version: "v4.5", date: "30. 3. 2026", changes: [
     "AI tab: přepracované renderMD — nadpisy ## jako barevné sekce s pruhem vlevo, číslované i odrážkové seznamy jako čisté bloky, inline bold/italic/code",
     "AI prompt: systémová instrukce nyní explicitně požaduje Markdown strukturu (##, -, **)",
@@ -1980,7 +1984,24 @@ ${posLines}`;
                     </td>
                     <EditCell value={pos.broker} type="text" align="left" color={T.muted} onSave={v=>updateImported(pos.id,"broker",v)}/>
                     <EditCell value={pos.category} isSelect options={CATEGORIES} align="left" color={CAT_COLOR[pos.category]||T.muted} onSave={v=>updateImported(pos.id,"category",v)}/>
-                    <td style={nc(T.subtle)}>{pos.shares != null ? pos.shares.toLocaleString("cs-CZ",{maximumFractionDigits:6}) : "—"}</td>
+                    <td style={{ ...nc(T.subtle), verticalAlign: "top" }}>
+                      <div>{pos.shares != null ? pos.shares.toLocaleString("cs-CZ",{maximumFractionDigits:6}) : "—"}</div>
+                      {pos.shares > 0 && pos.invested > 0 && (() => {
+                        const avgNat = pos.invested / pos.shares;
+                        const curNat = hasPrice && rate > 0 ? pos.priceCZK / rate : null;
+                        const fmtP = v => v == null ? null : v >= 1000 ? v.toLocaleString("cs-CZ",{maximumFractionDigits:2}) : v >= 10 ? v.toFixed(2) : v >= 0.1 ? v.toFixed(4) : v.toFixed(6);
+                        const upColor = curNat != null ? (curNat >= avgNat ? T.green : T.red) : T.muted;
+                        return (
+                          <div style={{ fontSize:10, color:T.muted, marginTop:3, fontFamily:"'DM Mono',monospace", lineHeight:1.6, whiteSpace:"nowrap" }}>
+                            <span title="Průměrná nákupní cena/ks" style={{ color:T.subtle }}>⌀ {fmtP(avgNat)} {pos.currency}</span>
+                            {curNat != null && <>
+                              <br/>
+                              <span title="Aktuální cena/ks" style={{ color: upColor }}>▸ {fmtP(curNat)} {pos.currency}</span>
+                            </>}
+                          </div>
+                        );
+                      })()}
+                    </td>
                     <td style={nc(T.muted)}>{(pos.invested||0).toLocaleString("cs-CZ",{maximumFractionDigits:2})} {pos.currency}</td>
                     <td style={nc(T.muted)}>{fmt(invCZK)}</td>
                     <td style={{ ...nc(hasPrice ? T.text : "#f59e0b"), fontWeight: hasPrice ? 700 : 400 }}>
