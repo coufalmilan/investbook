@@ -436,8 +436,9 @@ const INITIAL_CSOB = [
 // value = user-editable (starts at invested as placeholder)
 
 const DEGIRO_FX = 24.23; // EUR→CZK
-const ETORO_FX  = 20.57; // USD→CZK
+const ETORO_FX  = 20.57; // USD→CZK (aktuální kurz; leden 2026 byl ~23.50)
 const GBP_FX = 25.80; // GBP→CZK approximate
+const JAN_2026_USDCZK = 23.50; // USD/CZK kurz přibližně k 1.1.2026 (pro YTD porovnání)
 
 const DEGIRO_POSITIONS_INIT = [
   { id: 101, name: "SXR8.DE (iShares Core S&P 500 UCITS ETF)", broker: "DEGIRO", invested: 25360.14, value: 25360.14, currency: "EUR", fx: DEGIRO_FX, start: 2024, annReturn: null, category: "ETF", shares: 44, ticker: "SXR8.DE" }, // aktualizováno z CSV: +1 (03/2026) + auto-korekce = 44
@@ -487,10 +488,14 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.8";
+const APP_VERSION = "v4.9";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.9", date: "8. 4. 2026", changes: [
+    "YTD karta: přidán USD-ekvivalent výnosu (např. v USD −4.1 %) a poznámka 'v CZK vč. pohybu kurzu USD/CZK' — vysvětluje rozdíl oproti USD platformám (Delta, eToro)",
+    "Přidána konstanta JAN_2026_USDCZK = 23.50 pro přepočet YTD do USD bez FX efektu",
+  ]},
   { version: "v4.8", date: "31. 3. 2026", changes: [
     "Data: CSG.AS (eToro) opraven počet kusů 31.95 → 72.23 a investováno 1 561 → 2 069 EUR (ověřeno dle eToro + Delta)",
   ]},
@@ -744,13 +749,14 @@ function SectionTitle({ title, sub }) {
   );
 }
 
-function StatCard({ label, value, sub, color, accent }) {
+function StatCard({ label, value, sub, color, accent, subTitle }) {
   return (
     <div className="ib-statcard" style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 14, padding: "18px 20px", position: "relative", overflow: "hidden" }}>
       {accent && <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: accent, borderRadius: "14px 14px 0 0" }} />}
       <div className="ib-statcard-lbl" style={{ fontSize: 11, color: T.muted, letterSpacing: "0.08em", fontWeight: 500, marginBottom: 10, textTransform: "uppercase" }}>{label}</div>
       <div className="ib-statcard-val" style={{ fontSize: 23, fontWeight: 700, color: color || T.text, letterSpacing: "-0.02em", lineHeight: 1.2 }}>{value}</div>
-      {sub && <div className="ib-statcard-sub" style={{ fontSize: 12, color: T.muted, marginTop: 5 }}>{sub}</div>}
+      {sub && <div className="ib-statcard-sub" style={{ fontSize: 12, color: T.muted, marginTop: 5 }} title={subTitle || ""}>{sub}</div>}
+      {subTitle && <div style={{ fontSize: 10, color: T.subtle, marginTop: 3, fontStyle: "italic" }}>{subTitle}</div>}
     </div>
   );
 }
@@ -1332,10 +1338,23 @@ ${posLines}`;
           return (
             <div className="ib-grid4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 20 }}>
               <StatCard label="Investováno celkem"      value={fmt(dispInvested)}   color={T.muted}  accent={T.subtle} />
-              <StatCard label={"Výnos " + NOW_YEAR + " (YTD)"}
-                value={ytdCardPct != null ? (ytdCardPct >= 0 ? "+" : "") + ytdCardPct.toFixed(2) + " %" : "—"}
-                color={ytdCardColor} accent={ytdCardColor}
-                sub={ytdCardAbs != null ? (ytdCardAbs >= 0 ? "+" : "") + fmt(ytdCardAbs) : "data chybí"} />
+              {(() => {
+                // USD-ekvivalent YTD: přepočet pomocí lednového kurzu USD/CZK
+                const usdNow   = ytdStartValue != null ? dispValue / ETORO_FX : null;
+                const usdStart = ytdStartValue != null ? ytdStartValue / JAN_2026_USDCZK : null;
+                const usdYtdPct = (usdNow != null && usdStart > 0) ? ((usdNow - usdStart) / usdStart) * 100 : null;
+                const ytdSub = ytdCardAbs != null
+                  ? (ytdCardAbs >= 0 ? "+" : "") + fmt(ytdCardAbs)
+                    + (usdYtdPct != null ? "  ·  v USD " + (usdYtdPct >= 0 ? "+" : "") + usdYtdPct.toFixed(1) + "%" : "")
+                  : "data chybí";
+                return (
+                  <StatCard label={"Výnos " + NOW_YEAR + " (YTD)"}
+                    value={ytdCardPct != null ? (ytdCardPct >= 0 ? "+" : "") + ytdCardPct.toFixed(2) + " %" : "—"}
+                    color={ytdCardColor} accent={ytdCardColor}
+                    sub={ytdSub}
+                    subTitle="v CZK vč. pohybu kurzu USD/CZK" />
+                );
+              })()}
               <StatCard label={isFiltered ? "Hodnota " + cat.label : "Hodnota majetku"} value={isFiltered ? fmt(fValue) : fmt(hodnotaMajetku)} color={T.text} accent={T.blue} sub={!isFiltered && zustatek > 0 ? "vč. hotovosti " + fmt(zustatek) : null} />
               <StatCard label="Čistý majetek −hypotéka" value={fmt(cistyMajetek)}   color={T.amber}  accent={T.amber}  sub={"hypotéka " + fmt(hypoteka)} />
             </div>
