@@ -489,10 +489,14 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.10";
+const APP_VERSION = "v4.11";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.11", date: "11. 4. 2026", changes: [
+    "Graf Vývoj portfolia: Y-osa se nyní přepočítává do zobrazované měny (USD/EUR/CZK) místo pevného CZK",
+    "Graf: delta bar Začátek/Konec — % pro YTD/1M přepočítáno FX-korektně (start ÷ leden. kurz, end ÷ aktuální kurz) → konzistentní s YTD stat kartou",
+  ]},
   { version: "v4.10", date: "11. 4. 2026", changes: [
     "YTD výpočet: FX-korektní srovnání — při přepnutí do USD/EUR se baseline přepočítá lednový kurzem (USD 23.50, EUR 25.30), aktuální hodnota aktuálním kurzem → YTD % se správně změní (CZK: −16%, USD: −4%, EUR: −X%)",
     "Přidána konstanta JAN_2026_EURCZK = 25.30 pro YTD přepočet v EUR",
@@ -1431,9 +1435,13 @@ ${posLines}`;
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
                   <XAxis dataKey="d" tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.tick }} axisLine={false} tickLine={false}
                     tickFormatter={d => { const [y,m] = d.split("-"); return m === "01" ? y : m + "/" + y.slice(2); }} />
-                  <YAxis tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.tick }} axisLine={false} tickLine={false} width={52}
+                  <YAxis tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.tick }} axisLine={false} tickLine={false} width={58}
                     domain={[ dataMin => Math.floor(dataMin * 0.95 / 50000) * 50000, dataMax => Math.ceil(dataMax * 1.05 / 50000) * 50000 ]}
-                    tickFormatter={v => v >= 1000000 ? (v/1000000).toFixed(1)+"M" : (v/1000).toFixed(0)+"k"} />
+                    tickFormatter={v => {
+                      const cv = v / dcfg.div;
+                      const sym = dcfg.symbol;
+                      return cv >= 1000000 ? (cv/1000000).toFixed(1)+"M "+sym : cv >= 1000 ? Math.round(cv/1000)+"k "+sym : Math.round(cv)+" "+sym;
+                    }} />
                   <Tooltip {...ttStyle} wrapperStyle={{ maxWidth: 200, zIndex: 10 }} formatter={(v) => [fmt(v), cat.label]} labelFormatter={d => d} />
                   <Area type="monotone" dataKey={cat.chartKey} stroke={cat.color} strokeWidth={2.5} fill="url(#gChart)" dot={false}
                     activeDot={{ r: 4, fill: cat.color, strokeWidth: 0 }} />
@@ -1443,24 +1451,33 @@ ${posLines}`;
               {histData.length >= 2 && (() => {
                 const first = histData[0];
                 const last  = histData[histData.length - 1];
-                const startV = first[cat.chartKey] ?? first.v;
-                const endV   = last[cat.chartKey]  ?? last.v;
-                const delta  = endV - startV;
-                const deltaPct = startV > 0 ? (delta / startV) * 100 : 0;
-                const gc = delta >= 0 ? T.green : T.red;
+                const startV_CZK = first[cat.chartKey] ?? first.v;
+                const endV_CZK   = last[cat.chartKey]  ?? last.v;
+                // FX-korektní delta % — pro YTD: start použije lednový kurz, end aktuální kurz
+                // Pro ostatní období (1R, 2R…) historické kurzy neznáme → simple CZK delta
+                const isYtdPeriod = (period === "YTD" || period === "1M") && dispCurrency !== "CZK";
+                const startDiv = isYtdPeriod ? janFx : dcfg.div;
+                const endDiv   = isYtdPeriod ? nowFx : dcfg.div;
+                const startNative = startV_CZK / startDiv;
+                const endNative   = endV_CZK   / endDiv;
+                const deltaNative = endNative - startNative;
+                const deltaPct    = startNative > 0 ? (deltaNative / startNative) * 100 : 0;
+                const gc = deltaNative >= 0 ? T.green : T.red;
+                // Absolutní částka vždy zobrazena přes fmt() (CZK → display měna)
+                const deltaAbsCZK = endV_CZK - startV_CZK;
                 return (
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, padding: "8px 4px", borderTop: "1px solid rgba(255,255,255,0.05)" }}>
                     <div>
                       <div style={{ fontSize: 10, color: T.subtle, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Začátek · {first.d}</div>
-                      <div style={{ fontSize: 14, color: T.muted, fontFamily: "'DM Mono',monospace", fontWeight: 600 }}>{fmt(startV)}</div>
+                      <div style={{ fontSize: 14, color: T.muted, fontFamily: "'DM Mono',monospace", fontWeight: 600 }}>{fmt(startV_CZK)}</div>
                     </div>
                     <div style={{ textAlign: "center" }}>
-                      <div style={{ fontSize: 13, color: gc, fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>{delta >= 0 ? "+" : ""}{fmt(delta)}</div>
-                      <div style={{ fontSize: 12, color: gc, fontFamily: "'DM Mono',monospace" }}>{delta >= 0 ? "+" : ""}{deltaPct.toFixed(1)} %</div>
+                      <div style={{ fontSize: 13, color: gc, fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>{deltaAbsCZK >= 0 ? "+" : ""}{fmt(deltaAbsCZK)}</div>
+                      <div style={{ fontSize: 12, color: gc, fontFamily: "'DM Mono',monospace" }}>{deltaNative >= 0 ? "+" : ""}{deltaPct.toFixed(1)} %</div>
                     </div>
                     <div style={{ textAlign: "right" }}>
                       <div style={{ fontSize: 10, color: T.subtle, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Konec · {last.d}</div>
-                      <div style={{ fontSize: 14, color: T.text, fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>{fmt(endV)}</div>
+                      <div style={{ fontSize: 14, color: T.text, fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>{fmt(endV_CZK)}</div>
                     </div>
                   </div>
                 );
