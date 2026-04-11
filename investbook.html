@@ -439,6 +439,7 @@ const DEGIRO_FX = 24.23; // EUR→CZK
 const ETORO_FX  = 20.57; // USD→CZK (aktuální kurz; leden 2026 byl ~23.50)
 const GBP_FX = 25.80; // GBP→CZK approximate
 const JAN_2026_USDCZK = 23.50; // USD/CZK kurz přibližně k 1.1.2026 (pro YTD porovnání)
+const JAN_2026_EURCZK = 25.30; // EUR/CZK kurz přibližně k 1.1.2026 (pro YTD porovnání)
 
 const DEGIRO_POSITIONS_INIT = [
   { id: 101, name: "SXR8.DE (iShares Core S&P 500 UCITS ETF)", broker: "DEGIRO", invested: 25360.14, value: 25360.14, currency: "EUR", fx: DEGIRO_FX, start: 2024, annReturn: null, category: "ETF", shares: 44, ticker: "SXR8.DE" }, // aktualizováno z CSV: +1 (03/2026) + auto-korekce = 44
@@ -488,10 +489,14 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.9";
+const APP_VERSION = "v4.10";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.10", date: "11. 4. 2026", changes: [
+    "YTD výpočet: FX-korektní srovnání — při přepnutí do USD/EUR se baseline přepočítá lednový kurzem (USD 23.50, EUR 25.30), aktuální hodnota aktuálním kurzem → YTD % se správně změní (CZK: −16%, USD: −4%, EUR: −X%)",
+    "Přidána konstanta JAN_2026_EURCZK = 25.30 pro YTD přepočet v EUR",
+  ]},
   { version: "v4.9", date: "8. 4. 2026", changes: [
     "YTD karta: přidán USD-ekvivalent výnosu (např. v USD −4.1 %) a poznámka 'v CZK vč. pohybu kurzu USD/CZK' — vysvětluje rozdíl oproti USD platformám (Delta, eToro)",
     "Přidána konstanta JAN_2026_USDCZK = 23.50 pro přepočet YTD do USD bez FX efektu",
@@ -1285,6 +1290,9 @@ ${posLines}`;
           const dispAvgAnnNC = isFiltered ? (hasPrices ? fAvgAnnNC  : avgAnnReturnNoCrypto)  : avgAnnReturnNoCrypto;
 
           // YTD výnos – porovnání s hodnotou na začátku roku
+          // Klíč: při přepnutí do USD/EUR se baseline přepočítá lednových kurzem (23.50/25.30),
+          // aktuální hodnota se přepočítá aktuálním kurzem (FX_USD/FX_EUR).
+          // Tím se YTD % správně změní při přepnutí měny — CZK FX efekt se eliminuje.
           const ytdStartEntry = PORTFOLIO_HISTORY.slice().reverse().find(h => {
             const [y, m] = h.d.split("-");
             return parseInt(y) === NOW_YEAR && m === "01";
@@ -1292,8 +1300,18 @@ ${posLines}`;
           const ytdStartValue = ytdStartEntry
             ? (isFiltered && cat.chartKey !== "v" ? (ytdStartEntry[cat.chartKey] || ytdStartEntry.v) : ytdStartEntry.v)
             : null;
-          const ytdGain    = ytdStartValue != null ? dispValue - ytdStartValue : null;
-          const ytdGainPct = (ytdStartValue != null && ytdStartValue > 0) ? (ytdGain / ytdStartValue) * 100 : null;
+          // Lednové kurzy (baseline) vs. aktuální kurzy (now) — pro FX-korektní YTD
+          const JAN_FX = { CZK: 1, USD: JAN_2026_USDCZK, EUR: JAN_2026_EURCZK };
+          const NOW_FX = { CZK: 1, USD: FX_USD, EUR: FX_EUR };
+          const janFx  = JAN_FX[dispCurrency] || 1;
+          const nowFx  = NOW_FX[dispCurrency] || 1;
+          // now a start ve stejné měně, ale každý přepočten správným kurzem
+          const ytdNowNative   = dispValue / nowFx;
+          const ytdStartNative = ytdStartValue != null ? ytdStartValue / janFx : null;
+          const ytdGainNative  = ytdStartNative != null ? ytdNowNative - ytdStartNative : null;
+          const ytdGainPct     = (ytdStartNative != null && ytdStartNative > 0) ? (ytdGainNative / ytdStartNative) * 100 : null;
+          // Absolutní částka zpět v CZK pro fmt()
+          const ytdGain        = ytdGainNative != null ? ytdGainNative * nowFx : null;
 
           return (<>
         {/* Hero */}
@@ -1338,23 +1356,11 @@ ${posLines}`;
           return (
             <div className="ib-grid4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 20 }}>
               <StatCard label="Investováno celkem"      value={fmt(dispInvested)}   color={T.muted}  accent={T.subtle} />
-              {(() => {
-                // USD-ekvivalent YTD: přepočet pomocí lednového kurzu USD/CZK
-                const usdNow   = ytdStartValue != null ? dispValue / ETORO_FX : null;
-                const usdStart = ytdStartValue != null ? ytdStartValue / JAN_2026_USDCZK : null;
-                const usdYtdPct = (usdNow != null && usdStart > 0) ? ((usdNow - usdStart) / usdStart) * 100 : null;
-                const ytdSub = ytdCardAbs != null
-                  ? (ytdCardAbs >= 0 ? "+" : "") + fmt(ytdCardAbs)
-                    + (usdYtdPct != null ? "  ·  v USD " + (usdYtdPct >= 0 ? "+" : "") + usdYtdPct.toFixed(1) + "%" : "")
-                  : "data chybí";
-                return (
-                  <StatCard label={"Výnos " + NOW_YEAR + " (YTD)"}
-                    value={ytdCardPct != null ? (ytdCardPct >= 0 ? "+" : "") + ytdCardPct.toFixed(2) + " %" : "—"}
-                    color={ytdCardColor} accent={ytdCardColor}
-                    sub={ytdSub}
-                    subTitle="v CZK vč. pohybu kurzu USD/CZK" />
-                );
-              })()}
+              <StatCard label={"Výnos " + NOW_YEAR + " (YTD)"}
+                value={ytdCardPct != null ? (ytdCardPct >= 0 ? "+" : "") + ytdCardPct.toFixed(2) + " %" : "—"}
+                color={ytdCardColor} accent={ytdCardColor}
+                sub={ytdCardAbs != null ? (ytdCardAbs >= 0 ? "+" : "") + fmt(ytdCardAbs) : "data chybí"}
+                subTitle={dispCurrency !== "CZK" ? "FX-korektní: baseline přepočten leden. kurzem" : "vč. pohybu kurzu USD→CZK"} />
               <StatCard label={isFiltered ? "Hodnota " + cat.label : "Hodnota majetku"} value={isFiltered ? fmt(fValue) : fmt(hodnotaMajetku)} color={T.text} accent={T.blue} sub={!isFiltered && zustatek > 0 ? "vč. hotovosti " + fmt(zustatek) : null} />
               <StatCard label="Čistý majetek −hypotéka" value={fmt(cistyMajetek)}   color={T.amber}  accent={T.amber}  sub={"hypotéka " + fmt(hypoteka)} />
             </div>
