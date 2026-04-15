@@ -489,10 +489,15 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.11";
+const APP_VERSION = "v4.12";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.12", date: "11. 4. 2026", changes: [
+    "Fonty: globální zvětšení nejmenšího písma — 10px→12px (18 míst), 11px→13px (37 míst) pro lepší čitelnost na mobilu",
+    "Mobilní sort bar + period tlačítka: 12px→14px",
+    "StatCard sub-hodnota: 12px→13px",
+  ]},
   { version: "v4.11", date: "11. 4. 2026", changes: [
     "Graf Vývoj portfolia: Y-osa se nyní přepočítává do zobrazované měny (USD/EUR/CZK) místo pevného CZK",
     "Graf: delta bar Začátek/Konec — % pro YTD/1M přepočítáno FX-korektně (start ÷ leden. kurz, end ÷ aktuální kurz) → konzistentní s YTD stat kartou",
@@ -746,7 +751,7 @@ function EditCell({ value, onSave, align, suffix, color, type, isSelect, options
 }
 
 function Badge({ label, color }) {
-  return <span style={{ fontSize: 11, fontWeight: 600, color, background: color + "18", padding: "2px 8px", borderRadius: 20 }}>{label}</span>;
+  return <span style={{ fontSize: 13, fontWeight: 600, color, background: color + "18", padding: "2px 8px", borderRadius: 20 }}>{label}</span>;
 }
 
 function SectionTitle({ title, sub }) {
@@ -762,10 +767,10 @@ function StatCard({ label, value, sub, color, accent, subTitle }) {
   return (
     <div className="ib-statcard" style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 14, padding: "18px 20px", position: "relative", overflow: "hidden" }}>
       {accent && <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: accent, borderRadius: "14px 14px 0 0" }} />}
-      <div className="ib-statcard-lbl" style={{ fontSize: 11, color: T.muted, letterSpacing: "0.08em", fontWeight: 500, marginBottom: 10, textTransform: "uppercase" }}>{label}</div>
+      <div className="ib-statcard-lbl" style={{ fontSize: 13, color: T.muted, letterSpacing: "0.08em", fontWeight: 500, marginBottom: 10, textTransform: "uppercase" }}>{label}</div>
       <div className="ib-statcard-val" style={{ fontSize: 23, fontWeight: 700, color: color || T.text, letterSpacing: "-0.02em", lineHeight: 1.2 }}>{value}</div>
-      {sub && <div className="ib-statcard-sub" style={{ fontSize: 12, color: T.muted, marginTop: 5 }} title={subTitle || ""}>{sub}</div>}
-      {subTitle && <div style={{ fontSize: 10, color: T.subtle, marginTop: 3, fontStyle: "italic" }}>{subTitle}</div>}
+      {sub && <div className="ib-statcard-sub" style={{ fontSize: 13, color: T.muted, marginTop: 5 }} title={subTitle || ""}>{sub}</div>}
+      {subTitle && <div style={{ fontSize: 12, color: T.subtle, marginTop: 3, fontStyle: "italic" }}>{subTitle}</div>}
     </div>
   );
 }
@@ -1416,7 +1421,7 @@ ${posLines}`;
                 <div className="ib-period-row" style={{ display: "flex", gap: 4 }}>
                   {["1M","YTD","1R","2R","3R","MAX"].map(p => (
                     <button key={p} onClick={() => setPeriod(p)}
-                      style={{ padding: "4px 10px", borderRadius: 6, border: "none", cursor: "pointer", fontFamily: "'DM Mono',monospace", fontSize: 12, fontWeight: 600, transition: "all 0.12s",
+                      style={{ padding: "4px 10px", borderRadius: 6, border: "none", cursor: "pointer", fontFamily: "'DM Mono',monospace", fontSize: 14, fontWeight: 600, transition: "all 0.12s",
                         background: period === p ? T.blue : "rgba(255,255,255,0.05)",
                         color: period === p ? "#fff" : T.muted }}>
                       {p}
@@ -1468,7 +1473,7 @@ ${posLines}`;
                 return (
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, padding: "8px 4px", borderTop: "1px solid rgba(255,255,255,0.05)" }}>
                     <div>
-                      <div style={{ fontSize: 10, color: T.subtle, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Začátek · {first.d}</div>
+                      <div style={{ fontSize: 12, color: T.subtle, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Začátek · {first.d}</div>
                       <div style={{ fontSize: 14, color: T.muted, fontFamily: "'DM Mono',monospace", fontWeight: 600 }}>{fmt(startV_CZK)}</div>
                     </div>
                     <div style={{ textAlign: "center" }}>
@@ -1476,7 +1481,7 @@ ${posLines}`;
                       <div style={{ fontSize: 12, color: gc, fontFamily: "'DM Mono',monospace" }}>{deltaNative >= 0 ? "+" : ""}{deltaPct.toFixed(1)} %</div>
                     </div>
                     <div style={{ textAlign: "right" }}>
-                      <div style={{ fontSize: 10, color: T.subtle, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Konec · {last.d}</div>
+                      <div style={{ fontSize: 12, color: T.subtle, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Konec · {last.d}</div>
                       <div style={{ fontSize: 14, color: T.text, fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>{fmt(endV_CZK)}</div>
                     </div>
                   </div>
@@ -1504,7 +1509,7 @@ ${posLines}`;
                         border: "1px solid " + (tblSort === c.key ? cat.color : "rgba(255,255,255,0.1)"),
                         background: tblSort === c.key ? cat.color + "22" : "rgba(255,255,255,0.04)",
                         color: tblSort === c.key ? cat.color : T.muted,
-                        fontSize: 12, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap",
+                        fontSize: 14, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap",
                         fontFamily: "'DM Mono',monospace"
                       }}>
                       {c.label}{arrow(c.key)}
@@ -1537,10 +1542,10 @@ ${posLines}`;
                     const fmtP2 = v => v >= 1000 ? v.toLocaleString("cs-CZ",{maximumFractionDigits:2}) : v >= 10 ? v.toFixed(2) : v >= 0.1 ? v.toFixed(4) : v.toFixed(6);
                     const upC = curNat2 != null && avgNat2 != null ? (curNat2 >= avgNat2 ? T.green : T.red) : T.muted;
                     return (
-                      <div style={{ fontSize: 11, color: T.subtle, fontFamily: "'DM Mono',monospace", marginTop: 1 }}>
+                      <div style={{ fontSize: 13, color: T.subtle, fontFamily: "'DM Mono',monospace", marginTop: 1 }}>
                         {Number.isInteger(p.shares) ? p.shares : p.shares.toFixed(4)} ks
-                        {avgNat2 != null && p.currency && <span style={{ fontSize: 10, color: T.muted, marginLeft: 5 }}>· ⌀ {fmtP2(avgNat2)}</span>}
-                        {curNat2 != null && p.currency && <span style={{ fontSize: 10, color: upC, marginLeft: 4 }}>▸ {fmtP2(curNat2)} {p.currency}</span>}
+                        {avgNat2 != null && p.currency && <span style={{ fontSize: 12, color: T.muted, marginLeft: 5 }}>· ⌀ {fmtP2(avgNat2)}</span>}
+                        {curNat2 != null && p.currency && <span style={{ fontSize: 12, color: upC, marginLeft: 4 }}>▸ {fmtP2(curNat2)} {p.currency}</span>}
                       </div>
                     );
                   })()}
@@ -1550,19 +1555,19 @@ ${posLines}`;
                         </div>
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, minWidth: 0 }}>
                           <div>
-                            <div style={{ fontSize: 11, color: T.subtle, marginBottom: 2 }}>Hodnota</div>
+                            <div style={{ fontSize: 13, color: T.subtle, marginBottom: 2 }}>Hodnota</div>
                             <div style={{ fontSize: 14, color: T.text, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{fmt(p.valueCZK)}</div>
                           </div>
                           <div>
-                            <div style={{ fontSize: 11, color: T.subtle, marginBottom: 2 }}>Výnos CZK</div>
+                            <div style={{ fontSize: 13, color: T.subtle, marginBottom: 2 }}>Výnos CZK</div>
                             <div style={{ fontSize: 14, color: gc, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{hasGain ? (gain >= 0 ? "+" : "") + fmt(gain) : "—"}</div>
                           </div>
                           <div>
-                            <div style={{ fontSize: 11, color: T.subtle, marginBottom: 2 }}>Výnos %</div>
+                            <div style={{ fontSize: 13, color: T.subtle, marginBottom: 2 }}>Výnos %</div>
                             <div style={{ fontSize: 14, color: gc, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{hasGain ? (gainPct >= 0 ? "+" : "") + gainPct.toFixed(1) + "%" : "—"}</div>
                           </div>
                           <div>
-                            <div style={{ fontSize: 11, color: T.subtle, marginBottom: 2 }}>p.a.</div>
+                            <div style={{ fontSize: 13, color: T.subtle, marginBottom: 2 }}>p.a.</div>
                             <div style={{ fontSize: 14, color: cagr !== null ? gc : T.muted, fontFamily: "'DM Mono',monospace" }}>{cagr !== null ? (cagr >= 0 ? "+" : "") + cagr.toFixed(1) + "%" : "—"}</div>
                           </div>
                         </div>
@@ -1582,13 +1587,13 @@ ${posLines}`;
                     return (
                       <div style={{ padding: "12px 14px", borderRadius: 10, background: "rgba(34,197,94,0.06)", border: "1px solid rgba(34,197,94,0.15)", display: "flex", flexDirection: "column", gap: 8 }}>
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 6 }}>
-                          <div><div style={{ fontSize: 11, color: T.subtle }}>Investováno</div><div style={{ fontSize: 13, color: T.muted, fontFamily: "'DM Mono',monospace" }}>{fmt(fInv)}</div></div>
-                          <div><div style={{ fontSize: 11, color: T.subtle }}>Hodnota</div><div style={{ fontSize: 13, color: T.text, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{fmt(fVal)}</div></div>
-                          <div><div style={{ fontSize: 11, color: T.subtle }}>Výnos CZK</div><div style={{ fontSize: 13, color: T.green, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{fGain>=0?"+":""}{fmt(fGain)}</div></div>
+                          <div><div style={{ fontSize: 13, color: T.subtle }}>Investováno</div><div style={{ fontSize: 13, color: T.muted, fontFamily: "'DM Mono',monospace" }}>{fmt(fInv)}</div></div>
+                          <div><div style={{ fontSize: 13, color: T.subtle }}>Hodnota</div><div style={{ fontSize: 13, color: T.text, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{fmt(fVal)}</div></div>
+                          <div><div style={{ fontSize: 13, color: T.subtle }}>Výnos CZK</div><div style={{ fontSize: 13, color: T.green, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{fGain>=0?"+":""}{fmt(fGain)}</div></div>
                         </div>
                         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, borderTop: "1px solid rgba(255,255,255,0.05)", paddingTop: 8 }}>
-                          <div><div style={{ fontSize: 11, color: T.subtle }}>Výnos %</div><div style={{ fontSize: 13, color: T.green, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{fGp>=0?"+":""}{fGp.toFixed(1)}%</div></div>
-                          <div><div style={{ fontSize: 11, color: T.subtle }}>p.a.</div><div style={{ fontSize: 13, color: T.amber, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{cagr>=0?"+":""}{cagr.toFixed(1)}%</div></div>
+                          <div><div style={{ fontSize: 13, color: T.subtle }}>Výnos %</div><div style={{ fontSize: 13, color: T.green, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{fGp>=0?"+":""}{fGp.toFixed(1)}%</div></div>
+                          <div><div style={{ fontSize: 13, color: T.subtle }}>p.a.</div><div style={{ fontSize: 13, color: T.amber, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{cagr>=0?"+":""}{cagr.toFixed(1)}%</div></div>
                         </div>
                       </div>
                     );
@@ -1634,10 +1639,10 @@ ${posLines}`;
                     const fmtP2 = v => v >= 1000 ? v.toLocaleString("cs-CZ",{maximumFractionDigits:2}) : v >= 10 ? v.toFixed(2) : v >= 0.1 ? v.toFixed(4) : v.toFixed(6);
                     const upC = curNat2 != null && avgNat2 != null ? (curNat2 >= avgNat2 ? T.green : T.red) : T.muted;
                     return (
-                      <div style={{ fontSize: 11, color: T.subtle, fontFamily: "'DM Mono',monospace", marginTop: 1 }}>
+                      <div style={{ fontSize: 13, color: T.subtle, fontFamily: "'DM Mono',monospace", marginTop: 1 }}>
                         {Number.isInteger(p.shares) ? p.shares : p.shares.toFixed(4)} ks
-                        {avgNat2 != null && p.currency && <span style={{ fontSize: 10, color: T.muted, marginLeft: 5 }}>· ⌀ {fmtP2(avgNat2)}</span>}
-                        {curNat2 != null && p.currency && <span style={{ fontSize: 10, color: upC, marginLeft: 4 }}>▸ {fmtP2(curNat2)} {p.currency}</span>}
+                        {avgNat2 != null && p.currency && <span style={{ fontSize: 12, color: T.muted, marginLeft: 5 }}>· ⌀ {fmtP2(avgNat2)}</span>}
+                        {curNat2 != null && p.currency && <span style={{ fontSize: 12, color: upC, marginLeft: 4 }}>▸ {fmtP2(curNat2)} {p.currency}</span>}
                       </div>
                     );
                   })()}
@@ -1787,8 +1792,8 @@ ${posLines}`;
                             </linearGradient>
                           </defs>
                           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-                          <XAxis dataKey="rok" tick={{ fontFamily: "'DM Mono',monospace", fontSize: 11, fill: T.tick }} axisLine={false} tickLine={false} />
-                          <YAxis tick={{ fontFamily: "'DM Mono',monospace", fontSize: 10, fill: T.tick }} axisLine={false} tickLine={false} width={44}
+                          <XAxis dataKey="rok" tick={{ fontFamily: "'DM Mono',monospace", fontSize: 13, fill: T.tick }} axisLine={false} tickLine={false} />
+                          <YAxis tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.tick }} axisLine={false} tickLine={false} width={44}
                             domain={[
                               () => Math.floor(base * 0.95 / 100000) * 100000,
                               dataMax => Math.ceil(dataMax * 1.05 / 100000) * 100000,
@@ -1807,9 +1812,9 @@ ${posLines}`;
                             const prevVal = prev ? prev[cfg.key] : projData[0][cfg.key];
                             return (
                               <div key={pt.rok} style={{ textAlign: "center", minWidth: 90, padding: "6px 8px", background: "rgba(255,255,255,0.03)", borderRadius: 8 }}>
-                                <div style={{ fontSize: 11, color: T.muted, marginBottom: 3 }}>{pt.rok}</div>
+                                <div style={{ fontSize: 13, color: T.muted, marginBottom: 3 }}>{pt.rok}</div>
                                 <div style={{ fontSize: 12, color: cfg.color, fontFamily: "'DM Mono',monospace", fontWeight: 600 }}>{fmt(pt[cfg.key])}</div>
-                                <div style={{ fontSize: 10, color: T.subtle, marginTop: 2 }}>+{fmt(pt[cfg.key] - prevVal)}</div>
+                                <div style={{ fontSize: 12, color: T.subtle, marginTop: 2 }}>+{fmt(pt[cfg.key] - prevVal)}</div>
                               </div>
                             );
                           })}
@@ -1872,7 +1877,7 @@ ${posLines}`;
           const manArrow = key => manSort === key ? (manDir === "asc" ? " ↑" : " ↓") : "";
           const sortedManual = manualRows.slice().sort((a,b) => manDir === "asc" ? manCol.sortFn(a,b) : manCol.sortFn(b,a));
         return (<>
-        <div style={{ fontSize: 11, color: T.muted, letterSpacing: "0.1em", fontWeight: 600, marginBottom: 8, textTransform: "uppercase" }}>
+        <div style={{ fontSize: 13, color: T.muted, letterSpacing: "0.1em", fontWeight: 600, marginBottom: 8, textTransform: "uppercase" }}>
           Ruční pozice — ČSOB · <span style={{ color: T.subtle, fontWeight: 400 }}>klikni na záhlaví pro seřazení</span>
         </div>
         <div className="ib-table-wrap" style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 14, overflow: "hidden", marginBottom: 20 }}>
@@ -1881,14 +1886,14 @@ ${posLines}`;
               <tr style={{ borderBottom: "1px solid " + T.border }}>
                 {MAN_COLS.map((h, i) => (
                   <th key={h.key} onClick={() => onManSort(h.key)}
-                    style={{ padding: "9px 12px", textAlign: h.align, fontSize: 11, cursor: "pointer", userSelect: "none",
+                    style={{ padding: "9px 12px", textAlign: h.align, fontSize: 13, cursor: "pointer", userSelect: "none",
                       color: manSort === h.key ? T.text : (h.key === "invested" ? T.subtle : T.muted),
                       fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", whiteSpace: "nowrap",
                       transition: "color 0.1s" }}>
                     {h.label}{manArrow(h.key)}
                   </th>
                 ))}
-                <th style={{ padding: "9px 8px", textAlign: "center", fontSize: 11, color: T.muted }}></th>
+                <th style={{ padding: "9px 8px", textAlign: "center", fontSize: 13, color: T.muted }}></th>
               </tr>
             </thead>
             <tbody>
@@ -1951,7 +1956,7 @@ ${posLines}`;
           const sortedImported = importedRows.slice().sort((a,b) => impDir === "asc" ? impCol.sortFn(a,b) : impCol.sortFn(b,a));
           return (<>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
-          <div style={{ fontSize: 11, color: T.muted, letterSpacing: "0.1em", fontWeight: 600, textTransform: "uppercase" }}>
+          <div style={{ fontSize: 13, color: T.muted, letterSpacing: "0.1em", fontWeight: 600, textTransform: "uppercase" }}>
             Importované pozice — DEGIRO · eToro · Crypto · <span style={{ color: T.subtle, fontWeight: 400 }}>klikni na záhlaví pro seřazení</span>
           </div>
           <div className="ib-pos-actions" style={{ display: "flex", gap: 8, alignItems: "center" }}>
@@ -2016,7 +2021,7 @@ ${posLines}`;
               <tr style={{ borderBottom: "1px solid " + T.border }}>
                 {IMP_COLS.map(h => (
                   <th key={h.key} onClick={() => onImpSort(h.key)}
-                    style={{ padding: "9px 12px", textAlign: h.align, fontSize: 10, cursor: "pointer", userSelect: "none",
+                    style={{ padding: "9px 12px", textAlign: h.align, fontSize: 12, cursor: "pointer", userSelect: "none",
                       color: impSort === h.key ? T.text : T.muted,
                       fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", whiteSpace: "nowrap",
                       transition: "color 0.1s" }}>
@@ -2269,7 +2274,7 @@ ${posLines}`;
                     <span style={{ fontSize: 13, color: T.muted }}>{row.label}</span>
                     <div style={{ textAlign: "right" }}>
                       <div style={{ fontSize: 14, fontWeight: 600, color: row.highlight || T.text, fontFamily: "'DM Mono',monospace" }}>{row.value}</div>
-                      {row.sub && <div style={{ fontSize: 11, color: row.highlight || T.subtle, marginTop: 2 }}>{row.sub}</div>}
+                      {row.sub && <div style={{ fontSize: 13, color: row.highlight || T.subtle, marginTop: 2 }}>{row.sub}</div>}
                     </div>
                   </div>
                 ))}
@@ -2287,7 +2292,7 @@ ${posLines}`;
                     <div style={{ height: 6, borderRadius: 3, background: "rgba(255,255,255,0.07)", overflow: "hidden" }}>
                       <div style={{ height: "100%", width: Math.min(100, row.pct) + "%", borderRadius: 3, background: row.pct > 50 ? T.amber : T.blue, transition: "width 0.4s ease" }} />
                     </div>
-                    <div style={{ fontSize: 11, color: T.subtle, marginTop: 5, lineHeight: 1.4 }}>{row.names.join(" · ")}</div>
+                    <div style={{ fontSize: 13, color: T.subtle, marginTop: 5, lineHeight: 1.4 }}>{row.names.join(" · ")}</div>
                   </div>
                 ))}
               </div>
@@ -2383,7 +2388,7 @@ ${posLines}`;
                     <tr style={{ borderBottom: "1px solid " + T.border }}>
                       {YR_COLS.map(h => (
                         <th key={h.key} onClick={() => onYrSort(h.key)}
-                          style={{ padding: "6px 12px", textAlign: h.align, fontSize: 10, cursor: "pointer", userSelect: "none",
+                          style={{ padding: "6px 12px", textAlign: h.align, fontSize: 12, cursor: "pointer", userSelect: "none",
                             color: yrSort === h.key ? T.text : T.subtle,
                             fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", whiteSpace: "nowrap",
                             transition: "color 0.1s" }}>
@@ -2435,7 +2440,7 @@ ${posLines}`;
                           <td style={{ padding: "12px 12px", textAlign: "right" }}>
                             <div style={{ display: "flex", flexDirection: "column", alignItems: "flex-end", gap: 3 }}>
                               <span style={{ fontSize: 14, color: T.green, fontFamily: "'DM Mono',monospace", fontWeight: 700, whiteSpace: "nowrap" }}>+{totalGrowth.toFixed(1)}%</span>
-                              <span style={{ fontSize: 10, color: T.muted, fontFamily: "'DM Mono',monospace" }}>CAGR {cagr.toFixed(1)}% p.a.</span>
+                              <span style={{ fontSize: 12, color: T.muted, fontFamily: "'DM Mono',monospace" }}>CAGR {cagr.toFixed(1)}% p.a.</span>
                             </div>
                           </td>
                           <td style={{ padding: "12px 12px", textAlign: "right", fontSize: 13, color: T.green, fontFamily: "'DM Mono',monospace", fontWeight: 700, whiteSpace: "nowrap" }}>+{fmt(last - first)}</td>
@@ -2470,7 +2475,7 @@ ${posLines}`;
               const gc = d ? (d.pct >= 0 ? T.green : T.red) : T.border;
               return (
                 <div className="ib-mkt-card" key={sym} style={{ background: T.surface, border: "1px solid " + T.border, borderRadius: 10, padding: "12px 14px", borderLeft: "3px solid " + gc }}>
-                  <div style={{ fontSize: 10, color: T.muted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4 }}>{label}</div>
+                  <div style={{ fontSize: 12, color: T.muted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4 }}>{label}</div>
                   {d ? (
                     <React.Fragment>
                       <div style={{ fontSize: 16, fontWeight: 700, color: T.text, fontFamily: "'DM Mono',monospace" }}>
@@ -2478,7 +2483,7 @@ ${posLines}`;
                       </div>
                       <div style={{ fontSize: 12, color: gc, fontFamily: "'DM Mono',monospace", marginTop: 2 }}>
                         {d.pct >= 0 ? "+" : ""}{d.pct?.toFixed(2)}%
-                        <span style={{ color: T.muted, marginLeft: 4, fontSize: 11 }}>({d.change >= 0 ? "+" : ""}{d.change?.toFixed(2)})</span>
+                        <span style={{ color: T.muted, marginLeft: 4, fontSize: 13 }}>({d.change >= 0 ? "+" : ""}{d.change?.toFixed(2)})</span>
                       </div>
                     </React.Fragment>
                   ) : (
@@ -2581,7 +2586,7 @@ ${posLines}`;
                 <div>
                   {riskRows.length > 0 ? (
                     <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-                      <div style={{ fontSize: 11, color: T.muted, marginBottom: 8, letterSpacing: "0.04em" }}>
+                      <div style={{ fontSize: 13, color: T.muted, marginBottom: 8, letterSpacing: "0.04em" }}>
                         Klikni na hlavičku pro seřazení · {riskRows.length} pozic
                       </div>
                       <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 780 }}>
@@ -2590,7 +2595,7 @@ ${posLines}`;
                             {RISK_SORT_COLS.map((c) => (
                               <th key={c.key} onClick={() => onRiskSort(c.key)}
                                 style={{ padding: "7px 9px", textAlign: c.align === "left" ? "left" : c.align === "center" ? "center" : "right",
-                                  fontSize: 10, color: riskSortCol === c.key ? T.text : T.subtle, fontWeight: 600,
+                                  fontSize: 12, color: riskSortCol === c.key ? T.text : T.subtle, fontWeight: 600,
                                   letterSpacing: "0.07em", textTransform: "uppercase", whiteSpace: "nowrap",
                                   cursor: "pointer", userSelect: "none", transition: "color 0.1s" }}>
                                 {c.label}{riskArrow(c.key)}
@@ -2619,30 +2624,30 @@ ${posLines}`;
                                     <span style={{ marginLeft: 5, fontSize: 9, color: T.subtle, verticalAlign: "middle" }}>{isExp ? "▲" : "▼"}</span>
                                   </td>
                                   <td style={{ padding: "8px 9px", textAlign: "center" }}>
-                                    <span style={{ fontSize: 11, fontWeight: 700, color: rc, background: rc + "18", border: "1px solid " + rc + "40", borderRadius: 5, padding: "2px 8px", whiteSpace: "nowrap" }}>{r.risk}</span>
+                                    <span style={{ fontSize: 13, fontWeight: 700, color: rc, background: rc + "18", border: "1px solid " + rc + "40", borderRadius: 5, padding: "2px 8px", whiteSpace: "nowrap" }}>{r.risk}</span>
                                   </td>
                                   <td style={{ padding: "8px 9px", textAlign: "right", fontSize: 13, color: peColor, fontFamily: "'DM Mono',monospace", fontWeight: 600 }}>{r.pe || "—"}</td>
                                   <td style={{ padding: "8px 9px", textAlign: "center" }}>
-                                    <span style={{ fontSize: 11, fontWeight: 600, color: vc, background: vc + "18", border: "1px solid " + vc + "40", borderRadius: 5, padding: "2px 7px", whiteSpace: "nowrap" }}>{r.vol}</span>
+                                    <span style={{ fontSize: 13, fontWeight: 600, color: vc, background: vc + "18", border: "1px solid " + vc + "40", borderRadius: 5, padding: "2px 7px", whiteSpace: "nowrap" }}>{r.vol}</span>
                                   </td>
                                   <td style={{ padding: "8px 9px", fontSize: 12, color: T.muted, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.factor}</td>
                                   <td style={{ padding: "8px 9px", textAlign: "center", fontSize: 16, color: tc, fontWeight: 700 }}>{r.trend}</td>
                                   <td style={{ padding: "8px 9px", textAlign: "center" }}>
-                                    <span style={{ fontSize: 11, fontWeight: 700, color: recC, background: recC + "18", border: "1px solid " + recC + "40", borderRadius: 5, padding: "2px 8px", whiteSpace: "nowrap" }}>{r.rec}</span>
+                                    <span style={{ fontSize: 13, fontWeight: 700, color: recC, background: recC + "18", border: "1px solid " + recC + "40", borderRadius: 5, padding: "2px 8px", whiteSpace: "nowrap" }}>{r.rec}</span>
                                   </td>
-                                  <td style={{ padding: "8px 9px", fontSize: 11, color: T.muted, fontStyle: "italic", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.comment}</td>
+                                  <td style={{ padding: "8px 9px", fontSize: 13, color: T.muted, fontStyle: "italic", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.comment}</td>
                                 </tr>
                                 {isExp && (
                                   <tr style={{ background: rowBg, borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
                                     <td colSpan={8} style={{ padding: "0 12px 12px 12px" }}>
                                       <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, padding: "12px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
                                         <div>
-                                          <div style={{ fontSize: 10, color: T.subtle, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4 }}>Hlavní faktor</div>
+                                          <div style={{ fontSize: 12, color: T.subtle, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4 }}>Hlavní faktor</div>
                                           <div style={{ fontSize: 13, color: T.muted, lineHeight: 1.55 }}>{r.factor}</div>
                                         </div>
                                         <div style={{ height: 1, background: "rgba(255,255,255,0.06)" }} />
                                         <div>
-                                          <div style={{ fontSize: 10, color: T.subtle, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4 }}>Komentář</div>
+                                          <div style={{ fontSize: 12, color: T.subtle, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4 }}>Komentář</div>
                                           <div style={{ fontSize: 13, color: T.text, fontStyle: "italic", lineHeight: 1.6 }}>{r.comment}</div>
                                         </div>
                                       </div>
@@ -2763,8 +2768,8 @@ ${posLines}`;
                   </linearGradient>
                 </defs>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-                <XAxis dataKey="label" tick={{ fontFamily: "'DM Mono',monospace", fontSize: 11, fill: T.tick }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontFamily: "'DM Mono',monospace", fontSize: 11, fill: T.tick }} axisLine={false} tickLine={false} width={60}
+                <XAxis dataKey="label" tick={{ fontFamily: "'DM Mono',monospace", fontSize: 13, fill: T.tick }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontFamily: "'DM Mono',monospace", fontSize: 13, fill: T.tick }} axisLine={false} tickLine={false} width={60}
                   tickFormatter={v => v >= 1000000 ? (v/1000000).toFixed(2)+"M" : (v/1000).toFixed(0)+"k"} />
                 <Tooltip {...ttStyle} wrapperStyle={{ maxWidth: 180, zIndex: 10 }} formatter={v => [fmt(v), "Hodnota"]} />
                 <Area type="monotone" dataKey="hodnota" stroke={PURPLE} strokeWidth={2.5} fill="url(#gPension)"
@@ -2803,7 +2808,7 @@ ${posLines}`;
                 <tr style={{ borderBottom: "1px solid " + T.border }}>
                   {PEN_COLS.map(h => (
                     <th key={h.key} onClick={() => onPenSort(h.key)}
-                      style={{ padding: "7px 12px", textAlign: h.align, fontSize: 10, cursor: "pointer", userSelect: "none",
+                      style={{ padding: "7px 12px", textAlign: h.align, fontSize: 12, cursor: "pointer", userSelect: "none",
                         color: penSort === h.key ? T.text : T.muted,
                         fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase",
                         transition: "color 0.1s" }}>
@@ -2839,7 +2844,7 @@ ${posLines}`;
                   <td style={{ padding: "9px 12px", textAlign: "right", fontSize: 13, color: T.green, fontFamily: "'DM Mono',monospace" }}>+{fmt(currentValue - firstValue)}</td>
                   <td style={{ padding: "9px 12px", textAlign: "right", fontFamily: "'DM Mono',monospace" }}>
                     <div style={{ fontSize: 13, color: T.green, fontWeight: 700 }}>+{totalGrowth.toFixed(2)}%</div>
-                    {cagrHist !== null && <div style={{ fontSize: 11, color: PURPLE, marginTop: 2 }}>CAGR +{cagrHist.toFixed(2)}% p.a.</div>}
+                    {cagrHist !== null && <div style={{ fontSize: 13, color: PURPLE, marginTop: 2 }}>CAGR +{cagrHist.toFixed(2)}% p.a.</div>}
                   </td>
                 </tr>
               </tfoot>
@@ -2897,7 +2902,7 @@ ${posLines}`;
             ].map(m => (
               <div key={m.field} style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 14, overflow: "hidden", position: "relative" }}>
                 <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: PURPLE, borderRadius: "14px 14px 0 0" }} />
-                <div style={{ padding: "14px 14px 4px", fontSize: 11, color: T.muted, letterSpacing: "0.08em", fontWeight: 500, textTransform: "uppercase" }}>{m.label}</div>
+                <div style={{ padding: "14px 14px 4px", fontSize: 13, color: T.muted, letterSpacing: "0.08em", fontWeight: 500, textTransform: "uppercase" }}>{m.label}</div>
                 <table style={{ width: "100%", borderCollapse: "collapse" }}>
                   <tbody><tr>
                     <EditCell value={m.value} color={PURPLE} suffix={m.suffix} onSave={v => updateMeta(m.field, v)} />
@@ -3089,7 +3094,7 @@ ${allRows.slice().sort((a,b)=>b.valueCZK-a.valueCZK).map(p => {
               <div style={{ fontSize: 13, fontWeight: 600, color: T.muted, marginBottom: 6, display: "flex", alignItems: "center", gap: 8 }}>
                 📊 Google Sheets ID
                 {sheetId && sheetId !== DEFAULT_SHEET_ID && (
-                  <span style={{ fontSize: 11, background: "rgba(34,197,94,0.15)", color: T.green, borderRadius: 4, padding: "1px 7px", fontWeight: 700 }}>VLASTNÍ SHEET</span>
+                  <span style={{ fontSize: 13, background: "rgba(34,197,94,0.15)", color: T.green, borderRadius: 4, padding: "1px 7px", fontWeight: 700 }}>VLASTNÍ SHEET</span>
                 )}
               </div>
               <input type="text"
@@ -3098,8 +3103,8 @@ ${allRows.slice().sort((a,b)=>b.valueCZK-a.valueCZK).map(p => {
                 onChange={e => setSheetId(e.target.value.trim())}
                 style={{ ...inputBase, fontFamily: MONO, fontSize: 12 }}
               />
-              <div style={{ fontSize: 11, color: T.subtle, marginTop: 6, lineHeight: 1.7 }}>
-                Najdeš ho v URL Sheetu: <span style={{ color: T.text, background: "rgba(255,255,255,0.06)", padding: "1px 6px", borderRadius: 3, fontFamily: MONO, fontSize: 11 }}>docs.google.com/spreadsheets/d/<span style={{ color: T.amber }}>ID</span>/edit</span>
+              <div style={{ fontSize: 13, color: T.subtle, marginTop: 6, lineHeight: 1.7 }}>
+                Najdeš ho v URL Sheetu: <span style={{ color: T.text, background: "rgba(255,255,255,0.06)", padding: "1px 6px", borderRadius: 3, fontFamily: MONO, fontSize: 13 }}>docs.google.com/spreadsheets/d/<span style={{ color: T.amber }}>ID</span>/edit</span>
                 <br/>Každý uživatel zadá svůj vlastní Sheet — data jsou oddělená a ty je nevidíš.
                 {sheetId && sheetId !== DEFAULT_SHEET_ID && (
                   <span style={{ display: "block", marginTop: 5, color: T.amber }}>⚠️ Po uložení klikni <strong>Načíst ze Sheets</strong> (záložka Přehled) aby se načetla tvá data.</span>
@@ -3111,14 +3116,14 @@ ${allRows.slice().sort((a,b)=>b.valueCZK-a.valueCZK).map(p => {
             <div style={{ marginBottom: 14 }}>
               <div style={{ fontSize: 13, fontWeight: 600, color: T.muted, marginBottom: 6, display: "flex", alignItems: "center", gap: 6 }}>
                 🌐 Cloudflare Worker URL
-                <span style={{ fontSize: 11, background: "rgba(99,102,241,0.15)", color: "#a5b4fc", borderRadius: 4, padding: "1px 7px", fontWeight: 700 }}>DOPORUČENO</span>
+                <span style={{ fontSize: 13, background: "rgba(99,102,241,0.15)", color: "#a5b4fc", borderRadius: 4, padding: "1px 7px", fontWeight: 700 }}>DOPORUČENO</span>
               </div>
               <input type="url" placeholder="https://investbook-worker.your-name.workers.dev"
                 value={workerUrl}
                 onChange={e => { setWorkerUrl(e.target.value); setGeminiTestResult(null); }}
                 style={{ ...inputBase, fontFamily: MONO }}
               />
-              <div style={{ fontSize: 11, color: T.subtle, marginTop: 5, lineHeight: 1.6 }}>
+              <div style={{ fontSize: 13, color: T.subtle, marginTop: 5, lineHeight: 1.6 }}>
                 Worker volá Gemini na straně serveru – API klíč zůstane skrytý. Nahraj soubor <strong style={{ color: T.text }}>investbook-worker.js</strong> na Cloudflare Workers a sem vlož URL.
               </div>
             </div>
@@ -3479,7 +3484,7 @@ ${allRows.slice().sort((a,b)=>b.valueCZK-a.valueCZK).map(p => {
             <div>
               <span style={{ fontSize: 17, fontWeight: 700, color: T.text, letterSpacing: "-0.01em" }}>InvestBook</span>
               <span onClick={() => setShowChangelog(true)} title="Zobrazit changelog"
-                style={{ fontSize: 10, color: T.blue, marginLeft: 6, fontFamily: "'DM Mono',monospace", cursor: "pointer", textDecoration: "underline dotted", textUnderlineOffset: 3 }}>{APP_VERSION}</span>
+                style={{ fontSize: 12, color: T.blue, marginLeft: 6, fontFamily: "'DM Mono',monospace", cursor: "pointer", textDecoration: "underline dotted", textUnderlineOffset: 3 }}>{APP_VERSION}</span>
             </div>
           </div>
           <nav className="ib-nav" style={{ gap: 2 }}>
@@ -3517,7 +3522,7 @@ ${allRows.slice().sort((a,b)=>b.valueCZK-a.valueCZK).map(p => {
               <span style={{ fontSize: 20 }}>
                 {tab.id === "portfolio" ? "📊" : tab.id === "analyza" ? "🔍" : tab.id === "penzijko" ? "🏦" : tab.id === "ai" ? "🤖" : "📋"}
               </span>
-              <span style={{ fontSize: 11, fontWeight: 600 }}>{tab.label}</span>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>{tab.label}</span>
             </button>
           ))}
         </div>
