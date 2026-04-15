@@ -6,15 +6,49 @@
   <meta name="mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-capable" content="yes"/>
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent"/>
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
-  <meta http-equiv="Pragma" content="no-cache"/>
-  <meta http-equiv="Expires" content="0"/>
   <meta name="apple-mobile-web-app-title" content="InvestBook"/>
   <meta name="theme-color" content="#0f0f13"/>
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
   <meta http-equiv="Pragma" content="no-cache"/>
   <meta http-equiv="Expires" content="0"/>
+
+  <!-- SEO -->
   <title>InvestBook</title>
+  <meta name="description" content="InvestBook — osobní investiční tracker. Přehled portfolia, analýza výkonnosti, AI hodnocení pozic a vývoj hodnoty v čase."/>
+  <link rel="canonical" href="https://coufalmilan.github.io/investbook/investbook.html"/>
+
+  <!-- Open Graph (sdílení na sociálních sítích) -->
+  <meta property="og:title" content="InvestBook — osobní investiční tracker"/>
+  <meta property="og:description" content="Přehled portfolia, analýza výkonnosti, AI hodnocení pozic a vývoj hodnoty v čase."/>
+  <meta property="og:type" content="website"/>
+  <meta property="og:url" content="https://coufalmilan.github.io/investbook/investbook.html"/>
+
+  <!-- Bezpečnost: Referrer-Policy -->
+  <meta name="referrer" content="strict-origin-when-cross-origin"/>
+
+  <!-- Content-Security-Policy (meta — GitHub Pages neumožňuje HTTP hlavičky)
+       unsafe-eval je nutné kvůli Babel standalone, unsafe-inline kvůli inline stylům.
+       connect-src zahrnuje Google APIs, Gemini a Cloudflare Workers. -->
+  <meta http-equiv="Content-Security-Policy" content="
+    default-src 'self';
+    script-src 'self' 'unsafe-inline' 'unsafe-eval'
+      https://cdnjs.cloudflare.com
+      https://accounts.google.com
+      https://apis.google.com;
+    style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
+    font-src 'self' https://fonts.gstatic.com data:;
+    connect-src 'self'
+      https://generativelanguage.googleapis.com
+      https://sheets.googleapis.com
+      https://oauth2.googleapis.com
+      https://openidconnect.googleapis.com
+      https://query1.finance.yahoo.com
+      https://*.workers.dev;
+    img-src 'self' data: https:;
+    frame-src 'none';
+    object-src 'none';
+    base-uri 'self';
+  "/>
   <link rel="manifest" href="manifest.json"/>
   <link rel="apple-touch-icon" href="icon-192.png"/>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
@@ -35,6 +69,8 @@
   <style>*{margin:0;padding:0;box-sizing:border-box}html,body{background:#0f0f13;overflow-x:hidden;width:100%}</style>
 </head>
 <body>
+  <!-- Skrytý H1 pro SEO a přístupnost (vizuálně skrytý, čitelný čtečkami) -->
+  <h1 style="position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0">InvestBook — osobní investiční tracker</h1>
   <div id="root"></div>
   <script type="text/babel" data-presets="react">
 
@@ -489,10 +525,16 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.12";
+const APP_VERSION = "v4.13";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.13", date: "11. 4. 2026", changes: [
+    "Bezpečnost (Vibescan): přidáno Content-Security-Policy meta (script/style/connect/frame/object-src), Referrer-Policy strict-origin-when-cross-origin",
+    "SEO: meta description, canonical URL, Open Graph tagy (og:title, og:description, og:type, og:url)",
+    "Přístupnost: přidán skrytý H1 nadpis pro čtečky a SEO",
+    "Vyčištění: odstraněny duplicitní Cache-Control meta tagy",
+  ]},
   { version: "v4.12", date: "11. 4. 2026", changes: [
     "Fonty: globální zvětšení nejmenšího písma — 10px→12px (18 míst), 11px→13px (37 míst) pro lepší čitelnost na mobilu",
     "Mobilní sort bar + period tlačítka: 12px→14px",
