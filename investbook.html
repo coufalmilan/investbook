@@ -26,29 +26,7 @@
   <!-- Bezpečnost: Referrer-Policy -->
   <meta name="referrer" content="strict-origin-when-cross-origin"/>
 
-  <!-- Content-Security-Policy (meta — GitHub Pages neumožňuje HTTP hlavičky)
-       unsafe-eval je nutné kvůli Babel standalone, unsafe-inline kvůli inline stylům.
-       connect-src zahrnuje Google APIs, Gemini a Cloudflare Workers. -->
-  <meta http-equiv="Content-Security-Policy" content="
-    default-src 'self';
-    script-src 'self' 'unsafe-inline' 'unsafe-eval'
-      https://cdnjs.cloudflare.com
-      https://accounts.google.com
-      https://apis.google.com;
-    style-src 'self' 'unsafe-inline' https://fonts.googleapis.com;
-    font-src 'self' https://fonts.gstatic.com data:;
-    connect-src 'self'
-      https://generativelanguage.googleapis.com
-      https://sheets.googleapis.com
-      https://oauth2.googleapis.com
-      https://openidconnect.googleapis.com
-      https://query1.finance.yahoo.com
-      https://*.workers.dev;
-    img-src 'self' data: https:;
-    frame-src 'none';
-    object-src 'none';
-    base-uri 'self';
-  "/>
+  <!-- CSP je nastavena jako HTTP hlavička přes Netlify _headers soubor -->
   <link rel="manifest" href="manifest.json"/>
   <link rel="apple-touch-icon" href="icon-192.png"/>
   <link rel="preconnect" href="https://fonts.googleapis.com"/>
