@@ -1,5 +1,5 @@
 /*
-  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-eval' https://cdnjs.cloudflare.com https://accounts.google.com; connect-src 'self' https://generativelanguage.googleapis.com https://*.workers.dev https://allorigins.win https://corsproxy.io https://query2.finance.yahoo.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; frame-src 'none'; object-src 'none'
+  Content-Security-Policy: default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval' https://cdnjs.cloudflare.com https://accounts.google.com; connect-src 'self' https://cdnjs.cloudflare.com https://generativelanguage.googleapis.com https://sheets.googleapis.com https://oauth2.googleapis.com https://openidconnect.googleapis.com https://*.workers.dev https://allorigins.win https://corsproxy.io https://query1.finance.yahoo.com https://query2.finance.yahoo.com; style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; frame-src 'none'; object-src 'none'
   X-Frame-Options: SAMEORIGIN
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
