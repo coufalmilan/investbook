@@ -1,5 +1,5 @@
 /*
-  Content-Security-Policy: default-src 'self' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; connect-src 'self' https:; style-src 'self' 'unsafe-inline' https:; font-src 'self' data: https:; frame-src https://accounts.google.com https://content.googleapis.com; object-src 'none'; img-src 'self' data: https:
+  Content-Security-Policy: default-src 'self' https:; script-src 'self' 'unsafe-inline' 'unsafe-eval' https:; connect-src 'self' https:; style-src 'self' 'unsafe-inline' https:; font-src 'self' data: https:; frame-src https://accounts.google.com https://content.googleapis.com https://content-sheets.googleapis.com; object-src 'none'; img-src 'self' data: https:
   X-Frame-Options: SAMEORIGIN
   X-Content-Type-Options: nosniff
   Referrer-Policy: strict-origin-when-cross-origin
