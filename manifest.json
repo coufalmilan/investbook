@@ -2,7 +2,7 @@
   "name": "InvestBook",
   "short_name": "InvestBook",
   "description": "Osobní investiční portfolio tracker",
-  "start_url": "./investbook.html",
+  "start_url": "start_url": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
   "background_color": "#0f0f13",
