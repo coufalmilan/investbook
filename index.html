@@ -788,10 +788,10 @@ function StatCard({ label, value, sub, color, accent, subTitle }) {
   return (
     <div className="ib-statcard" style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 14, padding: "18px 20px", position: "relative", overflow: "hidden" }}>
       {accent && <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: accent, borderRadius: "14px 14px 0 0" }} />}
-      <div className="ib-statcard-lbl" style={{ fontSize: 13, color: T.muted, letterSpacing: "0.08em", fontWeight: 500, marginBottom: 10, textTransform: "uppercase" }}>{label}</div>
-      <div className="ib-statcard-val" style={{ fontSize: 23, fontWeight: 700, color: color || T.text, letterSpacing: "-0.02em", lineHeight: 1.2 }}>{value}</div>
-      {sub && <div className="ib-statcard-sub" style={{ fontSize: 13, color: T.muted, marginTop: 5 }} title={subTitle || ""}>{sub}</div>}
-      {subTitle && <div style={{ fontSize: 12, color: T.subtle, marginTop: 3, fontStyle: "italic" }}>{subTitle}</div>}
+      <div className="ib-statcard-lbl" style={{ fontSize: 14, color: T.muted, letterSpacing: "0.08em", fontWeight: 500, marginBottom: 10, textTransform: "uppercase" }}>{label}</div>
+      <div className="ib-statcard-val" style={{ fontSize: 26, fontWeight: 700, color: color || T.text, letterSpacing: "-0.02em", lineHeight: 1.2 }}>{value}</div>
+      {sub && <div className="ib-statcard-sub" style={{ fontSize: 14, color: T.muted, marginTop: 5 }} title={subTitle || ""}>{sub}</div>}
+      {subTitle && <div style={{ fontSize: 13, color: T.subtle, marginTop: 3, fontStyle: "italic" }}>{subTitle}</div>}
     </div>
   );
 }
@@ -2660,16 +2660,23 @@ ${posLines}`;
                                 </tr>
                                 {isExp && (
                                   <tr style={{ background: rowBg, borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-                                    <td colSpan={8} style={{ padding: "0 12px 12px 12px" }}>
-                                      <div style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)", borderRadius: 10, padding: "12px 16px", display: "flex", flexDirection: "column", gap: 10 }}>
-                                        <div>
-                                          <div style={{ fontSize: 12, color: T.subtle, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4 }}>Hlavní faktor</div>
-                                          <div style={{ fontSize: 13, color: T.muted, lineHeight: 1.55 }}>{r.factor}</div>
+                                    <td colSpan={8} style={{ padding: "0 10px 14px 10px" }}>
+                                      <div style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 14 }}>
+                                        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                                          <span style={{ fontSize: 15, fontWeight: 700, color: rc, background: rc + "18", border: "1px solid " + rc + "40", borderRadius: 7, padding: "3px 12px" }}>{r.risk}</span>
+                                          <span style={{ fontSize: 15, fontWeight: 600, color: recC, background: recC + "18", border: "1px solid " + recC + "40", borderRadius: 7, padding: "3px 12px" }}>{r.rec}</span>
+                                          {r.pe && <span style={{ fontSize: 14, color: T.muted }}>P/E: <strong style={{ color: peColor }}>{r.pe}</strong></span>}
+                                          <span style={{ fontSize: 14, fontWeight: 600, color: vc, background: vc + "18", border: "1px solid " + vc + "40", borderRadius: 7, padding: "3px 10px" }}>{r.vol}</span>
+                                          <span style={{ fontSize: 18 }}>{r.trend}</span>
                                         </div>
-                                        <div style={{ height: 1, background: "rgba(255,255,255,0.06)" }} />
+                                        <div style={{ height: 1, background: "rgba(255,255,255,0.07)" }} />
                                         <div>
-                                          <div style={{ fontSize: 12, color: T.subtle, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4 }}>Komentář</div>
-                                          <div style={{ fontSize: 13, color: T.text, fontStyle: "italic", lineHeight: 1.6 }}>{r.comment}</div>
+                                          <div style={{ fontSize: 13, color: T.subtle, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6 }}>Hlavní faktor rizika</div>
+                                          <div style={{ fontSize: 15, color: T.muted, lineHeight: 1.6 }}>{r.factor}</div>
+                                        </div>
+                                        <div>
+                                          <div style={{ fontSize: 13, color: T.subtle, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6 }}>Komentář</div>
+                                          <div style={{ fontSize: 15, color: T.text, lineHeight: 1.7 }}>{r.comment}</div>
                                         </div>
                                       </div>
                                     </td>
@@ -2988,8 +2995,8 @@ ${posLines}`;
     const portfolioCtx = `Moje portfolio k dnešnímu dni (hodnoty v CZK):
 Celková hodnota: ${fmtCZK(totalVal)}, Investováno: ${fmtCZK(totalInv)}, Zisk/ztráta: ${fmtCZK(totalGain)} (${gainPct}%)
 
-Pozice (seřazeno dle hodnoty):
-${allRows.slice().sort((a,b)=>b.valueCZK-a.valueCZK).map(p => {
+Pozice (seřazeno dle hodnoty, pouze aktivní):
+${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b.valueCZK-a.valueCZK).map(p => {
   const g = p.gainPctOrig != null ? `${p.gainPctOrig.toFixed(1)}%` : "neznámý výnos";
   return `- ${p.name} [${p.category}, ${p.broker}]: hodnota ${fmtCZK(p.valueCZK)}, investováno ${fmtCZK(p.investedCZK)}, výnos ${g}, od roku ${p.start}`;
 }).join("\n")}`;
@@ -3256,7 +3263,7 @@ ${allRows.slice().sort((a,b)=>b.valueCZK-a.valueCZK).map(p => {
                 </div>
               )}
               {aiAnalysis && (
-                <div style={{ fontSize: 13 }} dangerouslySetInnerHTML={{ __html: renderMD(aiAnalysis) }} />
+                <div style={{ fontSize: 15, lineHeight: 1.7 }} dangerouslySetInnerHTML={{ __html: renderMD(aiAnalysis) }} />
               )}
             </>)}
 
