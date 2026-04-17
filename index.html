@@ -15,13 +15,13 @@
   <!-- SEO -->
   <title>InvestBook</title>
   <meta name="description" content="InvestBook — osobní investiční tracker. Přehled portfolia, analýza výkonnosti, AI hodnocení pozic a vývoj hodnoty v čase."/>
-  <link rel="canonical" href="https://coufalmilan.github.io/investbook/investbook.html"/>
+  <link rel="canonical" href="https://investbookai.pages.dev/"/>
 
   <!-- Open Graph (sdílení na sociálních sítích) -->
   <meta property="og:title" content="InvestBook — osobní investiční tracker"/>
   <meta property="og:description" content="Přehled portfolia, analýza výkonnosti, AI hodnocení pozic a vývoj hodnoty v čase."/>
   <meta property="og:type" content="website"/>
-  <meta property="og:url" content="https://coufalmilan.github.io/investbook/investbook.html"/>
+  <meta property="og:url" content="https://investbookai.pages.dev/"/>
 
   <!-- Bezpečnost: Referrer-Policy -->
   <meta name="referrer" content="strict-origin-when-cross-origin"/>
@@ -451,6 +451,58 @@ const INITIAL_CSOB = [
 // value = user-editable (starts at invested as placeholder)
 
 const DEGIRO_FX = 24.23; // EUR→CZK
+
+// ── Loga firem: ticker → Clearbit domain ────────────────────────────────────
+const TICKER_LOGO = {
+  // Akcie USA
+  NVDA: "nvidia.com", META: "meta.com", MSFT: "microsoft.com",
+  TSLA: "tesla.com",  AAPL: "apple.com", AMZN: "amazon.com",
+  GOOG: "abc.xyz",    TSM: "tsmc.com",   LRCX: "lamresearch.com",
+  ABBV: "abbvie.com",
+  // Evropské akcie
+  "RHM.DE": "rheinmetall.com",
+  "CSG.AS": "csg.com",
+  "BA-.L":  "boeing.com",
+  // ETF
+  "SXR8.DE": "ishares.com", "DFND.PA": "ishares.com",
+  "CSPX.L":  "ishares.com",
+  // Crypto
+  "BTC-USD": "bitcoin.org", "ETH-USD": "ethereum.org",
+  "XRP-USD": "xrpl.org",    "LTC-USD": "litecoin.org",
+  "ETC-USD": "ethereumclassic.org", "SOL-USD": "solana.com",
+  "DOGE-USD": "dogecoin.com", "BNB-USD": "bnbchain.org",
+  // Ruční – ČSOB fondy
+  "ČSOB Akciový": "csob.cz",
+  "ČSOB Akciový Amerika": "csob.cz",
+  "ČSOB Premium VOZ": "csob.cz",
+};
+
+function getLogoUrl(ticker, name) {
+  const domain = TICKER_LOGO[ticker] || TICKER_LOGO[name] || null;
+  if (!domain) return null;
+  return `https://logo.clearbit.com/${domain}`;
+}
+
+// Komponenta pro logo pozice
+function PositionLogo({ ticker, name, size = 22 }) {
+  const [err, setErr] = React.useState(false);
+  const url = getLogoUrl(ticker, name);
+  if (!url || err) {
+    const label = (ticker || name || "?").replace(/-USD$|\.DE$|\.L$|\.AS$|\.PA$/,"").slice(0, 2).toUpperCase();
+    const colors = ["#6366f1","#22c55e","#f59e0b","#ef4444","#06b6d4","#ec4899","#8b5cf6","#14b8a6"];
+    const bg = colors[(label.charCodeAt(0) + (label.charCodeAt(1)||0)) % colors.length];
+    return (
+      <div style={{ width: size, height: size, borderRadius: 5, background: bg, display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0, fontSize: size < 22 ? 8 : 9, fontWeight: 800, color: "#fff", letterSpacing: "-0.03em" }}>
+        {label}
+      </div>
+    );
+  }
+  return (
+    <img src={url} alt={ticker || name} width={size} height={size}
+      style={{ borderRadius: 5, objectFit: "contain", flexShrink: 0, background: "#fff", padding: 1 }}
+      onError={() => setErr(true)} />
+  );
+}
 const ETORO_FX  = 20.57; // USD→CZK (aktuální kurz; leden 2026 byl ~23.50)
 const GBP_FX = 25.80; // GBP→CZK approximate
 const JAN_2026_USDCZK = 23.50; // USD/CZK kurz přibližně k 1.1.2026 (pro YTD porovnání)
@@ -806,6 +858,7 @@ function InvestBook() {
   const [activeTab, setActiveTab] = useState("portfolio");
   const [showChangelog, setShowChangelog] = useState(false);
   const [period, setPeriod] = useState("YTD");
+  const [posChart, setPosChart] = useState(null); // { pos, points, currency, loading, error }
   const [tblSort, setTblSort] = useState("value");
   const [tblDir, setTblDir] = useState("desc");
   const [activeCat, setActiveCat] = useState("vse");
@@ -1105,6 +1158,30 @@ ${posLines}`;
     setMarketNewsLoading(false);
   }, [geminiKey, geminiModel, allRows, workerUrl]);
   useEffect(() => { fetchMktData(); }, []);
+
+  // Načíst historická data pro vybranou pozici
+  const loadPosChart = useCallback(async (pos) => {
+    if (!pos.ticker) {
+      setPosChart({ pos, points: null, currency: null, loading: false, error: "Žádný ticker — historická data nejsou dostupná." });
+      return;
+    }
+    if (!workerUrl) {
+      setPosChart({ pos, points: null, currency: null, loading: false, error: "Worker URL není nastaven." });
+      return;
+    }
+    setPosChart({ pos, points: null, currency: null, loading: true, error: null });
+    try {
+      const r = await fetch(workerUrl, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ yahooHistory: { symbol: pos.ticker, range: "1y", interval: "1wk" } })
+      });
+      const d = await r.json();
+      if (d.error) throw new Error(d.error);
+      setPosChart({ pos, points: d.points, currency: d.currency, loading: false, error: null });
+    } catch(e) {
+      setPosChart({ pos, points: null, currency: null, loading: false, error: e.message });
+    }
+  }, [workerUrl]);
 
   // Update manual row
   const updateManual = useCallback((id, field, raw) => {
@@ -1450,37 +1527,44 @@ ${posLines}`;
                   ))}
                 </div>
               </div>
-              <ResponsiveContainer width="100%" height={220}>
-                <AreaChart data={histData} margin={{ left: 4, right: 4, top: 4, bottom: 0 }}>
-                  <defs>
-                    <linearGradient id="gChart" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor={cat.color} stopOpacity={0.25} />
-                      <stop offset="100%" stopColor={cat.color} stopOpacity={0} />
-                    </linearGradient>
-                  </defs>
-                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-                  <XAxis dataKey="d" tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.tick }} axisLine={false} tickLine={false}
-                    tickFormatter={d => { const [y,m] = d.split("-"); return m === "01" ? y : m + "/" + y.slice(2); }} />
-                  <YAxis tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.tick }} axisLine={false} tickLine={false} width={58}
-                    domain={[ dataMin => Math.floor(dataMin * 0.95 / 50000) * 50000, dataMax => Math.ceil(dataMax * 1.05 / 50000) * 50000 ]}
-                    tickFormatter={v => {
-                      const cv = v / dcfg.div;
-                      const sym = dcfg.symbol;
-                      return cv >= 1000000 ? (cv/1000000).toFixed(1)+"M "+sym : cv >= 1000 ? Math.round(cv/1000)+"k "+sym : Math.round(cv)+" "+sym;
-                    }} />
-                  <Tooltip {...ttStyle} wrapperStyle={{ maxWidth: 200, zIndex: 10 }} formatter={(v) => [fmt(v), cat.label]} labelFormatter={d => d} />
-                  <Area type="monotone" dataKey={cat.chartKey} stroke={cat.color} strokeWidth={2.5} fill="url(#gChart)" dot={false}
-                    activeDot={{ r: 4, fill: cat.color, strokeWidth: 0 }} />
-                </AreaChart>
-              </ResponsiveContainer>
+              {(() => {
+                // Konvertuj data do zobrazované měny
+                const histDataDisplay = histData.map(d => {
+                  const out = { d: d.d, isLive: d.isLive };
+                  ['v','fond','akcie','crypto'].forEach(k => { if (d[k] != null) out[k] = Math.round(d[k] / dcfg.div); });
+                  return out;
+                });
+                const chartStep = dispCurrency === 'CZK' ? 50000 : dispCurrency === 'EUR' ? 2500 : 2000;
+                const fmtN = v => new Intl.NumberFormat(dcfg.locale, { style: 'currency', currency: dcfg.cur, maximumFractionDigits: 0 }).format(v);
+                const sym = dcfg.symbol;
+                return (
+                  <ResponsiveContainer width="100%" height={220}>
+                    <AreaChart data={histDataDisplay} margin={{ left: 4, right: 4, top: 4, bottom: 0 }}>
+                      <defs>
+                        <linearGradient id="gChart" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor={cat.color} stopOpacity={0.25} />
+                          <stop offset="100%" stopColor={cat.color} stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+                      <XAxis dataKey="d" tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.tick }} axisLine={false} tickLine={false}
+                        tickFormatter={d => { const [y,m] = d.split("-"); return m === "01" ? y : m + "/" + y.slice(2); }} />
+                      <YAxis tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.tick }} axisLine={false} tickLine={false} width={62}
+                        domain={[ dMin => Math.floor(dMin * 0.95 / chartStep) * chartStep, dMax => Math.ceil(dMax * 1.05 / chartStep) * chartStep ]}
+                        tickFormatter={v => v >= 1000000 ? (v/1000000).toFixed(1)+"M "+sym : v >= 1000 ? Math.round(v/1000)+"k "+sym : Math.round(v)+" "+sym} />
+                      <Tooltip {...ttStyle} wrapperStyle={{ maxWidth: 220, zIndex: 10 }} formatter={(v) => [fmtN(v), cat.label]} labelFormatter={d => d} />
+                      <Area type="monotone" dataKey={cat.chartKey} stroke={cat.color} strokeWidth={2.5} fill="url(#gChart)" dot={false}
+                        activeDot={{ r: 4, fill: cat.color, strokeWidth: 0 }} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                );
+              })()}
               {/* Hodnoty na začátku a konci zobrazeného období */}
               {histData.length >= 2 && (() => {
                 const first = histData[0];
                 const last  = histData[histData.length - 1];
                 const startV_CZK = first[cat.chartKey] ?? first.v;
                 const endV_CZK   = last[cat.chartKey]  ?? last.v;
-                // FX-korektní delta % — pro YTD: start použije lednový kurz, end aktuální kurz
-                // Pro ostatní období (1R, 2R…) historické kurzy neznáme → simple CZK delta
                 const isYtdPeriod = (period === "YTD" || period === "1M") && dispCurrency !== "CZK";
                 const startDiv = isYtdPeriod ? janFx : dcfg.div;
                 const endDiv   = isYtdPeriod ? nowFx : dcfg.div;
@@ -1489,21 +1573,20 @@ ${posLines}`;
                 const deltaNative = endNative - startNative;
                 const deltaPct    = startNative > 0 ? (deltaNative / startNative) * 100 : 0;
                 const gc = deltaNative >= 0 ? T.green : T.red;
-                // Absolutní částka vždy zobrazena přes fmt() (CZK → display měna)
-                const deltaAbsCZK = endV_CZK - startV_CZK;
+                const fmtN2 = v => new Intl.NumberFormat(dcfg.locale, { style: 'currency', currency: dcfg.cur, maximumFractionDigits: 0 }).format(v);
                 return (
                   <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: 12, padding: "8px 4px", borderTop: "1px solid rgba(255,255,255,0.05)" }}>
                     <div>
                       <div style={{ fontSize: 12, color: T.subtle, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Začátek · {first.d}</div>
-                      <div style={{ fontSize: 14, color: T.muted, fontFamily: "'DM Mono',monospace", fontWeight: 600 }}>{fmt(startV_CZK)}</div>
+                      <div style={{ fontSize: 14, color: T.muted, fontFamily: "'DM Mono',monospace", fontWeight: 600 }}>{fmtN2(startNative)}</div>
                     </div>
                     <div style={{ textAlign: "center" }}>
-                      <div style={{ fontSize: 13, color: gc, fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>{deltaAbsCZK >= 0 ? "+" : ""}{fmt(deltaAbsCZK)}</div>
+                      <div style={{ fontSize: 13, color: gc, fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>{deltaNative >= 0 ? "+" : ""}{fmtN2(deltaNative)}</div>
                       <div style={{ fontSize: 12, color: gc, fontFamily: "'DM Mono',monospace" }}>{deltaNative >= 0 ? "+" : ""}{deltaPct.toFixed(1)} %</div>
                     </div>
                     <div style={{ textAlign: "right" }}>
                       <div style={{ fontSize: 12, color: T.subtle, textTransform: "uppercase", letterSpacing: "0.06em", marginBottom: 2 }}>Konec · {last.d}</div>
-                      <div style={{ fontSize: 14, color: T.text, fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>{fmt(endV_CZK)}</div>
+                      <div style={{ fontSize: 14, color: T.text, fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>{fmtN2(endNative)}</div>
                     </div>
                   </div>
                 );
@@ -1874,9 +1957,16 @@ ${posLines}`;
           </div>
           <div className="ib-pos-actions" style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <span style={{ fontSize: 12, color: T.muted, padding: "6px 12px", background: "rgba(255,255,255,0.04)", borderRadius: 8 }}>✎ klikni pro editaci</span>
+            <button onClick={handleLoad} disabled={gsStatus === "loading"}
+              style={{ background:"rgba(99,102,241,0.12)", border:"1px solid rgba(99,102,241,0.25)", borderRadius:7, color:"#a5b4fc", cursor: gsStatus==="loading"?"default":"pointer", padding:"6px 14px", fontSize:12, fontWeight:600, opacity: gsStatus==="loading"?0.6:1 }}>
+              {gsStatus === "loading" ? "⟳ Načítám…" : "↺ Refresh ze Sheets"}
+            </button>
+            <button onClick={handleSave} disabled={gsStatus === "saving" || gsStatus === "loading"}
+              style={{ background:"rgba(16,185,129,0.12)", border:"1px solid rgba(16,185,129,0.25)", borderRadius:7, color:"#6ee7b7", cursor:"pointer", padding:"6px 14px", fontSize:12, fontWeight:600, opacity: gsStatus==="saving"?0.6:1 }}>
+              {gsStatus === "saving" ? "⟳ Ukládám…" : gsStatus === "saved" ? "✓ Uloženo" : "↑ Uložit do Sheets"}
+            </button>
             <button onClick={addManual} style={{ background: T.green, border: "none", borderRadius: 8, color: "#000", cursor: "pointer", padding: "8px 16px", fontSize: 13, fontWeight: 700 }}>+ Přidat</button>
-
-                      </div>
+          </div>
         </div>
 
         {/* Price fetch status banner */}
@@ -1926,7 +2016,14 @@ ${posLines}`;
                   <tr key={pos.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.03)" }}
                     onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.02)"}
                     onMouseLeave={e => e.currentTarget.style.background = ""}>
-                    <EditCell value={pos.name}     type="text" align="left" color={CAT_COLOR[pos.category] || T.text} onSave={v => updateManual(pos.id,"name",v)} />
+                    <td style={{ padding:"10px 12px", minWidth:160 }} onDoubleClick={() => { const n = prompt("Nový název:", pos.name); if (n && n.trim()) updateManual(pos.id,"name",n.trim()); }}>
+                      <div style={{ display:"flex", alignItems:"center", gap:7 }}>
+                        <PositionLogo ticker={pos.ticker} name={pos.name} size={22} />
+                        <div>
+                          <div style={{ fontWeight:700, fontSize:13, color:CAT_COLOR[pos.category]||T.text }}>{pos.name}</div>
+                        </div>
+                      </div>
+                    </td>
                     <EditCell value={pos.broker}   type="text" align="left" color={T.muted} onSave={v => updateManual(pos.id,"broker",v)} />
                     <EditCell value={pos.category} isSelect options={CATEGORIES} align="left" color={CAT_COLOR[pos.category]||T.muted} onSave={v => updateManual(pos.id,"category",v)}/>
                     <EditCell value={pos.value}    color={T.text}  onSave={v => updateManual(pos.id,"value",v)} />
@@ -2025,14 +2122,6 @@ ${posLines}`;
               style={{ background:"rgba(59,130,246,0.12)", border:"1px solid rgba(59,130,246,0.25)", borderRadius:7, color:T.blue, cursor:"pointer", padding:"5px 12px", fontSize:12, fontWeight:600 }}>
               ↑ CSV import
             </button>
-            <button onClick={handleLoad} disabled={gsStatus === "loading"}
-              style={{ background:"rgba(99,102,241,0.12)", border:"1px solid rgba(99,102,241,0.25)", borderRadius:7, color:"#a5b4fc", cursor: gsStatus==="loading"?"default":"pointer", padding:"5px 12px", fontSize:12, fontWeight:600, opacity: gsStatus==="loading"?0.6:1 }}>
-              {gsStatus === "loading" ? "⟳ Načítám…" : "↺ Refresh ze Sheets"}
-            </button>
-            <button onClick={handleSave} disabled={gsStatus === "saving" || gsStatus === "loading"}
-              style={{ background:"rgba(16,185,129,0.12)", border:"1px solid rgba(16,185,129,0.25)", borderRadius:7, color:"#6ee7b7", cursor:"pointer", padding:"5px 12px", fontSize:12, fontWeight:600, opacity: gsStatus==="saving"?0.6:1 }}>
-              {gsStatus === "saving" ? "⟳ Ukládám…" : gsStatus === "saved" ? "✓ Uloženo" : "↑ Uložit do Sheets"}
-            </button>
           </div>
         </div>
 
@@ -2071,10 +2160,18 @@ ${posLines}`;
                     onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.02)"}
                     onMouseLeave={e => e.currentTarget.style.background = ""}>
                     <td style={{ padding:"10px 12px", minWidth:160 }}>
-                      <div style={{ display:"flex", alignItems:"center", gap:6 }}>
-                        <div style={{ width:7, height:7, borderRadius:2, background:CAT_COLOR[pos.category]||T.muted, flexShrink:0 }} />
-                        <div>
-                          <div style={{ fontWeight:700, fontSize:13, color:T.text }}>{pos.ticker}</div>
+                      <div style={{ display:"flex", alignItems:"center", gap:7 }}>
+                        <PositionLogo ticker={pos.ticker} name={pos.name} size={24} />
+                        <div style={{ flex:1, minWidth:0 }}>
+                          <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+                            <span style={{ fontWeight:700, fontSize:13, color:T.text }}>{pos.ticker}</span>
+                            {pos.ticker && (
+                              <button title="Zobrazit graf" onClick={() => loadPosChart(pos)}
+                                style={{ background:"none", border:"none", padding:"1px 3px", cursor:"pointer", color:T.subtle, fontSize:12, lineHeight:1, borderRadius:3, transition:"color 0.1s" }}
+                                onMouseEnter={e=>e.currentTarget.style.color=T.blue}
+                                onMouseLeave={e=>e.currentTarget.style.color=T.subtle}>📈</button>
+                            )}
+                          </div>
                           <div style={{ fontSize:10, color:T.subtle }}>{pos.name.split("(")[0].trim()}</div>
                         </div>
                       </div>
@@ -3571,6 +3668,87 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
           {activeTab === "ai"        && tabAI()}
         </main>
       </div>
+
+      {/* ── Graf pozice modal ───────────────────────────── */}
+      {posChart && (
+        <div onClick={() => setPosChart(null)}
+          style={{ position:"fixed", inset:0, background:"rgba(0,0,0,0.65)", backdropFilter:"blur(4px)", zIndex:1000, display:"flex", alignItems:"center", justifyContent:"center", padding:16 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background:T.card, border:"1px solid "+T.border, borderRadius:18, padding:24, maxWidth:560, width:"100%", maxHeight:"85vh", overflowY:"auto" }}>
+            {/* Header */}
+            <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+              <div style={{ display:"flex", alignItems:"center", gap:10 }}>
+                <PositionLogo ticker={posChart.pos?.ticker} name={posChart.pos?.name} size={28} />
+                <div>
+                  <div style={{ fontSize:16, fontWeight:700, color:T.text }}>{posChart.pos?.ticker || posChart.pos?.name}</div>
+                  <div style={{ fontSize:11, color:T.muted }}>{posChart.pos?.name?.split("(")[0]?.trim()}</div>
+                </div>
+              </div>
+              <button onClick={() => setPosChart(null)}
+                style={{ background:"rgba(255,255,255,0.06)", border:"none", color:T.muted, borderRadius:8, width:32, height:32, cursor:"pointer", fontSize:18, display:"flex", alignItems:"center", justifyContent:"center" }}>×</button>
+            </div>
+            {/* Obsah */}
+            {posChart.loading && (
+              <div style={{ textAlign:"center", color:T.muted, padding:"40px 0", fontSize:14 }}>⟳ Načítám historická data…</div>
+            )}
+            {posChart.error && (
+              <div style={{ textAlign:"center", color:T.red, padding:"32px 0", fontSize:13 }}>✗ {posChart.error}</div>
+            )}
+            {!posChart.loading && !posChart.error && posChart.points && posChart.points.length > 1 && (() => {
+              const { points, currency } = posChart;
+              const fmtP = v => v == null ? "—" : v >= 1000 ? v.toLocaleString("cs-CZ",{maximumFractionDigits:0}) : v >= 10 ? v.toFixed(2) : v.toFixed(4);
+              const first = points[0], last = points[points.length-1];
+              const delta = last.c - first.c;
+              const deltaPct = first.c > 0 ? (delta / first.c) * 100 : 0;
+              const gc = delta >= 0 ? T.green : T.red;
+              const step = last.c > 1000 ? 50 : last.c > 100 ? 10 : last.c > 10 ? 1 : 0.1;
+              const chartData = points.map(p => ({
+                d: new Date(p.t * 1000).toLocaleDateString("cs-CZ", { month:"2-digit", year:"2-digit" }),
+                c: p.c
+              }));
+              return (
+                <>
+                  <div style={{ display:"flex", justifyContent:"space-between", marginBottom:12, padding:"0 4px" }}>
+                    <div>
+                      <div style={{ fontSize:11, color:T.subtle, textTransform:"uppercase", letterSpacing:"0.06em" }}>Aktuálně ({currency})</div>
+                      <div style={{ fontSize:20, fontWeight:800, color:T.text, fontFamily:"'DM Mono',monospace" }}>{fmtP(last.c)}</div>
+                    </div>
+                    <div style={{ textAlign:"right" }}>
+                      <div style={{ fontSize:11, color:T.subtle, textTransform:"uppercase", letterSpacing:"0.06em" }}>1 rok</div>
+                      <div style={{ fontSize:16, fontWeight:700, color:gc, fontFamily:"'DM Mono',monospace" }}>
+                        {delta >= 0 ? "+" : ""}{fmtP(delta)} ({deltaPct >= 0 ? "+" : ""}{deltaPct.toFixed(1)}%)
+                      </div>
+                    </div>
+                  </div>
+                  <ResponsiveContainer width="100%" height={200}>
+                    <AreaChart data={chartData} margin={{ left:4, right:4, top:4, bottom:0 }}>
+                      <defs>
+                        <linearGradient id="gPosChart" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="0%" stopColor={gc} stopOpacity={0.3} />
+                          <stop offset="100%" stopColor={gc} stopOpacity={0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+                      <XAxis dataKey="d" tick={{ fontFamily:"'DM Mono',monospace", fontSize:11, fill:T.tick }} axisLine={false} tickLine={false} interval="preserveStartEnd" />
+                      <YAxis tick={{ fontFamily:"'DM Mono',monospace", fontSize:11, fill:T.tick }} axisLine={false} tickLine={false} width={56}
+                        domain={[dMin => Math.floor(dMin*0.97/step)*step, dMax => Math.ceil(dMax*1.03/step)*step]}
+                        tickFormatter={v => v >= 1000 ? Math.round(v/1000)+"k" : v >= 10 ? v.toFixed(0) : v.toFixed(2)} />
+                      <Tooltip wrapperStyle={{ background:"rgba(15,15,19,0.95)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:8, fontSize:12, zIndex:10 }}
+                        contentStyle={{ background:"transparent", border:"none", color:T.text }}
+                        labelStyle={{ color:T.muted, fontSize:11 }}
+                        formatter={v => [fmtP(v)+" "+currency, "Cena"]} />
+                      <Area type="monotone" dataKey="c" stroke={gc} strokeWidth={2} fill="url(#gPosChart)" dot={false} activeDot={{ r:4, fill:gc, strokeWidth:0 }} />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                  <div style={{ fontSize:11, color:T.subtle, textAlign:"center", marginTop:8 }}>
+                    Zdroj: Yahoo Finance · {posChart.model ? `AI: ${posChart.model}` : "1Y weekly"}
+                  </div>
+                </>
+              );
+            })()}
+          </div>
+        </div>
+      )}
 
       {/* ── Changelog modal ─────────────────────────────── */}
       {showChangelog && (
