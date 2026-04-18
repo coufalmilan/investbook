@@ -541,10 +541,14 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.19";
+const APP_VERSION = "v4.20";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.20", date: "18. 4. 2026", changes: [
+    "Graf P&L: oprava % změny za období — počítá se jako periodChange / hodnota_pozice_na_začátku, ne / investováno",
+    "Graf P&L: X-osa čitelnější — minTickGap 56px, pro 1M/3M formát DD.MM, pro delší MM/RR",
+  ]},
   { version: "v4.19", date: "18. 4. 2026", changes: [
     "Graf pozice: přepínač období 1M/3M/6M/1R/2R/MAX — automaticky přenačte data z Yahoo Finance",
     "Graf zobrazuje P&L v CZK místo ceny: shares × historická cena × kurz − investovanoCZK, s nulovou referenční linií",
@@ -1547,7 +1551,9 @@ ${posLines}`;
                 const firstPnl = pnlPoints ? pnlPoints[0]?.pnl : null;
                 const gc2 = lastPnl != null ? (lastPnl >= 0 ? T.green : T.red) : T.green;
                 const periodChange = (lastPnl != null && firstPnl != null) ? lastPnl - firstPnl : null;
-                const pctChange = firstPnl != null && invCZK > 0 ? (periodChange / invCZK) * 100 : null;
+                // % změna = změna P&L / hodnota pozice na začátku období
+                const firstPosValue = firstPnl != null ? firstPnl + invCZK : null;
+                const pctChange = (firstPosValue != null && firstPosValue > 0) ? (periodChange / firstPosValue) * 100 : null;
                 return (<>
                   {/* Hlavička */}
                   <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
@@ -1585,8 +1591,11 @@ ${posLines}`;
                   )}
                   {/* Graf P&L */}
                   {!posChart.loading && !posChart.error && pnlPoints && pnlPoints.length > 1 && (() => {
+                    const isShortPeriod = ["1M","3M"].includes(posPeriod);
                     const cdata = pnlPoints.map(p => ({
-                      d: new Date(p.t*1000).toLocaleDateString("cs-CZ",{day:"2-digit",month:"2-digit",year:"2-digit"}),
+                      d: isShortPeriod
+                        ? new Date(p.t*1000).toLocaleDateString("cs-CZ",{day:"2-digit",month:"2-digit"})
+                        : new Date(p.t*1000).toLocaleDateString("cs-CZ",{month:"2-digit",year:"2-digit"}),
                       pnl: p.pnl
                     }));
                     const allVals = pnlPoints.map(p => p.pnl);
@@ -1624,7 +1633,8 @@ ${posLines}`;
                           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false}/>
                           {/* Nulová linie = breakeven */}
                           <ReferenceLine y={0} stroke="rgba(255,255,255,0.2)" strokeDasharray="4 3" label={{ value:"±0", position:"insideLeft", fill:T.subtle, fontSize:10 }}/>
-                          <XAxis dataKey="d" tick={{fontFamily:"'DM Mono',monospace",fontSize:11,fill:T.tick}} axisLine={false} tickLine={false} interval="preserveStartEnd"/>
+                          <XAxis dataKey="d" tick={{fontFamily:"'DM Mono',monospace",fontSize:11,fill:T.tick}} axisLine={false} tickLine={false}
+                            interval="preserveStartEnd" minTickGap={56}/>
                           <YAxis tick={{fontFamily:"'DM Mono',monospace",fontSize:11,fill:T.tick}} axisLine={false} tickLine={false} width={64}
                             domain={[dMin=>Math.floor((dMin-stepN)/stepN)*stepN, dMax=>Math.ceil((dMax+stepN)/stepN)*stepN]}
                             tickFormatter={v=>v>=1000000?(v/1000000).toFixed(1)+"M":v>=1000?Math.round(v/1000)+"k":v}/>
