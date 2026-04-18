@@ -245,7 +245,7 @@ async function loadFromSheets() {
 // ════════════════════════════════════════════════════════════════════════════
 const { useState, useCallback, useEffect, useRef } = React;
 const { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis,
-        CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area } = Recharts;
+        CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, ReferenceLine } = Recharts;
 
 // ════════════════════════════════════════════════════════════════════════════
 //  GEMINI AI INTEGRATION
@@ -459,15 +459,13 @@ const DEGIRO_FX = 24.23; // EUR→CZK
 function PositionLogo({ ticker, name, size = 22 }) {
   const [fallback, setFallback] = React.useState(false);
 
-  // Pouze jednoduché US tickery (jen písmena) mají logo na FMP
-  const isUsTicker = ticker && /^[A-Z]{2,5}$/.test(ticker);
-
   const getInitials = () => (ticker || name || "?")
-    .replace(/-USD$|\.DE$|\.L$|\.AS$|\.PA$/g, "")
+    .replace(/-USD$|-EUR$|\.DE$|\.L$|\.AS$|\.PA$|\.MI$|\.SW$/g, "")
     .replace(/\s.*/, "")
     .slice(0, 2).toUpperCase();
 
-  if (!isUsTicker || fallback) {
+  // Bez tickeru vždy iniciálky
+  if (!ticker || fallback) {
     const label = getInitials();
     const pal = ["#6366f1","#22c55e","#f59e0b","#ef4444","#06b6d4","#ec4899","#8b5cf6","#14b8a6"];
     const bg  = pal[(label.charCodeAt(0) + (label.charCodeAt(1) || 0)) % pal.length];
@@ -543,10 +541,15 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.18";
+const APP_VERSION = "v4.19";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.19", date: "18. 4. 2026", changes: [
+    "Graf pozice: přepínač období 1M/3M/6M/1R/2R/MAX — automaticky přenačte data z Yahoo Finance",
+    "Graf zobrazuje P&L v CZK místo ceny: shares × historická cena × kurz − investovanoCZK, s nulovou referenční linií",
+    "Loga: PositionLogo nyní zkouší FMP pro všechny tickery (US i evropské .DE/.L/.AS/.PA), fallback na iniciálky",
+  ]},
   { version: "v4.18", date: "18. 4. 2026", changes: [
     "Graf přesunut do záložky Přehled: klik na jakoukoliv pozici v tabulce Přehled investic překreslí Vývoj portfolia na 1Y data dané akcie/ETF/krypta",
     "Záložka Pozice: odstraněn inline graf, řádky nejsou klikatelné",
@@ -1163,9 +1166,24 @@ ${posLines}`;
     setMarketNewsLoading(false);
   }, [geminiKey, geminiModel, allRows, workerUrl]);
   useEffect(() => { fetchMktData(); }, []);
+  // Při změně periody znovu načti graf aktuální pozice
+  useEffect(() => {
+    if (posChart && posChart.pos && !posChart.loading) {
+      loadPosChart(posChart.pos, posPeriod);
+    }
+  }, [posPeriod]);
 
   // Načíst historická data pro vybranou pozici
-  const loadPosChart = useCallback(async (pos) => {
+  const POS_RANGE_MAP = {
+    "1M":  { range: "1mo",  interval: "1d"  },
+    "3M":  { range: "3mo",  interval: "1d"  },
+    "6M":  { range: "6mo",  interval: "1wk" },
+    "1R":  { range: "1y",   interval: "1wk" },
+    "2R":  { range: "2y",   interval: "1wk" },
+    "MAX": { range: "5y",   interval: "1mo" },
+  };
+  const loadPosChart = useCallback(async (pos, period) => {
+    const per = period || posPeriod || "1R";
     if (!pos.ticker) {
       setPosChart({ pos, points: null, currency: null, loading: false, error: "Žádný ticker — historická data nejsou dostupná." });
       return;
@@ -1176,9 +1194,10 @@ ${posLines}`;
     }
     setPosChart({ pos, points: null, currency: null, loading: true, error: null });
     try {
+      const { range, interval } = POS_RANGE_MAP[per] || POS_RANGE_MAP["1R"];
       const r = await fetch(workerUrl, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ yahooHistory: { symbol: pos.ticker, range: "1y", interval: "1wk" } })
+        body: JSON.stringify({ yahooHistory: { symbol: pos.ticker, range, interval } })
       });
       const d = await r.json();
       if (d.error) throw new Error(d.error);
@@ -1186,7 +1205,7 @@ ${posLines}`;
     } catch(e) {
       setPosChart({ pos, points: null, currency: null, loading: false, error: e.message });
     }
-  }, [workerUrl]);
+  }, [workerUrl, posPeriod]);
 
   // Update manual row
   const updateManual = useCallback((id, field, raw) => {
@@ -1515,62 +1534,137 @@ ${posLines}`;
             {/* Graf */}
             <div className="ib-table-wrap" style={{ background: T.card, border: "1px solid " + (posChart ? "rgba(99,102,241,0.35)" : activeCat !== "vse" ? cat.color + "40" : T.border), borderRadius: 16, padding: 22, marginBottom: 16, transition: "border-color 0.2s" }}>
               {posChart !== null ? (() => {
-                /* ── Graf vybrané pozice ── */
-                const gc2 = posChart.points && posChart.points.length > 1
-                  ? (posChart.points[posChart.points.length-1].c >= posChart.points[0].c ? T.green : T.red)
-                  : T.green;
+                /* ── Graf vybrané pozice — P&L v CZK ── */
+                const pos   = posChart.pos;
+                const fxRate = pos ? ((isFinite(pos.fx)&&pos.fx>0) ? pos.fx : (pos.currency==="EUR"?DEGIRO_FX:pos.currency==="GBP"?GBP_FX:ETORO_FX)) : 1;
+                const shares = pos?.shares || 0;
+                const invCZK = pos?.investedCZK ?? (pos ? (pos.invested||0)*fxRate : 0);
+                // Transformuj historické ceny na P&L v CZK
+                const pnlPoints = posChart.points && shares > 0
+                  ? posChart.points.map(p => ({ ...p, pnl: Math.round(p.c * shares * fxRate - invCZK) }))
+                  : null;
+                const lastPnl  = pnlPoints ? pnlPoints[pnlPoints.length-1]?.pnl : null;
+                const firstPnl = pnlPoints ? pnlPoints[0]?.pnl : null;
+                const gc2 = lastPnl != null ? (lastPnl >= 0 ? T.green : T.red) : T.green;
+                const periodChange = (lastPnl != null && firstPnl != null) ? lastPnl - firstPnl : null;
+                const pctChange = firstPnl != null && invCZK > 0 ? (periodChange / invCZK) * 100 : null;
                 return (<>
-                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:16 }}>
+                  {/* Hlavička */}
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
                     <div style={{ display:"flex", alignItems:"center", gap:10 }}>
-                      <PositionLogo ticker={posChart.pos?.ticker} name={posChart.pos?.name} size={26} />
+                      <PositionLogo ticker={pos?.ticker} name={pos?.name} size={26} />
                       <div>
-                        <div style={{ fontSize:15, fontWeight:700, color:T.text }}>{posChart.pos?.ticker || posChart.pos?.name?.split("(")[0]?.trim()}</div>
-                        <div style={{ fontSize:12, color:T.muted }}>{posChart.pos?.name?.split("(")[0]?.trim()} · 1Y · Yahoo Finance</div>
+                        <div style={{ fontSize:15, fontWeight:700, color:T.text }}>{pos?.ticker || pos?.name?.split("(")[0]?.trim()}</div>
+                        <div style={{ fontSize:12, color:T.muted }}>{pos?.name?.split("(")[0]?.trim()} · P&L v CZK · Yahoo Finance</div>
                       </div>
                     </div>
-                    <button onClick={() => setPosChart(null)}
-                      style={{ background:"rgba(255,255,255,0.07)", border:"1px solid rgba(255,255,255,0.12)", borderRadius:7, color:T.muted, cursor:"pointer", padding:"5px 14px", fontSize:13, fontWeight:600 }}>
-                      ← Portfolio
-                    </button>
+                    <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                      {["1M","3M","6M","1R","2R","MAX"].map(p => (
+                        <button key={p} onClick={() => setPosPeriod(p)}
+                          style={{ background: posPeriod===p ? "rgba(99,102,241,0.2)" : "rgba(255,255,255,0.04)",
+                            border:"1px solid "+(posPeriod===p ? "rgba(99,102,241,0.5)" : "rgba(255,255,255,0.08)"),
+                            borderRadius:5, color: posPeriod===p ? "#a5b4fc" : T.muted,
+                            cursor:"pointer", padding:"3px 9px", fontSize:12, fontWeight:600 }}>
+                          {p}
+                        </button>
+                      ))}
+                      <button onClick={() => setPosChart(null)}
+                        style={{ background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.1)", borderRadius:7, color:T.muted, cursor:"pointer", padding:"4px 12px", fontSize:12, fontWeight:600, marginLeft:4 }}>
+                        ← Portfolio
+                      </button>
+                    </div>
                   </div>
+                  {/* Loading / error */}
                   {posChart.loading && (
-                    <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:200, color:T.muted, fontSize:13 }}>⟳ Načítám historická data…</div>
+                    <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:200, color:T.muted, fontSize:13 }}>⟳ Načítám data…</div>
                   )}
                   {posChart.error && (
-                    <div style={{ display:"flex", flexDirection:"column", alignItems:"center", justifyContent:"center", height:120, gap:8 }}>
+                    <div style={{ display:"flex", alignItems:"center", justifyContent:"center", height:100 }}>
                       <div style={{ fontSize:13, color:T.subtle }}>{posChart.error}</div>
                     </div>
                   )}
-                  {!posChart.loading && !posChart.error && posChart.points && posChart.points.length > 1 && (() => {
+                  {/* Graf P&L */}
+                  {!posChart.loading && !posChart.error && pnlPoints && pnlPoints.length > 1 && (() => {
+                    const cdata = pnlPoints.map(p => ({
+                      d: new Date(p.t*1000).toLocaleDateString("cs-CZ",{day:"2-digit",month:"2-digit",year:"2-digit"}),
+                      pnl: p.pnl
+                    }));
+                    const allVals = pnlPoints.map(p => p.pnl);
+                    const minV = Math.min(...allVals, 0);
+                    const maxV = Math.max(...allVals, 0);
+                    const step = Math.max(Math.abs(maxV - minV) / 6, 1000);
+                    const stepR = Math.pow(10, Math.floor(Math.log10(step)));
+                    const stepN = Math.ceil(step / stepR) * stepR;
+                    return (<>
+                      {/* Souhrn */}
+                      <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-end", marginBottom:8 }}>
+                        <div>
+                          <div style={{ fontSize:11, color:T.subtle, textTransform:"uppercase", letterSpacing:"0.05em", marginBottom:2 }}>Aktuální P&L</div>
+                          <div style={{ fontSize:24, fontWeight:800, color:gc2, fontFamily:"'DM Mono',monospace" }}>
+                            {lastPnl >= 0 ? "+" : ""}{fmt(lastPnl)}
+                          </div>
+                        </div>
+                        {periodChange != null && (
+                          <div style={{ textAlign:"right" }}>
+                            <div style={{ fontSize:11, color:T.subtle, textTransform:"uppercase", letterSpacing:"0.05em", marginBottom:2 }}>Za {posPeriod}</div>
+                            <div style={{ fontSize:15, fontWeight:700, color: periodChange>=0?T.green:T.red, fontFamily:"'DM Mono',monospace" }}>
+                              {periodChange>=0?"+":""}{fmt(periodChange)} {pctChange!=null?`(${pctChange>=0?"+":""}${pctChange.toFixed(1)} %)` : ""}
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                      <ResponsiveContainer width="100%" height={210}>
+                        <AreaChart data={cdata} margin={{left:4,right:4,top:4,bottom:0}}>
+                          <defs>
+                            <linearGradient id="gPnlPos" x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor={gc2} stopOpacity={0.3}/>
+                              <stop offset="100%" stopColor={gc2} stopOpacity={0.02}/>
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false}/>
+                          {/* Nulová linie = breakeven */}
+                          <ReferenceLine y={0} stroke="rgba(255,255,255,0.2)" strokeDasharray="4 3" label={{ value:"±0", position:"insideLeft", fill:T.subtle, fontSize:10 }}/>
+                          <XAxis dataKey="d" tick={{fontFamily:"'DM Mono',monospace",fontSize:11,fill:T.tick}} axisLine={false} tickLine={false} interval="preserveStartEnd"/>
+                          <YAxis tick={{fontFamily:"'DM Mono',monospace",fontSize:11,fill:T.tick}} axisLine={false} tickLine={false} width={64}
+                            domain={[dMin=>Math.floor((dMin-stepN)/stepN)*stepN, dMax=>Math.ceil((dMax+stepN)/stepN)*stepN]}
+                            tickFormatter={v=>v>=1000000?(v/1000000).toFixed(1)+"M":v>=1000?Math.round(v/1000)+"k":v}/>
+                          <Tooltip wrapperStyle={{background:"rgba(15,15,19,0.95)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,fontSize:12,zIndex:10}}
+                            contentStyle={{background:"transparent",border:"none",color:T.text}} labelStyle={{color:T.muted,fontSize:11}}
+                            formatter={v=>[`${v>=0?"+":""}${fmt(v)} CZK`, "P&L"]}/>
+                          <Area type="monotone" dataKey="pnl" stroke={gc2} strokeWidth={2.5} fill="url(#gPnlPos)" dot={false} activeDot={{r:4,fill:gc2,strokeWidth:0}}/>
+                        </AreaChart>
+                      </ResponsiveContainer>
+                    </>);
+                  })()}
+                  {/* Fallback: máme ceny ale ne shares (manuální pozice) */}
+                  {!posChart.loading && !posChart.error && posChart.points && posChart.points.length > 1 && shares === 0 && (() => {
                     const pts = posChart.points;
                     const cur = posChart.currency || "";
                     const first = pts[0].c, last = pts[pts.length-1].c;
                     const delta = last - first, dpct = first > 0 ? (delta/first)*100 : 0;
-                    const step = last > 1000 ? 50 : last > 100 ? 10 : last > 10 ? 1 : 0.1;
+                    const gc3 = delta >= 0 ? T.green : T.red;
                     const fmtP = v => v >= 1000 ? v.toLocaleString("cs-CZ",{maximumFractionDigits:0}) : v >= 10 ? v.toFixed(2) : v.toFixed(4);
-                    const cdata = pts.map(p => ({ d: new Date(p.t*1000).toLocaleDateString("cs-CZ",{month:"2-digit",year:"2-digit"}), c: p.c }));
+                    const cdata2 = pts.map(p => ({ d: new Date(p.t*1000).toLocaleDateString("cs-CZ",{month:"2-digit",year:"2-digit"}), c: p.c }));
+                    const step2 = last > 1000 ? 50 : last > 100 ? 10 : last > 10 ? 1 : 0.1;
                     return (<>
                       <div style={{ display:"flex", justifyContent:"space-between", marginBottom:8 }}>
                         <div style={{ fontSize:22, fontWeight:800, color:T.text, fontFamily:"'DM Mono',monospace" }}>{fmtP(last)} <span style={{ fontSize:12, color:T.muted }}>{cur}</span></div>
-                        <div style={{ fontSize:14, fontWeight:700, color:gc2, fontFamily:"'DM Mono',monospace", textAlign:"right" }}>
-                          <div>{delta>=0?"+":""}{fmtP(delta)} {cur}</div>
-                          <div style={{ fontSize:12 }}>{dpct.toFixed(1)} %</div>
-                        </div>
+                        <div style={{ fontSize:14, fontWeight:700, color:gc3, fontFamily:"'DM Mono',monospace" }}>{delta>=0?"+":""}{fmtP(delta)} ({dpct.toFixed(1)} %)</div>
                       </div>
-                      <ResponsiveContainer width="100%" height={220}>
-                        <AreaChart data={cdata} margin={{left:4,right:4,top:4,bottom:0}}>
-                          <defs><linearGradient id="gPrehledPos" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor={gc2} stopOpacity={0.28}/><stop offset="100%" stopColor={gc2} stopOpacity={0}/>
+                      <ResponsiveContainer width="100%" height={210}>
+                        <AreaChart data={cdata2} margin={{left:4,right:4,top:4,bottom:0}}>
+                          <defs><linearGradient id="gPriceOnly" x1="0" y1="0" x2="0" y2="1">
+                            <stop offset="0%" stopColor={gc3} stopOpacity={0.28}/><stop offset="100%" stopColor={gc3} stopOpacity={0}/>
                           </linearGradient></defs>
                           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false}/>
-                          <XAxis dataKey="d" tick={{fontFamily:"'DM Mono',monospace",fontSize:12,fill:T.tick}} axisLine={false} tickLine={false} interval="preserveStartEnd"/>
-                          <YAxis tick={{fontFamily:"'DM Mono',monospace",fontSize:12,fill:T.tick}} axisLine={false} tickLine={false} width={62}
-                            domain={[dMin=>Math.floor(dMin*0.97/step)*step,dMax=>Math.ceil(dMax*1.03/step)*step]}
+                          <XAxis dataKey="d" tick={{fontFamily:"'DM Mono',monospace",fontSize:11,fill:T.tick}} axisLine={false} tickLine={false} interval="preserveStartEnd"/>
+                          <YAxis tick={{fontFamily:"'DM Mono',monospace",fontSize:11,fill:T.tick}} axisLine={false} tickLine={false} width={62}
+                            domain={[dMin=>Math.floor(dMin*0.97/step2)*step2,dMax=>Math.ceil(dMax*1.03/step2)*step2]}
                             tickFormatter={v=>v>=1000?Math.round(v/1000)+"k":v>=10?v.toFixed(0):v.toFixed(2)}/>
                           <Tooltip wrapperStyle={{background:"rgba(15,15,19,0.95)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,fontSize:12,zIndex:10}}
                             contentStyle={{background:"transparent",border:"none",color:T.text}} labelStyle={{color:T.muted,fontSize:11}}
                             formatter={v=>[fmtP(v)+" "+cur,"Cena"]}/>
-                          <Area type="monotone" dataKey="c" stroke={gc2} strokeWidth={2.5} fill="url(#gPrehledPos)" dot={false} activeDot={{r:4,fill:gc2,strokeWidth:0}}/>
+                          <Area type="monotone" dataKey="c" stroke={gc3} strokeWidth={2.5} fill="url(#gPriceOnly)" dot={false} activeDot={{r:4,fill:gc3,strokeWidth:0}}/>
                         </AreaChart>
                       </ResponsiveContainer>
                     </>);
