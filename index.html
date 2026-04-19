@@ -541,10 +541,16 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.21";
+const APP_VERSION = "v4.22";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.22", date: "19. 4. 2026", changes: [
+    "PWA auto-update: service worker (sw.js) vynutí update nainstalované apky při nové verzi",
+    "Mobilní portrait: period tlačítka se nezalamují — overflow-x scroll místo wrapping",
+    "Mobilní portrait: YAxis bez měnového symbolu (2.6M místo 2.6M Kč) — label se vejde do 46px",
+    "Mobilní portrait: subtitle grafu skryt na mobilu (šetří místo)",
+  ]},
   { version: "v4.21", date: "19. 4. 2026", changes: [
     "Mobilní portrait: oprava šířky grafu — padding karet 22→10px, YAxis 62→42px",
     "Mobilní portrait: hlavička grafu pozice (ticker + period tlačítka) se skládá pod sebe",
@@ -1693,7 +1699,7 @@ ${posLines}`;
                     <div style={{ fontSize: 15, fontWeight: 600, color: T.text, marginBottom: 2 }}>Vývoj portfolia
                       {activeCat !== "vse" && <span style={{ marginLeft: 8, fontSize: 13, color: cat.color, fontWeight: 700 }}>· {cat.label}</span>}
                     </div>
-                    <div style={{ fontSize: 13, color: T.muted }}>klikni na pozici v tabulce níže pro detail</div>
+                    <div className="ib-chart-subtitle" style={{ fontSize: 13, color: T.muted }}>klikni na pozici v tabulce níže pro detail</div>
                   </div>
                   <div className="ib-period-row" style={{ display: "flex", gap: 4 }}>
                     {["1M","YTD","1R","2R","3R","MAX"].map(p => (
@@ -1727,9 +1733,9 @@ ${posLines}`;
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
                         <XAxis dataKey="d" tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.tick }} axisLine={false} tickLine={false}
                           tickFormatter={d => { const [y,m] = d.split("-"); return m === "01" ? y : m + "/" + y.slice(2); }} />
-                        <YAxis tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.tick }} axisLine={false} tickLine={false} width={window.innerWidth<=480?42:62}
+                        <YAxis tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.tick }} axisLine={false} tickLine={false} width={window.innerWidth<=480?46:62}
                           domain={[ dMin => Math.floor(dMin * 0.95 / chartStep) * chartStep, dMax => Math.ceil(dMax * 1.05 / chartStep) * chartStep ]}
-                          tickFormatter={v => v >= 1000000 ? (v/1000000).toFixed(1)+"M "+sym : v >= 1000 ? Math.round(v/1000)+"k "+sym : Math.round(v)+" "+sym} />
+                          tickFormatter={v => { const s = window.innerWidth<=480 ? "" : " "+sym; return v >= 1000000 ? (v/1000000).toFixed(1)+"M"+s : v >= 1000 ? Math.round(v/1000)+"k"+s : Math.round(v)+s; }} />
                         <Tooltip {...ttStyle} wrapperStyle={{ maxWidth: 220, zIndex: 10 }} formatter={(v) => [fmtN(v), cat.label]} labelFormatter={d => d} />
                         <Area type="monotone" dataKey={cat.chartKey} stroke={cat.color} strokeWidth={2.5} fill="url(#gChart)" dot={false}
                           activeDot={{ r: 4, fill: cat.color, strokeWidth: 0 }} />
@@ -3754,8 +3760,9 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
           .ib-contrib-spacer { display: none !important; }
           .ib-contrib-label  { font-size: 12px !important; }
 
-          /* Přehled – period tlačítka */
-          .ib-period-row { flex-wrap: wrap !important; gap: 4px !important; }
+          /* Přehled – period tlačítka: nikdy se nezalamují, scroll pokud se nevejdou */
+          .ib-period-row { flex-wrap: nowrap !important; overflow-x: auto !important; -webkit-overflow-scrolling: touch !important; gap: 3px !important; scrollbar-width: none !important; }
+          .ib-period-row::-webkit-scrollbar { display: none; }
 
           /* Pozice – záhlaví a akce */
           .ib-pos-header  { flex-direction: column !important; align-items: flex-start !important; gap: 10px !important; }
@@ -3790,6 +3797,9 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
           /* P&L souhrn (Aktuální P&L + Za Xm) – stack */
           .ib-pnl-summary { flex-direction: column !important; align-items: flex-start !important; gap: 6px !important; }
           .ib-pnl-summary > div:last-child { text-align: left !important; }
+
+          /* Graf subtitle – skryj na mobilu */
+          .ib-chart-subtitle { display: none !important; }
         }
 
         @media (min-width: 481px) {
