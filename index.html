@@ -541,10 +541,16 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.22";
+const APP_VERSION = "v4.23";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.23", date: "20. 4. 2026", changes: [
+    "Predikce portfolia přesunuty z Přehledu do Analýzy — umístěny pod Roční výkonnost portfolia",
+    "Mobilní: Hodnocení rizikovosti — místo horizontálně scrollující tabulky karty na šířku displeje",
+    "Mobilní: záložka Pozice portfolia — ruční i importované pozice zobrazeny jako karty (bez scrollu)",
+    "Mobilní: predikční karty na plnou šířku (jako Top 3 / Bottom 3 nad nimi)",
+  ]},
   { version: "v4.22", date: "19. 4. 2026", changes: [
     "PWA auto-update: service worker (sw.js) vynutí update nainstalované apky při nové verzi",
     "Mobilní portrait: period tlačítka se nezalamují — overflow-x scroll místo wrapping",
@@ -1981,7 +1987,8 @@ ${posLines}`;
           </>);
         })()}
 
-        {/* Projections */}
+        {/* Projections přesunuty do tabAnalyza – pod Roční výkonnost */}
+        {(() => { return null; })()}
         {(() => {
           const base    = totalValue;
           const rateAvg = avgAnnReturnNoCrypto / 100;
@@ -2004,6 +2011,7 @@ ${posLines}`;
           const commitContrib = () => { const n = parseFlt(contribDraft); if (!isNaN(n) && n >= 0) setMonthlyContrib(n); setEditingContrib(false); };
           const commitRate10 = () => { const n = parseFlt(rate10Draft); if (!isNaN(n) && n > 0 && n <= 100) setCustomRate10(n); setEditingRate10(false); };
 
+          return null; /* Projections jsou v tabAnalyza – viz níže */
           return (
             <div>
               {/* Contrib row */}
@@ -2181,67 +2189,109 @@ ${posLines}`;
         <div style={{ fontSize: 13, color: T.muted, letterSpacing: "0.1em", fontWeight: 600, marginBottom: 8, textTransform: "uppercase" }}>
           Ruční pozice — ČSOB · <span style={{ color: T.subtle, fontWeight: 400 }}>klikni na záhlaví pro seřazení</span>
         </div>
-        <div className="ib-table-wrap" style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 14, overflow: "hidden", marginBottom: 20 }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ borderBottom: "1px solid " + T.border }}>
-                {MAN_COLS.map((h, i) => (
-                  <th key={h.key} onClick={() => onManSort(h.key)}
-                    style={{ padding: "9px 12px", textAlign: h.align, fontSize: 13, cursor: "pointer", userSelect: "none",
-                      color: manSort === h.key ? T.text : (h.key === "invested" ? T.subtle : T.muted),
-                      fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", whiteSpace: "nowrap",
-                      transition: "color 0.1s" }}>
-                    {h.label}{manArrow(h.key)}
-                  </th>
-                ))}
-                <th style={{ padding: "9px 8px", textAlign: "center", fontSize: 13, color: T.muted }}></th>
-              </tr>
-            </thead>
-            <tbody>
-              {sortedManual.map(pos => {
-                const gain    = (pos.value || 0) - (pos.invested || 0);
-                const gainPct = pos.invested > 0 ? (gain / pos.invested) * 100 : 0;
-                const gc = gain >= 0 ? T.green : T.red;
-                return (
-                  <tr key={pos.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.03)" }}
-                    onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.02)"}
-                    onMouseLeave={e => e.currentTarget.style.background = ""}>
-                    <td style={{ padding:"10px 12px", minWidth:160 }} onDoubleClick={() => { const n = prompt("Nový název:", pos.name); if (n && n.trim()) updateManual(pos.id,"name",n.trim()); }}>
-                      <div style={{ display:"flex", alignItems:"center", gap:7 }}>
-                        <PositionLogo ticker={pos.ticker} name={pos.name} size={22} />
-                        <div>
-                          <div style={{ fontWeight:700, fontSize:13, color:CAT_COLOR[pos.category]||T.text }}>{pos.name}</div>
+        {window.innerWidth <= 480 ? (
+          /* ── MOBILE: karty ── */
+          <div style={{ marginBottom: 20 }}>
+            {sortedManual.map(pos => {
+              const gain    = (pos.value || 0) - (pos.invested || 0);
+              const gainPct = pos.invested > 0 ? (gain / pos.invested) * 100 : 0;
+              const gc = gain >= 0 ? T.green : T.red;
+              return (
+                <div key={pos.id} style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 12, padding: "12px 14px", marginBottom: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                    <PositionLogo ticker={pos.ticker} name={pos.name} size={26} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: CAT_COLOR[pos.category]||T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pos.name}</div>
+                      <div style={{ fontSize: 11, color: T.muted, marginTop: 1 }}>{pos.broker} · {pos.category} · od {pos.start}</div>
+                    </div>
+                    <button onClick={() => deleteManual(pos.id)} style={{ background: "none", border: "none", color: T.subtle, cursor: "pointer", fontSize: 18, padding: "2px 4px" }}>×</button>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
+                    <div>
+                      <div style={{ fontSize: 11, color: T.muted, marginBottom: 2 }}>Hodnota</div>
+                      <div style={{ fontSize: 17, fontWeight: 800, color: T.text, fontFamily: "'DM Mono',monospace" }}>{fmt(pos.value)}</div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: 11, color: T.muted, marginBottom: 2 }}>Výnos</div>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: gc, fontFamily: "'DM Mono',monospace" }}>{gainPct >= 0 ? "+" : ""}{gainPct.toFixed(1)}%</div>
+                      <div style={{ fontSize: 12, color: gc, fontFamily: "'DM Mono',monospace" }}>{gain >= 0 ? "+" : ""}{fmt(Math.round(gain))}</div>
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
+            <div style={{ background: "rgba(34,197,94,0.06)", border: "1px solid rgba(34,197,94,0.15)", borderRadius: 10, padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: 12, color: T.green, fontWeight: 700 }}>SOUČET</span>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: 15, fontWeight: 800, color: T.text, fontFamily: "'DM Mono',monospace" }}>{fmt(manualTotal)}</div>
+                <div style={{ fontSize: 12, color: T.green, fontFamily: "'DM Mono',monospace" }}>{manualInvested > 0 ? "+" + (((manualTotal-manualInvested)/manualInvested)*100).toFixed(1)+"%" : ""} · {fmt(manualTotal-manualInvested)}</div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* ── DESKTOP: tabulka ── */
+          <div className="ib-table-wrap" style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 14, overflow: "hidden", marginBottom: 20 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid " + T.border }}>
+                  {MAN_COLS.map((h, i) => (
+                    <th key={h.key} onClick={() => onManSort(h.key)}
+                      style={{ padding: "9px 12px", textAlign: h.align, fontSize: 13, cursor: "pointer", userSelect: "none",
+                        color: manSort === h.key ? T.text : (h.key === "invested" ? T.subtle : T.muted),
+                        fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", whiteSpace: "nowrap",
+                        transition: "color 0.1s" }}>
+                      {h.label}{manArrow(h.key)}
+                    </th>
+                  ))}
+                  <th style={{ padding: "9px 8px", textAlign: "center", fontSize: 13, color: T.muted }}></th>
+                </tr>
+              </thead>
+              <tbody>
+                {sortedManual.map(pos => {
+                  const gain    = (pos.value || 0) - (pos.invested || 0);
+                  const gainPct = pos.invested > 0 ? (gain / pos.invested) * 100 : 0;
+                  const gc = gain >= 0 ? T.green : T.red;
+                  return (
+                    <tr key={pos.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.03)" }}
+                      onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.02)"}
+                      onMouseLeave={e => e.currentTarget.style.background = ""}>
+                      <td style={{ padding:"10px 12px", minWidth:160 }} onDoubleClick={() => { const n = prompt("Nový název:", pos.name); if (n && n.trim()) updateManual(pos.id,"name",n.trim()); }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:7 }}>
+                          <PositionLogo ticker={pos.ticker} name={pos.name} size={22} />
+                          <div>
+                            <div style={{ fontWeight:700, fontSize:13, color:CAT_COLOR[pos.category]||T.text }}>{pos.name}</div>
+                          </div>
                         </div>
-                      </div>
-                    </td>
-                    <EditCell value={pos.broker}   type="text" align="left" color={T.muted} onSave={v => updateManual(pos.id,"broker",v)} />
-                    <EditCell value={pos.category} isSelect options={CATEGORIES} align="left" color={CAT_COLOR[pos.category]||T.muted} onSave={v => updateManual(pos.id,"category",v)}/>
-                    <EditCell value={pos.value}    color={T.text}  onSave={v => updateManual(pos.id,"value",v)} />
-                    <EditCell value={Math.round(gain)} color={gc} onSave={v => updateManual(pos.id,"gain",v)} />
-                    <td style={{ ...nc(gc), fontWeight: 700 }}>{gainPct >= 0 ? "+" : ""}{gainPct.toFixed(2)}%</td>
-                    <td style={nc(T.subtle)} title="Vypočítáno: Hodnota − Výnos">{fmt(pos.invested)}</td>
-                    <EditCell value={pos.start} color={T.muted} onSave={v => updateManual(pos.id,"start",v)} />
-                    <td style={{ padding: "0 8px", textAlign: "center" }}>
-                      <button onClick={() => deleteManual(pos.id)} style={{ background: "none", border: "none", color: T.subtle, cursor: "pointer", fontSize: 18, padding: "4px 6px", borderRadius: 4 }}
-                        onMouseEnter={e => e.currentTarget.style.color = T.red}
-                        onMouseLeave={e => e.currentTarget.style.color = T.subtle}>×</button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-            <tfoot>
-              <tr style={{ borderTop: "1px solid rgba(34,197,94,0.15)", background: "rgba(34,197,94,0.03)" }}>
-                <td colSpan={3} style={{ padding: "10px 12px", fontSize: 12, color: T.green, fontWeight: 700 }}>SOUČET</td>
-                <td style={{ ...nc(T.text), fontSize: 15, fontWeight: 800 }}>{fmt(manualTotal)}</td>
-                <td style={nc(T.green)}>{fmt(manualTotal - manualInvested)}</td>
-                <td style={{ ...nc(T.green), fontWeight: 700 }}>{manualInvested > 0 ? "+" + (((manualTotal-manualInvested)/manualInvested)*100).toFixed(2)+"%" : "—"}</td>
-                <td style={nc(T.muted)}>{fmt(manualInvested)}</td>
-                <td colSpan={2} />
-              </tr>
-            </tfoot>
-          </table>
-        </div>
+                      </td>
+                      <EditCell value={pos.broker}   type="text" align="left" color={T.muted} onSave={v => updateManual(pos.id,"broker",v)} />
+                      <EditCell value={pos.category} isSelect options={CATEGORIES} align="left" color={CAT_COLOR[pos.category]||T.muted} onSave={v => updateManual(pos.id,"category",v)}/>
+                      <EditCell value={pos.value}    color={T.text}  onSave={v => updateManual(pos.id,"value",v)} />
+                      <EditCell value={Math.round(gain)} color={gc} onSave={v => updateManual(pos.id,"gain",v)} />
+                      <td style={{ ...nc(gc), fontWeight: 700 }}>{gainPct >= 0 ? "+" : ""}{gainPct.toFixed(2)}%</td>
+                      <td style={nc(T.subtle)} title="Vypočítáno: Hodnota − Výnos">{fmt(pos.invested)}</td>
+                      <EditCell value={pos.start} color={T.muted} onSave={v => updateManual(pos.id,"start",v)} />
+                      <td style={{ padding: "0 8px", textAlign: "center" }}>
+                        <button onClick={() => deleteManual(pos.id)} style={{ background: "none", border: "none", color: T.subtle, cursor: "pointer", fontSize: 18, padding: "4px 6px", borderRadius: 4 }}
+                          onMouseEnter={e => e.currentTarget.style.color = T.red}
+                          onMouseLeave={e => e.currentTarget.style.color = T.subtle}>×</button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr style={{ borderTop: "1px solid rgba(34,197,94,0.15)", background: "rgba(34,197,94,0.03)" }}>
+                  <td colSpan={3} style={{ padding: "10px 12px", fontSize: 12, color: T.green, fontWeight: 700 }}>SOUČET</td>
+                  <td style={{ ...nc(T.text), fontSize: 15, fontWeight: 800 }}>{fmt(manualTotal)}</td>
+                  <td style={nc(T.green)}>{fmt(manualTotal - manualInvested)}</td>
+                  <td style={{ ...nc(T.green), fontWeight: 700 }}>{manualInvested > 0 ? "+" + (((manualTotal-manualInvested)/manualInvested)*100).toFixed(2)+"%" : "—"}</td>
+                  <td style={nc(T.muted)}>{fmt(manualInvested)}</td>
+                  <td colSpan={2} />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
         </>); })()}
 
         {/* IMPORTED POSITIONS (DEGIRO + eToro + Crypto) */}
@@ -2315,96 +2365,154 @@ ${posLines}`;
           </div>
         </div>
 
-        <div className="ib-table-wrap" style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 14, overflow: "hidden", marginBottom: 20 }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ borderBottom: "1px solid " + T.border }}>
-                {IMP_COLS.map(h => (
-                  <th key={h.key} onClick={() => onImpSort(h.key)}
-                    style={{ padding: "9px 12px", textAlign: h.align, fontSize: 12, cursor: "pointer", userSelect: "none",
-                      color: impSort === h.key ? T.text : T.muted,
-                      fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", whiteSpace: "nowrap",
-                      transition: "color 0.1s" }}>
-                    {h.label}{impArrow(h.key)}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {sortedImported.map(pos => {
-                const rate     = (isFinite(pos.fx) && pos.fx > 0) ? pos.fx : (pos.currency === "EUR" ? DEGIRO_FX : pos.currency === "GBP" ? GBP_FX : ETORO_FX);
-                const invCZK   = isFinite(pos.invested) ? pos.invested * rate : 0;
-                const hasPrice = isFinite(pos.priceCZK) && pos.priceCZK > 0 && isFinite(pos.shares) && pos.shares > 0;
-                const valueCZK = hasPrice ? pos.priceCZK * pos.shares : invCZK;
-                const gainCZK  = valueCZK - invCZK;
-                // Výnos % počítáme v PŮVODNÍ měně (ne CZK), aby zkreslení kurzu neovlivnilo %
-                // valueOrig = priceCZK / rate * shares (zpět do orig měny) nebo invOrig = pos.invested
-                const valueOrig = hasPrice && rate > 0 ? (pos.priceCZK * pos.shares) / rate : pos.invested;
-                const gainPct  = pos.invested > 0 ? ((valueOrig - pos.invested) / pos.invested) * 100 : 0;
-                const sharePct = totalValue > 0 ? (valueCZK / totalValue) * 100 : 0;
-                const years    = Math.max(1, new Date().getFullYear() - (pos.start || 2024));
-                const annR     = hasPrice && pos.invested > 0 ? (Math.pow(valueOrig / pos.invested, 1 / years) - 1) * 100 : null;
-                const gc       = gainCZK >= 0 ? T.green : T.red;
-                return (
-                  <tr key={pos.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.03)" }}
-                    onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.02)"}
-                    onMouseLeave={e => e.currentTarget.style.background = ""}>
-                    <td style={{ padding:"10px 12px", minWidth:160 }}>
-                      <div style={{ display:"flex", alignItems:"center", gap:7 }}>
-                        <PositionLogo ticker={pos.ticker} name={pos.name} size={24} />
-                        <div style={{ flex:1, minWidth:0 }}>
-                          <div style={{ display:"flex", alignItems:"center", gap:5 }}>
-                            <span style={{ fontWeight:700, fontSize:13, color:T.text }}>{pos.ticker}</span>
-                          </div>
-                          <div style={{ fontSize:10, color:T.subtle }}>{pos.name.split("(")[0].trim()}</div>
-                        </div>
+        {window.innerWidth <= 480 ? (
+          /* ── MOBILE: karty ── */
+          <div style={{ marginBottom: 20 }}>
+            {sortedImported.map(pos => {
+              const rate     = (isFinite(pos.fx) && pos.fx > 0) ? pos.fx : (pos.currency === "EUR" ? DEGIRO_FX : pos.currency === "GBP" ? GBP_FX : ETORO_FX);
+              const invCZK   = isFinite(pos.invested) ? pos.invested * rate : 0;
+              const hasPrice = isFinite(pos.priceCZK) && pos.priceCZK > 0 && isFinite(pos.shares) && pos.shares > 0;
+              const valueCZK = hasPrice ? pos.priceCZK * pos.shares : invCZK;
+              const gainCZK  = valueCZK - invCZK;
+              const valueOrig = hasPrice && rate > 0 ? (pos.priceCZK * pos.shares) / rate : pos.invested;
+              const gainPct  = pos.invested > 0 ? ((valueOrig - pos.invested) / pos.invested) * 100 : 0;
+              const gc       = gainCZK >= 0 ? T.green : T.red;
+              return (
+                <div key={pos.id} style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 12, padding: "12px 14px", marginBottom: 8 }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
+                    <PositionLogo ticker={pos.ticker} name={pos.name} size={26} />
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: 14, color: T.text }}>{pos.ticker || pos.name.split("(")[0].trim()}</div>
+                      <div style={{ fontSize: 11, color: T.muted, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pos.broker} · {pos.category} · od {pos.start}</div>
+                    </div>
+                    <span style={{ fontSize: 11, color: CAT_COLOR[pos.category]||T.muted, background: "rgba(255,255,255,0.05)", borderRadius: 4, padding: "2px 6px", flexShrink: 0 }}>{pos.currency}</span>
+                  </div>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-end" }}>
+                    <div>
+                      <div style={{ fontSize: 11, color: T.muted, marginBottom: 2 }}>Hodnota CZK</div>
+                      <div style={{ fontSize: 17, fontWeight: 800, color: hasPrice ? T.text : "#f59e0b", fontFamily: "'DM Mono',monospace" }}>{hasPrice ? fmt(valueCZK) : "doplň cenu"}</div>
+                      <div style={{ fontSize: 11, color: T.muted, marginTop: 2 }}>invest. {fmt(invCZK)}</div>
+                    </div>
+                    <div style={{ textAlign: "right" }}>
+                      <div style={{ fontSize: 11, color: T.muted, marginBottom: 2 }}>Výnos</div>
+                      <div style={{ fontSize: 15, fontWeight: 700, color: hasPrice ? gc : T.subtle, fontFamily: "'DM Mono',monospace" }}>{hasPrice ? (gainPct>=0?"+":"")+gainPct.toFixed(1)+"%" : "—"}</div>
+                      <div style={{ fontSize: 12, color: hasPrice ? gc : T.subtle, fontFamily: "'DM Mono',monospace" }}>{hasPrice ? (gainCZK>=0?"+":"")+fmt(gainCZK) : ""}</div>
+                    </div>
+                  </div>
+                  {pos.shares != null && pos.invested > 0 && (() => {
+                    const avgNat = pos.invested / pos.shares;
+                    const curNat = hasPrice && rate > 0 ? pos.priceCZK / rate : null;
+                    const fmtP = v => v == null ? null : v >= 1000 ? v.toLocaleString("cs-CZ",{maximumFractionDigits:2}) : v >= 10 ? v.toFixed(2) : v >= 0.1 ? v.toFixed(4) : v.toFixed(6);
+                    const upColor = curNat != null ? (curNat >= avgNat ? T.green : T.red) : T.muted;
+                    return (
+                      <div style={{ marginTop: 6, paddingTop: 6, borderTop: "1px solid rgba(255,255,255,0.05)", fontSize: 11, color: T.muted, fontFamily: "'DM Mono',monospace" }}>
+                        {pos.shares.toLocaleString("cs-CZ",{maximumFractionDigits:4})} ks · ⌀{fmtP(avgNat)} {pos.currency}
+                        {curNat != null && <span style={{ color: upColor }}> → {fmtP(curNat)} {pos.currency}</span>}
                       </div>
-                    </td>
-                    <EditCell value={pos.broker} type="text" align="left" color={T.muted} onSave={v=>updateImported(pos.id,"broker",v)}/>
-                    <EditCell value={pos.category} isSelect options={CATEGORIES} align="left" color={CAT_COLOR[pos.category]||T.muted} onSave={v=>updateImported(pos.id,"category",v)}/>
-                    <td style={{ ...nc(T.subtle), verticalAlign: "top" }}>
-                      <div>{pos.shares != null ? pos.shares.toLocaleString("cs-CZ",{maximumFractionDigits:6}) : "—"}</div>
-                      {pos.shares > 0 && pos.invested > 0 && (() => {
-                        const avgNat = pos.invested / pos.shares;
-                        const curNat = hasPrice && rate > 0 ? pos.priceCZK / rate : null;
-                        const fmtP = v => v == null ? null : v >= 1000 ? v.toLocaleString("cs-CZ",{maximumFractionDigits:2}) : v >= 10 ? v.toFixed(2) : v >= 0.1 ? v.toFixed(4) : v.toFixed(6);
-                        const upColor = curNat != null ? (curNat >= avgNat ? T.green : T.red) : T.muted;
-                        return (
-                          <div style={{ fontSize:10, color:T.muted, marginTop:3, fontFamily:"'DM Mono',monospace", lineHeight:1.6, whiteSpace:"nowrap" }}>
-                            <span title="Průměrná nákupní cena/ks" style={{ color:T.subtle }}>⌀ {fmtP(avgNat)} {pos.currency}</span>
-                            {curNat != null && <>
-                              <br/>
-                              <span title="Aktuální cena/ks" style={{ color: upColor }}>▸ {fmtP(curNat)} {pos.currency}</span>
-                            </>}
+                    );
+                  })()}
+                </div>
+              );
+            })}
+            <div style={{ background: "rgba(59,130,246,0.06)", border: "1px solid rgba(59,130,246,0.2)", borderRadius: 10, padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <span style={{ fontSize: 12, color: T.blue, fontWeight: 700 }}>SOUČET</span>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: 15, fontWeight: 800, color: T.text, fontFamily: "'DM Mono',monospace" }}>{fmt(importedTotal)}</div>
+                <div style={{ fontSize: 12, color: T.green, fontFamily: "'DM Mono',monospace" }}>{importedInvested > 0 ? "+"+(((importedTotal-importedInvested)/importedInvested)*100).toFixed(1)+"%" : ""} · {fmt(importedTotal-importedInvested)}</div>
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* ── DESKTOP: tabulka ── */
+          <div className="ib-table-wrap" style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 14, overflow: "hidden", marginBottom: 20 }}>
+            <table style={{ width: "100%", borderCollapse: "collapse" }}>
+              <thead>
+                <tr style={{ borderBottom: "1px solid " + T.border }}>
+                  {IMP_COLS.map(h => (
+                    <th key={h.key} onClick={() => onImpSort(h.key)}
+                      style={{ padding: "9px 12px", textAlign: h.align, fontSize: 12, cursor: "pointer", userSelect: "none",
+                        color: impSort === h.key ? T.text : T.muted,
+                        fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", whiteSpace: "nowrap",
+                        transition: "color 0.1s" }}>
+                      {h.label}{impArrow(h.key)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {sortedImported.map(pos => {
+                  const rate     = (isFinite(pos.fx) && pos.fx > 0) ? pos.fx : (pos.currency === "EUR" ? DEGIRO_FX : pos.currency === "GBP" ? GBP_FX : ETORO_FX);
+                  const invCZK   = isFinite(pos.invested) ? pos.invested * rate : 0;
+                  const hasPrice = isFinite(pos.priceCZK) && pos.priceCZK > 0 && isFinite(pos.shares) && pos.shares > 0;
+                  const valueCZK = hasPrice ? pos.priceCZK * pos.shares : invCZK;
+                  const gainCZK  = valueCZK - invCZK;
+                  const valueOrig = hasPrice && rate > 0 ? (pos.priceCZK * pos.shares) / rate : pos.invested;
+                  const gainPct  = pos.invested > 0 ? ((valueOrig - pos.invested) / pos.invested) * 100 : 0;
+                  const sharePct = totalValue > 0 ? (valueCZK / totalValue) * 100 : 0;
+                  const years    = Math.max(1, new Date().getFullYear() - (pos.start || 2024));
+                  const annR     = hasPrice && pos.invested > 0 ? (Math.pow(valueOrig / pos.invested, 1 / years) - 1) * 100 : null;
+                  const gc       = gainCZK >= 0 ? T.green : T.red;
+                  return (
+                    <tr key={pos.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.03)" }}
+                      onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.02)"}
+                      onMouseLeave={e => e.currentTarget.style.background = ""}>
+                      <td style={{ padding:"10px 12px", minWidth:160 }}>
+                        <div style={{ display:"flex", alignItems:"center", gap:7 }}>
+                          <PositionLogo ticker={pos.ticker} name={pos.name} size={24} />
+                          <div style={{ flex:1, minWidth:0 }}>
+                            <div style={{ display:"flex", alignItems:"center", gap:5 }}>
+                              <span style={{ fontWeight:700, fontSize:13, color:T.text }}>{pos.ticker}</span>
+                            </div>
+                            <div style={{ fontSize:10, color:T.subtle }}>{pos.name.split("(")[0].trim()}</div>
                           </div>
-                        );
-                      })()}
-                    </td>
-                    <td style={nc(T.muted)}>{(pos.invested||0).toLocaleString("cs-CZ",{maximumFractionDigits:2})} {pos.currency}</td>
-                    <td style={nc(T.muted)}>{fmt(invCZK)}</td>
-                    <td style={{ ...nc(hasPrice ? T.text : "#f59e0b"), fontWeight: hasPrice ? 700 : 400 }}>
-                      {hasPrice ? fmt(valueCZK) : "doplň cenu"}
-                    </td>
-                    <td style={nc(hasPrice ? gc : T.subtle)}>{hasPrice ? (gainCZK>=0?"+":"")+fmt(gainCZK) : "—"}</td>
-                    <td style={{...nc(hasPrice ? gc : T.subtle), fontWeight:700}}>{hasPrice ? (gainPct>=0?"+":"")+gainPct.toFixed(2)+"%" : "—"}</td>
-                    <EditCell value={pos.start || ""} color={T.muted} onSave={v=>updateImported(pos.id,"start",v)}/>
-                  </tr>
-                );
-              })}
-            </tbody>
-            <tfoot>
-              <tr style={{ borderTop:"1px solid rgba(59,130,246,0.2)", background:"rgba(59,130,246,0.03)" }}>
-                <td colSpan={3} style={{ padding:"10px 12px", fontSize:12, color:T.blue, fontWeight:700 }}>SOUČET</td>
-                <td colSpan={2} style={nc(T.muted)}>—</td>
-                <td style={nc(T.muted)}>{fmt(importedInvested)}</td>
-                <td style={{ ...nc(T.text), fontSize:14, fontWeight:800 }}>{fmt(importedTotal)}</td>
-                <td style={nc(T.green)}>{fmt(importedTotal - importedInvested)}</td>
-                <td style={{ ...nc(T.green), fontWeight:700 }}>{importedInvested > 0 ? "+"+(((importedTotal-importedInvested)/importedInvested)*100).toFixed(2)+"%" : "—"}</td>
-                <td />
-              </tr>
-            </tfoot>
-          </table>
-        </div>
+                        </div>
+                      </td>
+                      <EditCell value={pos.broker} type="text" align="left" color={T.muted} onSave={v=>updateImported(pos.id,"broker",v)}/>
+                      <EditCell value={pos.category} isSelect options={CATEGORIES} align="left" color={CAT_COLOR[pos.category]||T.muted} onSave={v=>updateImported(pos.id,"category",v)}/>
+                      <td style={{ ...nc(T.subtle), verticalAlign: "top" }}>
+                        <div>{pos.shares != null ? pos.shares.toLocaleString("cs-CZ",{maximumFractionDigits:6}) : "—"}</div>
+                        {pos.shares > 0 && pos.invested > 0 && (() => {
+                          const avgNat = pos.invested / pos.shares;
+                          const curNat = hasPrice && rate > 0 ? pos.priceCZK / rate : null;
+                          const fmtP = v => v == null ? null : v >= 1000 ? v.toLocaleString("cs-CZ",{maximumFractionDigits:2}) : v >= 10 ? v.toFixed(2) : v >= 0.1 ? v.toFixed(4) : v.toFixed(6);
+                          const upColor = curNat != null ? (curNat >= avgNat ? T.green : T.red) : T.muted;
+                          return (
+                            <div style={{ fontSize:10, color:T.muted, marginTop:3, fontFamily:"'DM Mono',monospace", lineHeight:1.6, whiteSpace:"nowrap" }}>
+                              <span title="Průměrná nákupní cena/ks" style={{ color:T.subtle }}>⌀ {fmtP(avgNat)} {pos.currency}</span>
+                              {curNat != null && <>
+                                <br/>
+                                <span title="Aktuální cena/ks" style={{ color: upColor }}>▸ {fmtP(curNat)} {pos.currency}</span>
+                              </>}
+                            </div>
+                          );
+                        })()}
+                      </td>
+                      <td style={nc(T.muted)}>{(pos.invested||0).toLocaleString("cs-CZ",{maximumFractionDigits:2})} {pos.currency}</td>
+                      <td style={nc(T.muted)}>{fmt(invCZK)}</td>
+                      <td style={{ ...nc(hasPrice ? T.text : "#f59e0b"), fontWeight: hasPrice ? 700 : 400 }}>
+                        {hasPrice ? fmt(valueCZK) : "doplň cenu"}
+                      </td>
+                      <td style={nc(hasPrice ? gc : T.subtle)}>{hasPrice ? (gainCZK>=0?"+":"")+fmt(gainCZK) : "—"}</td>
+                      <td style={{...nc(hasPrice ? gc : T.subtle), fontWeight:700}}>{hasPrice ? (gainPct>=0?"+":"")+gainPct.toFixed(2)+"%" : "—"}</td>
+                      <EditCell value={pos.start || ""} color={T.muted} onSave={v=>updateImported(pos.id,"start",v)}/>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr style={{ borderTop:"1px solid rgba(59,130,246,0.2)", background:"rgba(59,130,246,0.03)" }}>
+                  <td colSpan={3} style={{ padding:"10px 12px", fontSize:12, color:T.blue, fontWeight:700 }}>SOUČET</td>
+                  <td colSpan={2} style={nc(T.muted)}>—</td>
+                  <td style={nc(T.muted)}>{fmt(importedInvested)}</td>
+                  <td style={{ ...nc(T.text), fontSize:14, fontWeight:800 }}>{fmt(importedTotal)}</td>
+                  <td style={nc(T.green)}>{fmt(importedTotal - importedInvested)}</td>
+                  <td style={{ ...nc(T.green), fontWeight:700 }}>{importedInvested > 0 ? "+"+(((importedTotal-importedInvested)/importedInvested)*100).toFixed(2)+"%" : "—"}</td>
+                  <td />
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        )}
           </>); })()}
 
         {/* Majetek a závazky */}
@@ -2756,6 +2864,149 @@ ${posLines}`;
           );
         })()}
 
+        {/* ── PREDIKCE PORTFOLIA ──────────────────────────────────────────── */}
+        {(() => {
+          const base    = totalValue;
+          const rateAvg = avgAnnReturnNoCrypto / 100;
+          const rate10  = customRate10 / 100;
+          const annual  = monthlyContrib * 12;
+          const years   = [2026,2027,2028,2029,2030,2031,2032];
+          const fv = (rate, i) => {
+            const lump    = base * Math.pow(1 + rate, i);
+            const contrib = i === 0 ? 0 : annual * ((Math.pow(1 + rate, i) - 1) / rate);
+            return Math.round(lump + contrib);
+          };
+          const projData = years.map((yr, i) => ({
+            rok: String(yr),
+            avg:     fv(rateAvg, i),
+            r10:     fv(rate10,  i),
+            avgBase: Math.round(base * Math.pow(1 + rateAvg, i)),
+            r10Base: Math.round(base * Math.pow(1 + rate10,  i)),
+          }));
+          const commitContrib = () => { const n = parseFlt(contribDraft); if (!isNaN(n) && n >= 0) setMonthlyContrib(n); setEditingContrib(false); };
+          const commitRate10 = () => { const n = parseFlt(rate10Draft); if (!isNaN(n) && n > 0 && n <= 100) setCustomRate10(n); setEditingRate10(false); };
+
+          return (
+            <div style={{ marginBottom: 16 }}>
+              <SectionTitle title="📈 Predikce portfolia" sub="Odhad budoucí hodnoty portfolia na základě historického výnosu" />
+              {/* Contrib row */}
+              <div className="ib-contrib-row" style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 14, padding: "14px 20px", background: T.card, border: "1px solid " + T.border, borderRadius: 12 }}>
+                <div className="ib-contrib-label" style={{ fontSize: 13, color: T.muted, fontWeight: 500, letterSpacing: "0.06em", textTransform: "uppercase" }}>Měsíční příkup vlastního kapitálu</div>
+                <div className="ib-contrib-spacer" style={{ flex: 1 }} />
+                {editingContrib ? (
+                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                    <input autoFocus type="text" value={contribDraft}
+                      onChange={e => setContribDraft(e.target.value)}
+                      onBlur={commitContrib}
+                      onKeyDown={e => { if (e.key === "Enter") commitContrib(); if (e.key === "Escape") setEditingContrib(false); }}
+                      style={{ background: T.bg, border: "1px solid " + T.blue, borderRadius: 8, color: T.text, fontFamily: "'DM Mono',monospace", fontSize: 16, padding: "6px 12px", width: 130, outline: "none", textAlign: "right" }} />
+                    <span style={{ fontSize: 14, color: T.blue, fontWeight: 600 }}>Kč / měs</span>
+                  </div>
+                ) : (
+                  <div onClick={() => { setContribDraft(String(monthlyContrib)); setEditingContrib(true); }}
+                    style={{ display: "flex", alignItems: "center", gap: 10, cursor: "text", padding: "7px 16px", background: "rgba(59,130,246,0.08)", border: "1px solid rgba(59,130,246,0.2)", borderRadius: 8, transition: "all 0.12s" }}>
+                    <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 18, color: T.blue, fontWeight: 700 }}>{fmt(monthlyContrib)}</span>
+                    <span style={{ fontSize: 13, color: T.muted }}>/ měs</span>
+                    <span style={{ fontSize: 13, color: T.subtle, marginLeft: 2 }}>✎</span>
+                  </div>
+                )}
+                <div style={{ fontSize: 13, color: T.muted }}>= {fmt(monthlyContrib * 12)} ročně</div>
+              </div>
+
+              <div className="ib-grid2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                {[
+                  { label: "Predikce · " + avgAnnReturnNoCrypto.toFixed(2) + " % p.a.", sub: "průměrný výnos bez crypto", key: "avg", baseKey: "avgBase", color: T.green, grad: "gPA2" },
+                  { label: null, sub: "vlastní scénář", key: "r10", baseKey: "r10Base", color: T.blue, grad: "gP102" },
+                ].map(cfg => {
+                  const finalVal    = projData[projData.length - 1][cfg.key];
+                  const finalBase   = projData[projData.length - 1][cfg.baseKey];
+                  const contribGain = finalVal - finalBase;
+                  return (
+                    <div key={cfg.key} style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 16, padding: 22 }}>
+                      {cfg.key === "r10" ? (
+                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
+                          <span style={{ fontSize: 15, fontWeight: 600, color: T.text }}>Predikce ·</span>
+                          {editingRate10 ? (
+                            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                              <input autoFocus type="text" value={rate10Draft}
+                                onChange={e => setRate10Draft(e.target.value)}
+                                onBlur={commitRate10}
+                                onKeyDown={e => { if (e.key === "Enter") commitRate10(); if (e.key === "Escape") setEditingRate10(false); }}
+                                style={{ background: T.bg, border: "1px solid " + T.blue, borderRadius: 6, color: T.text, fontFamily: "'DM Mono',monospace", fontSize: 15, fontWeight: 700, padding: "2px 8px", width: 60, outline: "none", textAlign: "right" }} />
+                              <span style={{ fontSize: 15, color: T.blue, fontWeight: 600 }}>% p.a.</span>
+                            </div>
+                          ) : (
+                            <div onClick={() => { setRate10Draft(String(customRate10)); setEditingRate10(true); }}
+                              style={{ display: "flex", alignItems: "center", gap: 4, cursor: "text", padding: "2px 10px", background: "rgba(59,130,246,0.1)", border: "1px solid rgba(59,130,246,0.25)", borderRadius: 6 }}>
+                              <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 15, color: T.blue, fontWeight: 700 }}>{customRate10} %</span>
+                              <span style={{ fontSize: 12, color: T.blue }}>p.a. ✎</span>
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div style={{ fontSize: 15, fontWeight: 600, color: T.text, marginBottom: 2 }}>{cfg.label}</div>
+                      )}
+                      <div style={{ fontSize: 13, color: T.muted, marginBottom: 10 }}>{cfg.sub}</div>
+                      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: monthlyContrib > 0 ? 2 : 16 }}>
+                        <span style={{ fontSize: 31, fontWeight: 800, color: cfg.color, letterSpacing: "-0.02em" }}>{fmt(finalVal)}</span>
+                        <span style={{ fontSize: 13, color: T.muted }}>v roce 2032</span>
+                      </div>
+                      {monthlyContrib > 0 && (
+                        <div style={{ fontSize: 13, color: T.muted, marginBottom: 16 }}>
+                          z toho příkupem <span style={{ color: cfg.color, fontWeight: 600 }}>{fmt(contribGain)}</span>
+                        </div>
+                      )}
+                      {monthlyContrib === 0 && <div style={{ marginBottom: 16 }} />}
+                      <div style={{ overflow: "hidden", marginLeft: -4, marginRight: -4 }}>
+                      <ResponsiveContainer width="100%" height={180}>
+                        <AreaChart data={projData} margin={{ left: 0, right: 24, top: 4, bottom: 0 }}>
+                          <defs>
+                            <linearGradient id={cfg.grad} x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor={cfg.color} stopOpacity={0.2} />
+                              <stop offset="100%" stopColor={cfg.color} stopOpacity={0} />
+                            </linearGradient>
+                            <linearGradient id={cfg.grad+"b"} x1="0" y1="0" x2="0" y2="1">
+                              <stop offset="0%" stopColor={cfg.color} stopOpacity={0.06} />
+                              <stop offset="100%" stopColor={cfg.color} stopOpacity={0} />
+                            </linearGradient>
+                          </defs>
+                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
+                          <XAxis dataKey="rok" tick={{ fontFamily: "'DM Mono',monospace", fontSize: 13, fill: T.tick }} axisLine={false} tickLine={false} />
+                          <YAxis tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.tick }} axisLine={false} tickLine={false} width={44}
+                            domain={[
+                              () => Math.floor(base * 0.95 / 100000) * 100000,
+                              dataMax => Math.ceil(dataMax * 1.05 / 100000) * 100000,
+                            ]}
+                            tickFormatter={v => v >= 1000000 ? (v/1000000).toFixed(1)+"M" : (v/1000).toFixed(0)+"k"} />
+                          <Tooltip {...ttStyle} wrapperStyle={{ maxWidth: 180, zIndex: 10 }} formatter={(v, name) => [fmt(v), name === cfg.key ? "S příkupem" : "Bez příkopu"]} />
+                          <Area type="monotone" dataKey={cfg.baseKey} stroke={cfg.color} strokeWidth={1} strokeDasharray="4 3" fill={"url(#"+cfg.grad+"b)"} dot={false} />
+                          <Area type="monotone" dataKey={cfg.key} stroke={cfg.color} strokeWidth={2.5} fill={"url(#"+cfg.grad+")"} dot={{ r: 3, fill: cfg.color, strokeWidth: 0 }} activeDot={{ r: 5, fill: cfg.color, strokeWidth: 0 }} />
+                        </AreaChart>
+                      </ResponsiveContainer>
+                      </div>
+                      <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch", marginTop: 14, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.05)", marginLeft: -22, marginRight: -22, paddingLeft: 22, paddingRight: 22 }}>
+                        <div className="ib-scroll-row" style={{ display: "flex", gap: 6, paddingBottom: 4 }}>
+                          {projData.filter((_, i) => i > 0).map((pt, idx) => {
+                            const prev = projData.filter((_, i) => i > 0)[idx - 1];
+                            const prevVal = prev ? prev[cfg.key] : projData[0][cfg.key];
+                            return (
+                              <div key={pt.rok} style={{ textAlign: "center", minWidth: 90, padding: "6px 8px", background: "rgba(255,255,255,0.03)", borderRadius: 8 }}>
+                                <div style={{ fontSize: 13, color: T.muted, marginBottom: 3 }}>{pt.rok}</div>
+                                <div style={{ fontSize: 12, color: cfg.color, fontFamily: "'DM Mono',monospace", fontWeight: 600 }}>{fmt(pt[cfg.key])}</div>
+                                <div style={{ fontSize: 12, color: T.subtle, marginTop: 2 }}>+{fmt(pt[cfg.key] - prevVal)}</div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* ── ANALÝZA TRHU ─────────────────────────────────────────────────── */}
         <div style={{ marginTop: 36, marginBottom: 24 }}>
           <h1 style={{ fontSize: 27, fontWeight: 800, color: T.text, letterSpacing: "-0.02em" }}>Analýza trhu</h1>
@@ -2887,88 +3138,133 @@ ${posLines}`;
               {riskResult && !riskLoading && (
                 <div>
                   {riskRows.length > 0 ? (
-                    <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-                      <div style={{ fontSize: 13, color: T.muted, marginBottom: 8, letterSpacing: "0.04em" }}>
-                        Klikni na hlavičku pro seřazení · {riskRows.length} pozic
+                    window.innerWidth <= 480 ? (
+                      /* ── MOBILE: karty místo tabulky ── */
+                      <div>
+                        <div style={{ fontSize: 12, color: T.muted, marginBottom: 10 }}>{riskRows.length} pozic · klikni na kartu pro detail</div>
+                        {riskRows.map((r, i) => {
+                          const rc   = getRiskColor(r.risk);
+                          const vc   = getVolColor(r.vol);
+                          const tc   = getTrendColor(r.trend);
+                          const recC = r.rec.toLowerCase().includes("přikoup") ? T.green : r.rec.toLowerCase().includes("prodej") ? T.red : "#fbbf24";
+                          const peNum = parseFloat(r.pe);
+                          const peColor = !isNaN(peNum) ? (peNum < 15 ? T.green : peNum < 30 ? "#fbbf24" : T.red) : T.muted;
+                          const rowKey = r.name + "_" + i;
+                          const isExp  = expandedRiskRow === rowKey;
+                          return (
+                            <div key={rowKey}
+                              onClick={() => setExpandedRiskRow(isExp ? null : rowKey)}
+                              style={{ background: T.surface, border: "1px solid " + T.border, borderRadius: 12, padding: "12px 14px", marginBottom: 8, cursor: "pointer" }}>
+                              {/* Řádek 1: jméno + expand */}
+                              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+                                <span style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{r.name}</span>
+                                <span style={{ fontSize: 11, color: T.subtle }}>{isExp ? "▲" : "▼"}</span>
+                              </div>
+                              {/* Řádek 2: badges */}
+                              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
+                                <span style={{ fontSize: 12, fontWeight: 700, color: rc, background: rc + "18", border: "1px solid " + rc + "40", borderRadius: 5, padding: "2px 8px" }}>{r.risk}</span>
+                                <span style={{ fontSize: 12, fontWeight: 600, color: vc, background: vc + "18", border: "1px solid " + vc + "40", borderRadius: 5, padding: "2px 7px" }}>{r.vol}</span>
+                                <span style={{ fontSize: 14, color: tc, fontWeight: 700 }}>{r.trend}</span>
+                                <span style={{ fontSize: 12, fontWeight: 700, color: recC, background: recC + "18", border: "1px solid " + recC + "40", borderRadius: 5, padding: "2px 8px" }}>{r.rec}</span>
+                                {r.pe && <span style={{ fontSize: 12, color: T.muted, fontFamily: "'DM Mono',monospace" }}>P/E <strong style={{ color: peColor }}>{r.pe}</strong></span>}
+                              </div>
+                              {/* Řádek 3: hlavní faktor (vždy viditelný) */}
+                              {r.factor && (
+                                <div style={{ fontSize: 12, color: T.muted, marginTop: 6, lineHeight: 1.4 }}>⚑ {r.factor}</div>
+                              )}
+                              {/* Expanded: komentář */}
+                              {isExp && r.comment && (
+                                <div style={{ marginTop: 10, paddingTop: 10, borderTop: "1px solid rgba(255,255,255,0.07)", fontSize: 13, color: T.text, lineHeight: 1.7 }}>{r.comment}</div>
+                              )}
+                            </div>
+                          );
+                        })}
                       </div>
-                      <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 780 }}>
-                        <thead>
-                          <tr style={{ borderBottom: "1px solid " + T.border }}>
-                            {RISK_SORT_COLS.map((c) => (
-                              <th key={c.key} onClick={() => onRiskSort(c.key)}
-                                style={{ padding: "7px 9px", textAlign: c.align === "left" ? "left" : c.align === "center" ? "center" : "right",
-                                  fontSize: 12, color: riskSortCol === c.key ? T.text : T.subtle, fontWeight: 600,
-                                  letterSpacing: "0.07em", textTransform: "uppercase", whiteSpace: "nowrap",
-                                  cursor: "pointer", userSelect: "none", transition: "color 0.1s" }}>
-                                {c.label}{riskArrow(c.key)}
-                              </th>
-                            ))}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {riskRows.map((r, i) => {
-                            const rc   = getRiskColor(r.risk);
-                            const vc   = getVolColor(r.vol);
-                            const tc   = getTrendColor(r.trend);
-                            const recC = r.rec.toLowerCase().includes("přikoup") ? T.green : r.rec.toLowerCase().includes("prodej") ? T.red : "#fbbf24";
-                            const peNum = parseFloat(r.pe);
-                            const peColor = !isNaN(peNum) ? (peNum < 15 ? T.green : peNum < 30 ? "#fbbf24" : T.red) : T.muted;
-                            const rowKey = r.name + "_" + i;
-                            const isExp  = expandedRiskRow === rowKey;
-                            const rowBg  = i % 2 === 0 ? "rgba(255,255,255,0.01)" : "transparent";
-                            return (
-                              <React.Fragment key={rowKey}>
-                                <tr
-                                  onClick={() => setExpandedRiskRow(isExp ? null : rowKey)}
-                                  style={{ borderBottom: isExp ? "none" : "1px solid rgba(255,255,255,0.03)", background: rowBg, cursor: "pointer" }}>
-                                  <td style={{ padding: "8px 9px", fontSize: 13, color: T.text, fontWeight: 600, whiteSpace: "nowrap" }}>
-                                    {r.name}
-                                    <span style={{ marginLeft: 5, fontSize: 9, color: T.subtle, verticalAlign: "middle" }}>{isExp ? "▲" : "▼"}</span>
-                                  </td>
-                                  <td style={{ padding: "8px 9px", textAlign: "center" }}>
-                                    <span style={{ fontSize: 13, fontWeight: 700, color: rc, background: rc + "18", border: "1px solid " + rc + "40", borderRadius: 5, padding: "2px 8px", whiteSpace: "nowrap" }}>{r.risk}</span>
-                                  </td>
-                                  <td style={{ padding: "8px 9px", textAlign: "right", fontSize: 13, color: peColor, fontFamily: "'DM Mono',monospace", fontWeight: 600 }}>{r.pe || "—"}</td>
-                                  <td style={{ padding: "8px 9px", textAlign: "center" }}>
-                                    <span style={{ fontSize: 13, fontWeight: 600, color: vc, background: vc + "18", border: "1px solid " + vc + "40", borderRadius: 5, padding: "2px 7px", whiteSpace: "nowrap" }}>{r.vol}</span>
-                                  </td>
-                                  <td style={{ padding: "8px 9px", fontSize: 12, color: T.muted, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.factor}</td>
-                                  <td style={{ padding: "8px 9px", textAlign: "center", fontSize: 16, color: tc, fontWeight: 700 }}>{r.trend}</td>
-                                  <td style={{ padding: "8px 9px", textAlign: "center" }}>
-                                    <span style={{ fontSize: 13, fontWeight: 700, color: recC, background: recC + "18", border: "1px solid " + recC + "40", borderRadius: 5, padding: "2px 8px", whiteSpace: "nowrap" }}>{r.rec}</span>
-                                  </td>
-                                  <td style={{ padding: "8px 9px", fontSize: 13, color: T.muted, fontStyle: "italic", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.comment}</td>
-                                </tr>
-                                {isExp && (
-                                  <tr style={{ background: rowBg, borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-                                    <td colSpan={8} style={{ padding: "0 10px 14px 10px" }}>
-                                      <div style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 14 }}>
-                                        <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
-                                          <span style={{ fontSize: 15, fontWeight: 700, color: rc, background: rc + "18", border: "1px solid " + rc + "40", borderRadius: 7, padding: "3px 12px" }}>{r.risk}</span>
-                                          <span style={{ fontSize: 15, fontWeight: 600, color: recC, background: recC + "18", border: "1px solid " + recC + "40", borderRadius: 7, padding: "3px 12px" }}>{r.rec}</span>
-                                          {r.pe && <span style={{ fontSize: 14, color: T.muted }}>P/E: <strong style={{ color: peColor }}>{r.pe}</strong></span>}
-                                          <span style={{ fontSize: 14, fontWeight: 600, color: vc, background: vc + "18", border: "1px solid " + vc + "40", borderRadius: 7, padding: "3px 10px" }}>{r.vol}</span>
-                                          <span style={{ fontSize: 18 }}>{r.trend}</span>
-                                        </div>
-                                        <div style={{ height: 1, background: "rgba(255,255,255,0.07)" }} />
-                                        <div>
-                                          <div style={{ fontSize: 13, color: T.subtle, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6 }}>Hlavní faktor rizika</div>
-                                          <div style={{ fontSize: 15, color: T.muted, lineHeight: 1.6 }}>{r.factor}</div>
-                                        </div>
-                                        <div>
-                                          <div style={{ fontSize: 13, color: T.subtle, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6 }}>Komentář</div>
-                                          <div style={{ fontSize: 15, color: T.text, lineHeight: 1.7 }}>{r.comment}</div>
-                                        </div>
-                                      </div>
+                    ) : (
+                      /* ── DESKTOP: tabulka ── */
+                      <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+                        <div style={{ fontSize: 13, color: T.muted, marginBottom: 8, letterSpacing: "0.04em" }}>
+                          Klikni na hlavičku pro seřazení · {riskRows.length} pozic
+                        </div>
+                        <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 780 }}>
+                          <thead>
+                            <tr style={{ borderBottom: "1px solid " + T.border }}>
+                              {RISK_SORT_COLS.map((c) => (
+                                <th key={c.key} onClick={() => onRiskSort(c.key)}
+                                  style={{ padding: "7px 9px", textAlign: c.align === "left" ? "left" : c.align === "center" ? "center" : "right",
+                                    fontSize: 12, color: riskSortCol === c.key ? T.text : T.subtle, fontWeight: 600,
+                                    letterSpacing: "0.07em", textTransform: "uppercase", whiteSpace: "nowrap",
+                                    cursor: "pointer", userSelect: "none", transition: "color 0.1s" }}>
+                                  {c.label}{riskArrow(c.key)}
+                                </th>
+                              ))}
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {riskRows.map((r, i) => {
+                              const rc   = getRiskColor(r.risk);
+                              const vc   = getVolColor(r.vol);
+                              const tc   = getTrendColor(r.trend);
+                              const recC = r.rec.toLowerCase().includes("přikoup") ? T.green : r.rec.toLowerCase().includes("prodej") ? T.red : "#fbbf24";
+                              const peNum = parseFloat(r.pe);
+                              const peColor = !isNaN(peNum) ? (peNum < 15 ? T.green : peNum < 30 ? "#fbbf24" : T.red) : T.muted;
+                              const rowKey = r.name + "_" + i;
+                              const isExp  = expandedRiskRow === rowKey;
+                              const rowBg  = i % 2 === 0 ? "rgba(255,255,255,0.01)" : "transparent";
+                              return (
+                                <React.Fragment key={rowKey}>
+                                  <tr
+                                    onClick={() => setExpandedRiskRow(isExp ? null : rowKey)}
+                                    style={{ borderBottom: isExp ? "none" : "1px solid rgba(255,255,255,0.03)", background: rowBg, cursor: "pointer" }}>
+                                    <td style={{ padding: "8px 9px", fontSize: 13, color: T.text, fontWeight: 600, whiteSpace: "nowrap" }}>
+                                      {r.name}
+                                      <span style={{ marginLeft: 5, fontSize: 9, color: T.subtle, verticalAlign: "middle" }}>{isExp ? "▲" : "▼"}</span>
                                     </td>
+                                    <td style={{ padding: "8px 9px", textAlign: "center" }}>
+                                      <span style={{ fontSize: 13, fontWeight: 700, color: rc, background: rc + "18", border: "1px solid " + rc + "40", borderRadius: 5, padding: "2px 8px", whiteSpace: "nowrap" }}>{r.risk}</span>
+                                    </td>
+                                    <td style={{ padding: "8px 9px", textAlign: "right", fontSize: 13, color: peColor, fontFamily: "'DM Mono',monospace", fontWeight: 600 }}>{r.pe || "—"}</td>
+                                    <td style={{ padding: "8px 9px", textAlign: "center" }}>
+                                      <span style={{ fontSize: 13, fontWeight: 600, color: vc, background: vc + "18", border: "1px solid " + vc + "40", borderRadius: 5, padding: "2px 7px", whiteSpace: "nowrap" }}>{r.vol}</span>
+                                    </td>
+                                    <td style={{ padding: "8px 9px", fontSize: 12, color: T.muted, maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.factor}</td>
+                                    <td style={{ padding: "8px 9px", textAlign: "center", fontSize: 16, color: tc, fontWeight: 700 }}>{r.trend}</td>
+                                    <td style={{ padding: "8px 9px", textAlign: "center" }}>
+                                      <span style={{ fontSize: 13, fontWeight: 700, color: recC, background: recC + "18", border: "1px solid " + recC + "40", borderRadius: 5, padding: "2px 8px", whiteSpace: "nowrap" }}>{r.rec}</span>
+                                    </td>
+                                    <td style={{ padding: "8px 9px", fontSize: 13, color: T.muted, fontStyle: "italic", maxWidth: 180, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.comment}</td>
                                   </tr>
-                                )}
-                              </React.Fragment>
-                            );
-                          })}
-                        </tbody>
-                      </table>
-                    </div>
+                                  {isExp && (
+                                    <tr style={{ background: rowBg, borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                                      <td colSpan={8} style={{ padding: "0 10px 14px 10px" }}>
+                                        <div style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: 12, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 14 }}>
+                                          <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                                            <span style={{ fontSize: 15, fontWeight: 700, color: rc, background: rc + "18", border: "1px solid " + rc + "40", borderRadius: 7, padding: "3px 12px" }}>{r.risk}</span>
+                                            <span style={{ fontSize: 15, fontWeight: 600, color: recC, background: recC + "18", border: "1px solid " + recC + "40", borderRadius: 7, padding: "3px 12px" }}>{r.rec}</span>
+                                            {r.pe && <span style={{ fontSize: 14, color: T.muted }}>P/E: <strong style={{ color: peColor }}>{r.pe}</strong></span>}
+                                            <span style={{ fontSize: 14, fontWeight: 600, color: vc, background: vc + "18", border: "1px solid " + vc + "40", borderRadius: 7, padding: "3px 10px" }}>{r.vol}</span>
+                                            <span style={{ fontSize: 18 }}>{r.trend}</span>
+                                          </div>
+                                          <div style={{ height: 1, background: "rgba(255,255,255,0.07)" }} />
+                                          <div>
+                                            <div style={{ fontSize: 13, color: T.subtle, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6 }}>Hlavní faktor rizika</div>
+                                            <div style={{ fontSize: 15, color: T.muted, lineHeight: 1.6 }}>{r.factor}</div>
+                                          </div>
+                                          <div>
+                                            <div style={{ fontSize: 13, color: T.subtle, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 6 }}>Komentář</div>
+                                            <div style={{ fontSize: 15, color: T.text, lineHeight: 1.7 }}>{r.comment}</div>
+                                          </div>
+                                        </div>
+                                      </td>
+                                    </tr>
+                                  )}
+                                </React.Fragment>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )
                   ) : (
                     <div style={{ fontSize: 13, color: T.text, lineHeight: 1.7, whiteSpace: "pre-wrap" }}>{riskResult}</div>
                   )}
