@@ -541,10 +541,15 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.25";
+const APP_VERSION = "v4.26";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.26", date: "22. 4. 2026", changes: [
+    "Dividendy: automatické načtení dividendy z Yahoo Finance + FMP (tlačítko per karta + načíst vše)",
+    "Cílová alokace: koláčové grafy aktuální vs cílové alokace podle kategorie",
+    "Fix: duplicity — Přehled investic (Přehled) a Podle kategorie (Analýza) sjednoceny",
+  ]},
   { version: "v4.25", date: "22. 4. 2026", changes: [
     "Fix: Cílová alokace — součet omezen na 100 %, live counter zbývá %",
     "Fix: Gemini model gemini-2.0-flash-lite nahrazen gemini-2.0-flash",
@@ -983,6 +988,9 @@ function InvestBook() {
   const [dividends, setDividends] = useState(() => {
     try { return JSON.parse(localStorage.getItem("ib_dividends") || "[]"); } catch { return []; }
   });
+  // Dividend fetch state
+  const [divFetching, setDivFetching] = React.useState(() => new Set());
+  const [divFetchError, setDivFetchError] = React.useState({});
   // FIRE inputs
   const [fireExpenses, setFireExpenses] = useState(() => Number(localStorage.getItem("ib_fire_exp") || "50000"));
   const [fireReturnPct, setFireReturnPct] = useState(() => Number(localStorage.getItem("ib_fire_ret") || "7"));
@@ -3108,6 +3116,38 @@ ${posLines}`;
           return (
             <div style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 16, padding: 22, marginBottom: 16 }}>
               <SectionTitle title="🎯 Cílová alokace & rebalancing" sub={"Součet: " + totalTarget.toFixed(0) + "% · zbývá: " + Math.max(0,100-totalTarget).toFixed(0) + "% " + (totalTarget>100 ? "⚠ překročeno 100%" : totalTarget===100 ? "✓ OK" : "")} />
+              {/* Koláče: aktuální vs cílová alokace */}
+              <div className="ib-grid2" style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:16, marginTop:12 }}>
+                {[
+                  { title:"Aktuální alokace", data: catKeys.map(k=>({name:k,value:catGroups[k]||0})), getColor: k=>CAT_COLOR[k]||T.blue, fmtTip: v=>fmt(v) },
+                  { title:"Cílová alokace",   data: catKeys.filter(k=>targetAlloc[k]>0).map(k=>({name:k,value:targetAlloc[k]||0})), getColor: k=>CAT_COLOR[k]||T.blue, fmtTip: v=>v+"%" },
+                ].map(cfg => (
+                  <div key={cfg.title}>
+                    <div style={{ fontSize:13, fontWeight:600, color:T.muted, marginBottom:6, textAlign:"center" }}>{cfg.title}</div>
+                    {cfg.data.length > 0 ? (
+                      <>
+                        <ResponsiveContainer width="100%" height={120}>
+                          <PieChart>
+                            <Pie data={cfg.data} dataKey="value" cx="50%" cy="50%" innerRadius={30} outerRadius={50} paddingAngle={2}>
+                              {cfg.data.map(d => <Cell key={d.name} fill={cfg.getColor(d.name)} />)}
+                            </Pie>
+                            <Tooltip formatter={(v,n)=>[cfg.fmtTip(v),n]} contentStyle={{ background:T.card, border:"1px solid rgba(255,255,255,0.1)", borderRadius:8, fontSize:12 }} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                        <div style={{ display:"flex", flexWrap:"wrap", gap:"4px 12px", justifyContent:"center", marginTop:4 }}>
+                          {cfg.data.map(d => (
+                            <span key={d.name} style={{ fontSize:11, color:T.muted }}>
+                              <span style={{ color:cfg.getColor(d.name) }}>■</span> {d.name} {cfg.fmtTip(d.value)}
+                            </span>
+                          ))}
+                        </div>
+                      </>
+                    ) : (
+                      <div style={{ fontSize:12, color:T.subtle, textAlign:"center", padding:"30px 0" }}>Nastav cíle v tabulce níže</div>
+                    )}
+                  </div>
+                ))}
+              </div>
               <div style={{ overflowX:"auto", WebkitOverflowScrolling:"touch" }}>
                 <table style={{ width:"100%", borderCollapse:"collapse", minWidth:320 }}>
                   <thead>
@@ -4204,6 +4244,66 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
       const ms = d.months||[];
       return {...d, months: ms.includes(m) ? ms.filter(x=>x!==m) : [...ms,m].sort((a,b)=>a-b)};
     }));
+    // Fetch dividend data from Yahoo Finance → FMP fallback
+    const fetchDivFromYahoo = async (id, ticker) => {
+      if (!ticker) return;
+      setDivFetching(prev => new Set([...prev, id]));
+      setDivFetchError(prev => { const n={...prev}; delete n[id]; return n; });
+      try {
+        let annualDiv = 0, months = [3,6,9,12], found = false;
+        // 1. Yahoo Finance quoteSummary
+        try {
+          const r1 = await fetch(`https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=summaryDetail`, { signal: AbortSignal.timeout(6000) });
+          if (r1.ok) {
+            const d1 = await r1.json();
+            const det = d1?.quoteSummary?.result?.[0]?.summaryDetail;
+            if (det?.dividendRate?.raw > 0) { annualDiv = det.dividendRate.raw; found = true; }
+            // Payment months from chart events
+            const r2 = await fetch(`https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=3mo&range=3y&events=dividends`, { signal: AbortSignal.timeout(6000) });
+            if (r2.ok) {
+              const d2 = await r2.json();
+              const evts = d2?.chart?.result?.[0]?.events?.dividends;
+              if (evts && Object.keys(evts).length > 0) {
+                const ms = new Set(Object.values(evts).map(e => new Date(e.date*1000).getMonth()+1));
+                months = [...ms].sort((a,b)=>a-b);
+              }
+            }
+          }
+        } catch {}
+        // 2. FMP fallback
+        if (!found) {
+          try {
+            const r3 = await fetch(`https://financialmodelingprep.com/api/v3/historical-price-full/stock_dividend/${encodeURIComponent(ticker)}?limit=8&apikey=demo`, { signal: AbortSignal.timeout(6000) });
+            if (r3.ok) {
+              const d3 = await r3.json();
+              const hist = d3?.historical;
+              if (hist && hist.length > 0) {
+                const yearAgo = Date.now() - 365*24*3600*1000;
+                const recent = hist.filter(h => new Date(h.date).getTime() > yearAgo);
+                const src = recent.length > 0 ? recent : hist.slice(0,4);
+                if (src.length > 0) {
+                  annualDiv = Math.round(src.reduce((s,h)=>s+(h.adjDividend||h.dividend||0),0)*100)/100;
+                  months = [...new Set(src.map(h=>new Date(h.date).getMonth()+1))].sort((a,b)=>a-b);
+                  found = true;
+                }
+              }
+            }
+          } catch {}
+        }
+        if (!found || annualDiv === 0) {
+          setDivFetchError(prev => ({...prev, [id]: 'Dividenda nenalezena — ticker neplatí dividendu nebo je nedostupný'}));
+        } else {
+          setDividends(prev => prev.map(d => d.id===id ? {...d, annualDiv, months} : d));
+        }
+      } catch(e) {
+        setDivFetchError(prev => ({...prev, [id]: 'Chyba: ' + e.message}));
+      } finally {
+        setDivFetching(prev => { const s = new Set(prev); s.delete(id); return s; });
+      }
+    };
+    const fetchAllDivs = async () => {
+      for (const d of dividends) { if (d.ticker) await fetchDivFromYahoo(d.id, d.ticker); }
+    };
     const C = { background: T.card, border: "1px solid " + T.border, borderRadius: 14, padding: "18px 20px", marginBottom: 16 };
     return (
       <div>
@@ -4248,7 +4348,11 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
         <div style={{ ...C }}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
             <SectionTitle title="📋 Dividendové pozice" sub="Manuálně zadané tituly · klikni + pro přidání" />
-            <div style={{ display:"flex", gap:8, flexShrink:0 }}>
+            <div style={{ display:"flex", gap:8, flexShrink:0, flexWrap:"wrap" }}>
+              <button onClick={fetchAllDivs} title="Pokusí se načíst roční dividendu a platební měsíce pro všechny tickery"
+                style={{ background:"rgba(168,85,247,0.12)", border:"1px solid rgba(168,85,247,0.3)", borderRadius:8, color:"#a78bfa", cursor:"pointer", padding:"7px 14px", fontSize:13, fontWeight:700, whiteSpace:"nowrap" }}>
+                🔄 Načíst vše z Yahoo
+              </button>
               <button onClick={() => {
                 const existing = new Set(dividends.map(d=>d.ticker.toUpperCase()));
                 const toImport = allRows.filter(r=>r.ticker && r.shares && r.shares>0 && !existing.has(r.ticker.toUpperCase()));
@@ -4286,8 +4390,16 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
                     style={{ background:T.bg, border:"1px solid "+T.border, borderRadius:6, color:T.text, fontSize:13, padding:"4px 8px", outline:"none" }}>
                     {["CZK","EUR","USD","GBP"].map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
+                  <button onClick={()=>fetchDivFromYahoo(d.id,d.ticker)} disabled={divFetching.has(d.id)||!d.ticker}
+                    title="Načíst dividendu z Yahoo Finance / FMP"
+                    style={{ background:"none", border:"1px solid rgba(168,85,247,0.3)", borderRadius:6, color: divFetching.has(d.id)?"#a78bfa":T.subtle, cursor:d.ticker?"pointer":"not-allowed", fontSize:13, padding:"3px 8px", transition:"color 0.2s" }}>
+                    {divFetching.has(d.id) ? "⏳" : "🔄"}
+                  </button>
                   <button onClick={()=>delDiv(d.id)} style={{ background:"none", border:"none", color:T.subtle, cursor:"pointer", fontSize:20, padding:"2px 6px" }}>×</button>
                 </div>
+                {divFetchError[d.id] && (
+                  <div style={{ fontSize:11, color:T.red, marginBottom:6, padding:"4px 8px", background:"rgba(239,68,68,0.08)", borderRadius:6 }}>{divFetchError[d.id]}</div>
+                )}
                 {/* Řádek 2: div/ks, počet kusů, výsledky */}
                 <div style={{ display:"flex", gap:12, alignItems:"flex-end", flexWrap:"wrap" }}>
                   <div>
