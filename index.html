@@ -541,10 +541,18 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.23";
+const APP_VERSION = "v4.24";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.24", date: "22. 4. 2026", changes: [
+    "Analýza: Max Drawdown, Volatilita, Sharpe Ratio spočítány z PORTFOLIO_HISTORY",
+    "Analýza: Cílová alokace – editovatelné cílové % per kategorie + rebalancing helper",
+    "Analýza: FIRE kalkulačka – pravidlo 4%, vizualizace cesty k FI",
+    "Přehled: Benchmark srovnání – S&P 500 / MSCI World linie v grafu portfolia",
+    "Analýza: Predikce portfolia sloučena do jednoho grafu (oba scénáře najednou)",
+    "Nová záložka Dividendy – manuální zadání, roční příjem, yield %, měsíční kalendář",
+  ]},
   { version: "v4.23", date: "20. 4. 2026", changes: [
     "Predikce portfolia přesunuty z Přehledu do Analýzy — umístěny pod Roční výkonnost portfolia",
     "Mobilní: Hodnocení rizikovosti — místo horizontálně scrollující tabulky karty na šířku displeje",
@@ -959,6 +967,21 @@ function InvestBook() {
   const [riskSortCol,   setRiskSortCol]   = useState("risk");
   const [riskSortDir,   setRiskSortDir]   = useState("asc");
   const [expandedRiskRow, setExpandedRiskRow] = useState(null);
+  // Benchmark toggle (null | "sp500" | "msci")
+  const [benchmarkMode, setBenchmarkMode] = useState(null);
+  // Target allocation per category (persisted in localStorage)
+  const [targetAlloc, setTargetAlloc] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("ib_target_alloc") || "{}"); } catch { return {}; }
+  });
+  // Dividends tracker
+  const [dividends, setDividends] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("ib_dividends") || "[]"); } catch { return []; }
+  });
+  // FIRE inputs
+  const [fireExpenses, setFireExpenses] = useState(() => Number(localStorage.getItem("ib_fire_exp") || "50000"));
+  const [fireReturnPct, setFireReturnPct] = useState(() => Number(localStorage.getItem("ib_fire_ret") || "7"));
+  const [fireWithdrawal, setFireWithdrawal] = useState(() => Number(localStorage.getItem("ib_fire_wd") || "4"));
+
   // Sort state for Roční výkonnost table
   const [yrSort,  setYrSort]  = useState("yr");
   const [yrDir,   setYrDir]   = useState("asc");
@@ -1010,6 +1033,67 @@ function InvestBook() {
       return s + (p.priceCZK && p.shares ? Math.round(p.priceCZK * p.shares) : Math.round((p.invested||0)*fx));
     }, 0);
   const totalInvested = allRows.reduce((s, p) => s + p.investedCZK, 0);
+
+  // ── Performance metrics (computed from PORTFOLIO_HISTORY) ────────────────
+  const maxDrawdown = React.useMemo(() => {
+    let peak = 0, dd = 0;
+    PORTFOLIO_HISTORY.forEach(pt => {
+      if (pt.v > peak) peak = pt.v;
+      const d = peak > 0 ? (peak - pt.v) / peak * 100 : 0;
+      if (d > dd) dd = d;
+    });
+    return dd;
+  }, []);
+  const portfolioVolatility = React.useMemo(() => {
+    if (PORTFOLIO_HISTORY.length < 2) return 0;
+    const rets = [];
+    for (let i = 1; i < PORTFOLIO_HISTORY.length; i++) {
+      if (PORTFOLIO_HISTORY[i-1].v > 0) rets.push((PORTFOLIO_HISTORY[i].v - PORTFOLIO_HISTORY[i-1].v) / PORTFOLIO_HISTORY[i-1].v);
+    }
+    const mean = rets.reduce((a,b)=>a+b,0)/rets.length;
+    const variance = rets.reduce((s,r)=>s+Math.pow(r-mean,2),0)/(rets.length-1);
+    return Math.sqrt(variance*12)*100;
+  }, []);
+  const portfolioCAGR_hist = React.useMemo(() => {
+    if (PORTFOLIO_HISTORY.length < 2) return null;
+    const first = PORTFOLIO_HISTORY[0].v;
+    const last  = PORTFOLIO_HISTORY[PORTFOLIO_HISTORY.length-1].v;
+    const yrs   = (new Date(PORTFOLIO_HISTORY[PORTFOLIO_HISTORY.length-1].d+"-01") - new Date(PORTFOLIO_HISTORY[0].d+"-01")) / (1000*60*60*24*365.25);
+    if (yrs <= 0 || first <= 0) return null;
+    return (Math.pow(last/first, 1/yrs) - 1) * 100;
+  }, []);
+  const sharpeRatio = React.useMemo(() => {
+    if (!portfolioCAGR_hist || portfolioVolatility === 0) return null;
+    return (portfolioCAGR_hist - 3.5) / portfolioVolatility; // 3.5% bezrizikova sazba CZK
+  }, [portfolioCAGR_hist, portfolioVolatility]);
+
+  // ── Benchmark data (S&P 500 + MSCI World annual returns, normalizovano) ─
+  const SP500_ANN = { 2006:15.8,2007:5.5,2008:-37.0,2009:26.5,2010:15.1,2011:2.1,2012:16.0,2013:32.4,2014:13.7,2015:1.4,2016:12.0,2017:21.8,2018:-4.4,2019:31.5,2020:18.4,2021:28.7,2022:-18.1,2023:26.3,2024:25.0,2025:-5.5,2026:0 };
+  const MSCI_ANN  = { 2006:20.1,2007:9.6,2008:-40.3,2009:30.0,2010:11.8,2011:-5.5,2012:15.8,2013:26.7,2014:5.5,2015:-0.3,2016:7.5,2017:22.4,2018:-8.7,2019:27.7,2020:15.9,2021:21.8,2022:-17.7,2023:23.8,2024:18.0,2025:-4.0,2026:0 };
+  const bmMap = React.useMemo(() => {
+    if (PORTFOLIO_HISTORY.length === 0) return { sp500: {}, msci: {} };
+    const startVal = PORTFOLIO_HISTORY[0].v;
+    const startYr  = Number(PORTFOLIO_HISTORY[0].d.split("-")[0]);
+    const build = (annR) => {
+      const m = {};
+      PORTFOLIO_HISTORY.forEach(pt => {
+        const [yr, mo] = pt.d.split("-").map(Number);
+        let cum = 1;
+        for (let y = startYr; y < yr; y++) cum *= (1 + (annR[y]||0)/100);
+        cum *= (1 + ((annR[yr]||0)/100) * (mo/12));
+        m[pt.d] = Math.round(startVal * cum);
+      });
+      return m;
+    };
+    return { sp500: build(SP500_ANN), msci: build(MSCI_ANN) };
+  }, []);
+
+  // ── localStorage persist for dividends + targetAlloc + FIRE ─────────────
+  React.useEffect(() => { localStorage.setItem("ib_dividends", JSON.stringify(dividends)); }, [dividends]);
+  React.useEffect(() => { localStorage.setItem("ib_target_alloc", JSON.stringify(targetAlloc)); }, [targetAlloc]);
+  React.useEffect(() => { localStorage.setItem("ib_fire_exp", String(fireExpenses)); }, [fireExpenses]);
+  React.useEffect(() => { localStorage.setItem("ib_fire_ret", String(fireReturnPct)); }, [fireReturnPct]);
+  React.useEffect(() => { localStorage.setItem("ib_fire_wd",  String(fireWithdrawal)); }, [fireWithdrawal]);
 
   // ── assessRisk – vyhodnocení rizikovosti, volatelné odkudkoli ────────────
   const assessRisk = useCallback(async () => {
@@ -1707,6 +1791,7 @@ ${posLines}`;
                     </div>
                     <div className="ib-chart-subtitle" style={{ fontSize: 13, color: T.muted }}>klikni na pozici v tabulce níže pro detail</div>
                   </div>
+                  <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:6 }}>
                   <div className="ib-period-row" style={{ display: "flex", gap: 4 }}>
                     {["1M","YTD","1R","2R","3R","MAX"].map(p => (
                       <button key={p} onClick={() => setPeriod(p)}
@@ -1717,11 +1802,27 @@ ${posLines}`;
                       </button>
                     ))}
                   </div>
+                  {/* Benchmark toggle */}
+                  <div style={{ display:"flex", gap:4 }}>
+                    {[{id:null,label:"Jen portfolio"},{id:"sp500",label:"vs S&P 500"},{id:"msci",label:"vs MSCI W"}].map(bm => (
+                      <button key={String(bm.id)} onClick={() => setBenchmarkMode(bm.id)}
+                        style={{ padding:"3px 8px", borderRadius:5, border:"none", cursor:"pointer", fontSize:11, fontWeight:600, transition:"all .12s",
+                          background: benchmarkMode===bm.id ? "rgba(251,191,36,0.2)" : "rgba(255,255,255,0.05)",
+                          color: benchmarkMode===bm.id ? "#fbbf24" : T.muted }}>
+                        {bm.label}
+                      </button>
+                    ))}
+                  </div>
+                  </div>
                 </div>
                 {(() => {
                   const histDataDisplay = histData.map(d => {
                     const out = { d: d.d, isLive: d.isLive };
                     ['v','fond','akcie','crypto'].forEach(k => { if (d[k] != null) out[k] = Math.round(d[k] / dcfg.div); });
+                    if (benchmarkMode) {
+                      const bmVal = benchmarkMode === "sp500" ? bmMap.sp500[d.d] : bmMap.msci[d.d];
+                      if (bmVal != null) out.bv = Math.round(bmVal / dcfg.div);
+                    }
                     return out;
                   });
                   const chartStep = dispCurrency === 'CZK' ? 50000 : dispCurrency === 'EUR' ? 2500 : 2000;
@@ -1745,6 +1846,10 @@ ${posLines}`;
                         <Tooltip {...ttStyle} wrapperStyle={{ maxWidth: 220, zIndex: 10 }} formatter={(v) => [fmtN(v), cat.label]} labelFormatter={d => d} />
                         <Area type="monotone" dataKey={cat.chartKey} stroke={cat.color} strokeWidth={2.5} fill="url(#gChart)" dot={false}
                           activeDot={{ r: 4, fill: cat.color, strokeWidth: 0 }} />
+                        {benchmarkMode && (
+                          <Area type="monotone" dataKey="bv" stroke="#fbbf24" strokeWidth={1.5} strokeDasharray="5 3"
+                            fill="none" dot={false} activeDot={{ r: 3, fill: "#fbbf24", strokeWidth: 0 }} />
+                        )}
                       </AreaChart>
                     </ResponsiveContainer>
                   );
@@ -2666,6 +2771,9 @@ ${posLines}`;
             { label: "Roky investování", value: yearsInvesting + " let", sub: "od " + (oldest?.start || NOW_YEAR) },
             { label: "Průměrná velikost pozice", value: fmt(avgPos) },
             { label: "Win / Loss", value: profitable + " zisk  ·  " + lossCount + " ztráta", sub: winPct.toFixed(0) + "% pozic v zisku", highlight: winPct >= 50 ? T.green : T.red },
+            { label: "Max Drawdown", value: "-" + maxDrawdown.toFixed(1) + " %", sub: "největší propad od vrcholu", highlight: T.red },
+            { label: "Anualizovaná volatilita", value: portfolioVolatility.toFixed(1) + " %", sub: "měsíční výnosy × √12" },
+            { label: "Sharpe Ratio", value: sharpeRatio != null ? sharpeRatio.toFixed(2) : "—", sub: "bezriziková sazba 3.5 %", highlight: sharpeRatio != null ? (sharpeRatio > 1 ? T.green : sharpeRatio > 0.5 ? "#fbbf24" : T.red) : T.muted },
           ];
 
           const concRows = [
@@ -2864,7 +2972,7 @@ ${posLines}`;
           );
         })()}
 
-        {/* ── PREDIKCE PORTFOLIA ──────────────────────────────────────────── */}
+        {/* ── PREDIKCE PORTFOLIA – jeden kombinovaný graf ────────────────── */}
         {(() => {
           const base    = totalValue;
           const rateAvg = avgAnnReturnNoCrypto / 100;
@@ -2878,131 +2986,251 @@ ${posLines}`;
           };
           const projData = years.map((yr, i) => ({
             rok: String(yr),
-            avg:     fv(rateAvg, i),
-            r10:     fv(rate10,  i),
-            avgBase: Math.round(base * Math.pow(1 + rateAvg, i)),
-            r10Base: Math.round(base * Math.pow(1 + rate10,  i)),
+            avg: fv(rateAvg, i),
+            r10: fv(rate10, i),
           }));
+          const finalAvg = projData[projData.length-1].avg;
+          const finalR10 = projData[projData.length-1].r10;
           const commitContrib = () => { const n = parseFlt(contribDraft); if (!isNaN(n) && n >= 0) setMonthlyContrib(n); setEditingContrib(false); };
-          const commitRate10 = () => { const n = parseFlt(rate10Draft); if (!isNaN(n) && n > 0 && n <= 100) setCustomRate10(n); setEditingRate10(false); };
-
+          const commitRate10  = () => { const n = parseFlt(rate10Draft); if (!isNaN(n) && n > 0 && n <= 100) setCustomRate10(n); setEditingRate10(false); };
           return (
-            <div style={{ marginBottom: 16 }}>
-              <SectionTitle title="📈 Predikce portfolia" sub="Odhad budoucí hodnoty portfolia na základě historického výnosu" />
+            <div style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 16, padding: 22, marginBottom: 16 }}>
+              <SectionTitle title="📈 Predikce portfolia" sub="Odhad budoucí hodnoty do roku 2032 — oba scénáře v jednom grafu" />
               {/* Contrib row */}
-              <div className="ib-contrib-row" style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 14, padding: "14px 20px", background: T.card, border: "1px solid " + T.border, borderRadius: 12 }}>
-                <div className="ib-contrib-label" style={{ fontSize: 13, color: T.muted, fontWeight: 500, letterSpacing: "0.06em", textTransform: "uppercase" }}>Měsíční příkup vlastního kapitálu</div>
-                <div className="ib-contrib-spacer" style={{ flex: 1 }} />
+              <div className="ib-contrib-row" style={{ display:"flex", alignItems:"center", gap:14, marginBottom:14, padding:"12px 16px", background:"rgba(255,255,255,0.03)", border:"1px solid "+T.border, borderRadius:10 }}>
+                <div className="ib-contrib-label" style={{ fontSize:12, color:T.muted, fontWeight:500, textTransform:"uppercase", letterSpacing:"0.06em" }}>Měs. příkup</div>
+                <div className="ib-contrib-spacer" style={{ flex:1 }} />
                 {editingContrib ? (
-                  <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <input autoFocus type="text" value={contribDraft}
-                      onChange={e => setContribDraft(e.target.value)}
-                      onBlur={commitContrib}
-                      onKeyDown={e => { if (e.key === "Enter") commitContrib(); if (e.key === "Escape") setEditingContrib(false); }}
-                      style={{ background: T.bg, border: "1px solid " + T.blue, borderRadius: 8, color: T.text, fontFamily: "'DM Mono',monospace", fontSize: 16, padding: "6px 12px", width: 130, outline: "none", textAlign: "right" }} />
-                    <span style={{ fontSize: 14, color: T.blue, fontWeight: 600 }}>Kč / měs</span>
+                  <div style={{ display:"flex", alignItems:"center", gap:6 }}>
+                    <input autoFocus type="text" value={contribDraft} onChange={e=>setContribDraft(e.target.value)} onBlur={commitContrib}
+                      onKeyDown={e=>{if(e.key==="Enter")commitContrib();if(e.key==="Escape")setEditingContrib(false);}}
+                      style={{ background:T.bg, border:"1px solid "+T.blue, borderRadius:6, color:T.text, fontFamily:"'DM Mono',monospace", fontSize:15, padding:"4px 10px", width:110, outline:"none", textAlign:"right" }}/>
+                    <span style={{ fontSize:13, color:T.blue }}>Kč/měs</span>
                   </div>
                 ) : (
-                  <div onClick={() => { setContribDraft(String(monthlyContrib)); setEditingContrib(true); }}
-                    style={{ display: "flex", alignItems: "center", gap: 10, cursor: "text", padding: "7px 16px", background: "rgba(59,130,246,0.08)", border: "1px solid rgba(59,130,246,0.2)", borderRadius: 8, transition: "all 0.12s" }}>
-                    <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 18, color: T.blue, fontWeight: 700 }}>{fmt(monthlyContrib)}</span>
-                    <span style={{ fontSize: 13, color: T.muted }}>/ měs</span>
-                    <span style={{ fontSize: 13, color: T.subtle, marginLeft: 2 }}>✎</span>
+                  <div onClick={()=>{setContribDraft(String(monthlyContrib));setEditingContrib(true);}}
+                    style={{ display:"flex", alignItems:"center", gap:8, cursor:"text", padding:"5px 12px", background:"rgba(59,130,246,0.08)", border:"1px solid rgba(59,130,246,0.2)", borderRadius:7 }}>
+                    <span style={{ fontFamily:"'DM Mono',monospace", fontSize:16, color:T.blue, fontWeight:700 }}>{fmt(monthlyContrib)}</span>
+                    <span style={{ fontSize:12, color:T.muted }}>/ měs ✎</span>
                   </div>
                 )}
-                <div style={{ fontSize: 13, color: T.muted }}>= {fmt(monthlyContrib * 12)} ročně</div>
               </div>
+              {/* Legendy + výsledky */}
+              <div className="ib-grid2" style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:12, marginBottom:16 }}>
+                <div style={{ background:"rgba(34,197,94,0.06)", border:"1px solid rgba(34,197,94,0.15)", borderRadius:10, padding:"12px 16px" }}>
+                  <div style={{ fontSize:12, color:T.muted, marginBottom:3 }}>Scénář A · {avgAnnReturnNoCrypto.toFixed(1)}% p.a.</div>
+                  <div style={{ fontSize:24, fontWeight:800, color:T.green, fontFamily:"'DM Mono',monospace" }}>{fmt(finalAvg)}</div>
+                  <div style={{ fontSize:12, color:T.muted, marginTop:2 }}>v roce 2032 · hist. výnos</div>
+                </div>
+                <div style={{ background:"rgba(59,130,246,0.06)", border:"1px solid rgba(59,130,246,0.15)", borderRadius:10, padding:"12px 16px" }}>
+                  <div style={{ fontSize:12, color:T.muted, marginBottom:3, display:"flex", alignItems:"center", gap:6 }}>
+                    Scénář B ·
+                    {editingRate10 ? (
+                      <input autoFocus type="text" value={rate10Draft} onChange={e=>setRate10Draft(e.target.value)} onBlur={commitRate10}
+                        onKeyDown={e=>{if(e.key==="Enter")commitRate10();if(e.key==="Escape")setEditingRate10(false);}}
+                        style={{ background:T.bg, border:"1px solid "+T.blue, borderRadius:5, color:T.blue, fontFamily:"'DM Mono',monospace", fontSize:13, fontWeight:700, padding:"1px 6px", width:50, outline:"none" }}/>
+                    ) : (
+                      <span onClick={()=>{setRate10Draft(String(customRate10));setEditingRate10(true);}}
+                        style={{ cursor:"text", color:T.blue, fontWeight:700, fontFamily:"'DM Mono',monospace" }}>{customRate10}% ✎</span>
+                    )}
+                    p.a.
+                  </div>
+                  <div style={{ fontSize:24, fontWeight:800, color:T.blue, fontFamily:"'DM Mono',monospace" }}>{fmt(finalR10)}</div>
+                  <div style={{ fontSize:12, color:T.muted, marginTop:2 }}>v roce 2032 · vlastní scénář</div>
+                </div>
+              </div>
+              {/* Kombinovaný graf */}
+              <div style={{ overflow:"hidden", marginLeft:-4, marginRight:-4 }}>
+                <ResponsiveContainer width="100%" height={200}>
+                  <AreaChart data={projData} margin={{ left:0, right:20, top:4, bottom:0 }}>
+                    <defs>
+                      <linearGradient id="gProjA" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={T.green} stopOpacity={0.18}/>
+                        <stop offset="100%" stopColor={T.green} stopOpacity={0}/>
+                      </linearGradient>
+                      <linearGradient id="gProjB" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor={T.blue} stopOpacity={0.15}/>
+                        <stop offset="100%" stopColor={T.blue} stopOpacity={0}/>
+                      </linearGradient>
+                    </defs>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false}/>
+                    <XAxis dataKey="rok" tick={{ fontFamily:"'DM Mono',monospace", fontSize:13, fill:T.tick }} axisLine={false} tickLine={false}/>
+                    <YAxis tick={{ fontFamily:"'DM Mono',monospace", fontSize:12, fill:T.tick }} axisLine={false} tickLine={false} width={44}
+                      tickFormatter={v => v>=1000000?(v/1000000).toFixed(1)+"M":(v/1000).toFixed(0)+"k"}/>
+                    <Tooltip {...ttStyle} wrapperStyle={{ maxWidth:220, zIndex:10 }}
+                      formatter={(v,name) => [fmt(v), name==="avg"?"Scénář A (hist.)":"Scénář B (vlastní)"]}/>
+                    <Area type="monotone" dataKey="avg" stroke={T.green} strokeWidth={2.5} fill="url(#gProjA)" dot={{ r:3, fill:T.green, strokeWidth:0 }} activeDot={{ r:5 }}/>
+                    <Area type="monotone" dataKey="r10" stroke={T.blue} strokeWidth={2} fill="url(#gProjB)" strokeDasharray="6 3" dot={{ r:3, fill:T.blue, strokeWidth:0 }} activeDot={{ r:5 }}/>
+                  </AreaChart>
+                </ResponsiveContainer>
+              </div>
+              {/* Rok-po-roku tabulka */}
+              <div style={{ overflowX:"auto", WebkitOverflowScrolling:"touch", marginTop:12 }}>
+                <div className="ib-scroll-row" style={{ display:"flex", gap:6, paddingBottom:4 }}>
+                  {projData.filter((_,i)=>i>0).map((pt,idx) => {
+                    const prev = idx===0 ? projData[0] : projData.filter((_,i)=>i>0)[idx-1];
+                    return (
+                      <div key={pt.rok} style={{ textAlign:"center", minWidth:86, padding:"6px 8px", background:"rgba(255,255,255,0.03)", borderRadius:8, flexShrink:0 }}>
+                        <div style={{ fontSize:12, color:T.muted, marginBottom:3 }}>{pt.rok}</div>
+                        <div style={{ fontSize:12, color:T.green, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>{fmt(pt.avg)}</div>
+                        <div style={{ fontSize:11, color:T.blue, fontFamily:"'DM Mono',monospace" }}>{fmt(pt.r10)}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
-              <div className="ib-grid2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-                {[
-                  { label: "Predikce · " + avgAnnReturnNoCrypto.toFixed(2) + " % p.a.", sub: "průměrný výnos bez crypto", key: "avg", baseKey: "avgBase", color: T.green, grad: "gPA2" },
-                  { label: null, sub: "vlastní scénář", key: "r10", baseKey: "r10Base", color: T.blue, grad: "gP102" },
-                ].map(cfg => {
-                  const finalVal    = projData[projData.length - 1][cfg.key];
-                  const finalBase   = projData[projData.length - 1][cfg.baseKey];
-                  const contribGain = finalVal - finalBase;
-                  return (
-                    <div key={cfg.key} style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 16, padding: 22 }}>
-                      {cfg.key === "r10" ? (
-                        <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 2 }}>
-                          <span style={{ fontSize: 15, fontWeight: 600, color: T.text }}>Predikce ·</span>
-                          {editingRate10 ? (
-                            <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
-                              <input autoFocus type="text" value={rate10Draft}
-                                onChange={e => setRate10Draft(e.target.value)}
-                                onBlur={commitRate10}
-                                onKeyDown={e => { if (e.key === "Enter") commitRate10(); if (e.key === "Escape") setEditingRate10(false); }}
-                                style={{ background: T.bg, border: "1px solid " + T.blue, borderRadius: 6, color: T.text, fontFamily: "'DM Mono',monospace", fontSize: 15, fontWeight: 700, padding: "2px 8px", width: 60, outline: "none", textAlign: "right" }} />
-                              <span style={{ fontSize: 15, color: T.blue, fontWeight: 600 }}>% p.a.</span>
+        {/* ── CÍLOVÁ ALOKACE + REBALANCING ─────────────────────────────────── */}
+        {(() => {
+          const catGroups = {};
+          allRows.forEach(p => { catGroups[p.category] = (catGroups[p.category]||0) + p.valueCZK; });
+          const catKeys = Object.keys(catGroups).sort((a,b) => catGroups[b] - catGroups[a]);
+          const defaultTargets = {};
+          catKeys.forEach((k,i) => { defaultTargets[k] = targetAlloc[k] != null ? targetAlloc[k] : 0; });
+          const totalTarget = catKeys.reduce((s,k) => s + (targetAlloc[k]||0), 0);
+          const rebalRows = catKeys.map(k => {
+            const curVal = catGroups[k] || 0;
+            const curPct = totalValue > 0 ? curVal / totalValue * 100 : 0;
+            const tgtPct = targetAlloc[k] || 0;
+            const diff   = curPct - tgtPct;
+            const needed = totalValue > 0 ? Math.round((tgtPct/100 * totalValue) - curVal) : 0;
+            return { k, curVal, curPct, tgtPct, diff, needed };
+          });
+          return (
+            <div style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 16, padding: 22, marginBottom: 16 }}>
+              <SectionTitle title="🎯 Cílová alokace & rebalancing" sub={"Nastav cílové % kliknutím · celkem " + totalTarget.toFixed(0) + "% nastaveno" + (totalTarget>0&&Math.abs(totalTarget-100)>0.5?" (součet není 100 %)":"")} />
+              <div style={{ overflowX:"auto", WebkitOverflowScrolling:"touch" }}>
+                <table style={{ width:"100%", borderCollapse:"collapse", minWidth:320 }}>
+                  <thead>
+                    <tr style={{ borderBottom:"1px solid "+T.border }}>
+                      {["Kategorie","Aktuální","Cíl %","Odchylka","Rebalancing"].map(h => (
+                        <th key={h} style={{ padding:"6px 10px", textAlign: h==="Kategorie"?"left":"right", fontSize:11, color:T.subtle, fontWeight:600, textTransform:"uppercase", letterSpacing:"0.07em", whiteSpace:"nowrap" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rebalRows.map(row => {
+                      const gc = Math.abs(row.diff) < 2 ? T.green : Math.abs(row.diff) < 5 ? "#fbbf24" : T.red;
+                      return (
+                        <tr key={row.k} style={{ borderBottom:"1px solid rgba(255,255,255,0.03)" }}>
+                          <td style={{ padding:"9px 10px", fontSize:13, color:CAT_COLOR[row.k]||T.text, fontWeight:600 }}>{row.k}</td>
+                          <td style={{ padding:"9px 10px", textAlign:"right" }}>
+                            <div style={{ fontSize:13, color:T.text, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>{row.curPct.toFixed(1)}%</div>
+                            <div style={{ fontSize:11, color:T.muted }}>{fmt(row.curVal)}</div>
+                            <div style={{ height:3, background:"rgba(255,255,255,0.06)", borderRadius:2, marginTop:4 }}>
+                              <div style={{ height:"100%", width:Math.min(100,row.curPct)+"%", background:CAT_COLOR[row.k]||T.blue, borderRadius:2 }}/>
                             </div>
-                          ) : (
-                            <div onClick={() => { setRate10Draft(String(customRate10)); setEditingRate10(true); }}
-                              style={{ display: "flex", alignItems: "center", gap: 4, cursor: "text", padding: "2px 10px", background: "rgba(59,130,246,0.1)", border: "1px solid rgba(59,130,246,0.25)", borderRadius: 6 }}>
-                              <span style={{ fontFamily: "'DM Mono',monospace", fontSize: 15, color: T.blue, fontWeight: 700 }}>{customRate10} %</span>
-                              <span style={{ fontSize: 12, color: T.blue }}>p.a. ✎</span>
-                            </div>
-                          )}
-                        </div>
-                      ) : (
-                        <div style={{ fontSize: 15, fontWeight: 600, color: T.text, marginBottom: 2 }}>{cfg.label}</div>
-                      )}
-                      <div style={{ fontSize: 13, color: T.muted, marginBottom: 10 }}>{cfg.sub}</div>
-                      <div style={{ display: "flex", alignItems: "baseline", gap: 10, marginBottom: monthlyContrib > 0 ? 2 : 16 }}>
-                        <span style={{ fontSize: 31, fontWeight: 800, color: cfg.color, letterSpacing: "-0.02em" }}>{fmt(finalVal)}</span>
-                        <span style={{ fontSize: 13, color: T.muted }}>v roce 2032</span>
-                      </div>
-                      {monthlyContrib > 0 && (
-                        <div style={{ fontSize: 13, color: T.muted, marginBottom: 16 }}>
-                          z toho příkupem <span style={{ color: cfg.color, fontWeight: 600 }}>{fmt(contribGain)}</span>
-                        </div>
-                      )}
-                      {monthlyContrib === 0 && <div style={{ marginBottom: 16 }} />}
-                      <div style={{ overflow: "hidden", marginLeft: -4, marginRight: -4 }}>
-                      <ResponsiveContainer width="100%" height={180}>
-                        <AreaChart data={projData} margin={{ left: 0, right: 24, top: 4, bottom: 0 }}>
-                          <defs>
-                            <linearGradient id={cfg.grad} x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor={cfg.color} stopOpacity={0.2} />
-                              <stop offset="100%" stopColor={cfg.color} stopOpacity={0} />
-                            </linearGradient>
-                            <linearGradient id={cfg.grad+"b"} x1="0" y1="0" x2="0" y2="1">
-                              <stop offset="0%" stopColor={cfg.color} stopOpacity={0.06} />
-                              <stop offset="100%" stopColor={cfg.color} stopOpacity={0} />
-                            </linearGradient>
-                          </defs>
-                          <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-                          <XAxis dataKey="rok" tick={{ fontFamily: "'DM Mono',monospace", fontSize: 13, fill: T.tick }} axisLine={false} tickLine={false} />
-                          <YAxis tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.tick }} axisLine={false} tickLine={false} width={44}
-                            domain={[
-                              () => Math.floor(base * 0.95 / 100000) * 100000,
-                              dataMax => Math.ceil(dataMax * 1.05 / 100000) * 100000,
-                            ]}
-                            tickFormatter={v => v >= 1000000 ? (v/1000000).toFixed(1)+"M" : (v/1000).toFixed(0)+"k"} />
-                          <Tooltip {...ttStyle} wrapperStyle={{ maxWidth: 180, zIndex: 10 }} formatter={(v, name) => [fmt(v), name === cfg.key ? "S příkupem" : "Bez příkopu"]} />
-                          <Area type="monotone" dataKey={cfg.baseKey} stroke={cfg.color} strokeWidth={1} strokeDasharray="4 3" fill={"url(#"+cfg.grad+"b)"} dot={false} />
-                          <Area type="monotone" dataKey={cfg.key} stroke={cfg.color} strokeWidth={2.5} fill={"url(#"+cfg.grad+")"} dot={{ r: 3, fill: cfg.color, strokeWidth: 0 }} activeDot={{ r: 5, fill: cfg.color, strokeWidth: 0 }} />
-                        </AreaChart>
-                      </ResponsiveContainer>
-                      </div>
-                      <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch", marginTop: 14, paddingTop: 12, borderTop: "1px solid rgba(255,255,255,0.05)", marginLeft: -22, marginRight: -22, paddingLeft: 22, paddingRight: 22 }}>
-                        <div className="ib-scroll-row" style={{ display: "flex", gap: 6, paddingBottom: 4 }}>
-                          {projData.filter((_, i) => i > 0).map((pt, idx) => {
-                            const prev = projData.filter((_, i) => i > 0)[idx - 1];
-                            const prevVal = prev ? prev[cfg.key] : projData[0][cfg.key];
-                            return (
-                              <div key={pt.rok} style={{ textAlign: "center", minWidth: 90, padding: "6px 8px", background: "rgba(255,255,255,0.03)", borderRadius: 8 }}>
-                                <div style={{ fontSize: 13, color: T.muted, marginBottom: 3 }}>{pt.rok}</div>
-                                <div style={{ fontSize: 12, color: cfg.color, fontFamily: "'DM Mono',monospace", fontWeight: 600 }}>{fmt(pt[cfg.key])}</div>
-                                <div style={{ fontSize: 12, color: T.subtle, marginTop: 2 }}>+{fmt(pt[cfg.key] - prevVal)}</div>
+                          </td>
+                          <td style={{ padding:"9px 10px", textAlign:"right" }}>
+                            <input type="number" min="0" max="100" step="1" value={targetAlloc[row.k]||""}
+                              placeholder="0"
+                              onChange={e => setTargetAlloc(prev => ({...prev, [row.k]: Number(e.target.value)||0}))}
+                              style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.12)", borderRadius:6, color:T.blue, fontFamily:"'DM Mono',monospace", fontSize:14, fontWeight:700, padding:"3px 8px", width:58, textAlign:"right", outline:"none" }}/>
+                            <span style={{ fontSize:12, color:T.muted, marginLeft:3 }}>%</span>
+                          </td>
+                          <td style={{ padding:"9px 10px", textAlign:"right", fontSize:13, color:row.tgtPct===0?T.subtle:gc, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>
+                            {row.tgtPct > 0 ? (row.diff >= 0 ? "+" : "") + row.diff.toFixed(1)+"%" : "—"}
+                          </td>
+                          <td style={{ padding:"9px 10px", textAlign:"right" }}>
+                            {row.tgtPct > 0 ? (
+                              <div>
+                                <span style={{ fontSize:13, fontWeight:700, color: row.needed>0?T.green:row.needed<0?T.red:T.muted, fontFamily:"'DM Mono',monospace" }}>
+                                  {row.needed > 0 ? "+" : ""}{fmt(row.needed)}
+                                </span>
+                                <div style={{ fontSize:11, color:T.muted }}>{row.needed > 0 ? "dokoupit" : row.needed < 0 ? "prodat" : "ok"}</div>
                               </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+                            ) : <span style={{ fontSize:12, color:T.subtle }}>—</span>}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
+            </div>
+          );
+        })()}
+
+        {/* ── FIRE KALKULAČKA ────────────────────────────────────────────────── */}
+        {(() => {
+          const fireNum   = fireExpenses > 0 ? Math.round(fireExpenses * 12 / (fireWithdrawal / 100)) : 0;
+          const progress  = fireNum > 0 ? Math.min(100, totalValue / fireNum * 100) : 0;
+          const remaining = Math.max(0, fireNum - totalValue);
+          const annualGrowth = totalValue * (fireReturnPct / 100);
+          const annContrib   = monthlyContrib * 12;
+          // Kolik let do FI (iterativní výpočet)
+          let fireYears = null;
+          if (fireNum > 0 && totalValue < fireNum) {
+            let v = totalValue;
+            for (let y = 1; y <= 80; y++) {
+              v = v * (1 + fireReturnPct/100) + annContrib;
+              if (v >= fireNum) { fireYears = y; break; }
+            }
+          } else if (totalValue >= fireNum && fireNum > 0) {
+            fireYears = 0;
+          }
+          // Vizualizace: path to FI (milníky každých 5 let)
+          const milestones = [0.25, 0.5, 0.75, 1.0];
+          return (
+            <div style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 16, padding: 22, marginBottom: 16 }}>
+              <SectionTitle title="🔥 FIRE kalkulačka" sub="Financial Independence, Retire Early — pravidlo 4% (bezpečná míra výběru)" />
+              {/* Inputs */}
+              <div className="ib-grid2" style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12, marginBottom:20 }}>
+                {[
+                  { label:"Měs. výdaje (Kč)", val:fireExpenses, setter:setFireExpenses, key:"exp" },
+                  { label:"Očekávaný výnos (% p.a.)", val:fireReturnPct, setter:setFireReturnPct, key:"ret", step:"0.1" },
+                  { label:"Míra výběru (%)", val:fireWithdrawal, setter:setFireWithdrawal, key:"wd", step:"0.1" },
+                ].map(inp => (
+                  <div key={inp.key} style={{ background:"rgba(255,255,255,0.03)", border:"1px solid "+T.border, borderRadius:10, padding:"12px 14px" }}>
+                    <div style={{ fontSize:11, color:T.muted, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:6 }}>{inp.label}</div>
+                    <input type="number" value={inp.val} step={inp.step||"1000"} min="0"
+                      onChange={e => inp.setter(Number(e.target.value)||0)}
+                      style={{ background:"transparent", border:"none", color:"#a78bfa", fontFamily:"'DM Mono',monospace", fontSize:18, fontWeight:800, width:"100%", outline:"none" }}/>
+                  </div>
+                ))}
+              </div>
+              {/* FIRE number */}
+              {fireNum > 0 && (
+                <div>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-end", marginBottom:12 }}>
+                    <div>
+                      <div style={{ fontSize:12, color:T.muted, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:4 }}>FIRE číslo (cílová hodnota portfolia)</div>
+                      <div style={{ fontSize:30, fontWeight:800, color:"#a78bfa", fontFamily:"'DM Mono',monospace" }}>{fmt(fireNum)}</div>
+                    </div>
+                    <div style={{ textAlign:"right" }}>
+                      <div style={{ fontSize:12, color:T.muted, marginBottom:2 }}>
+                        {fireYears === 0 ? "🎉 Finančně nezávislý!" : fireYears ? "Za přibližně" : "Nedosažitelné při 0 příkupu"}
+                      </div>
+                      {fireYears != null && fireYears > 0 && <div style={{ fontSize:24, fontWeight:800, color:T.green, fontFamily:"'DM Mono',monospace" }}>{fireYears} let</div>}
+                    </div>
+                  </div>
+                  {/* Progress bar */}
+                  <div style={{ marginBottom:16 }}>
+                    <div style={{ display:"flex", justifyContent:"space-between", fontSize:12, color:T.muted, marginBottom:6 }}>
+                      <span>Aktuální portfolio {fmt(totalValue)} · {progress.toFixed(1)}%</span>
+                      <span>Zbývá {fmt(remaining)}</span>
+                    </div>
+                    <div style={{ height:14, background:"rgba(167,139,250,0.1)", borderRadius:7, overflow:"hidden" }}>
+                      <div style={{ height:"100%", width:progress+"%", background:"linear-gradient(90deg,#7c3aed,#a78bfa)", borderRadius:7, transition:"width 0.4s ease" }}/>
+                    </div>
+                    {/* Milníky */}
+                    <div style={{ display:"flex", justifyContent:"space-between", marginTop:4 }}>
+                      {milestones.map(m => (
+                        <div key={m} style={{ fontSize:10, color: progress >= m*100 ? "#a78bfa" : T.subtle, fontWeight:600 }}>
+                          {(m*100).toFixed(0)}%
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{ fontSize:12, color:T.muted, lineHeight:1.6 }}>
+                    Při výnosech {fireReturnPct}% p.a. a příkupu {fmt(monthlyContrib)}/měs · pasivní příjem {fmt(Math.round(fireNum * (fireWithdrawal/100) / 12))}/měs při {fireWithdrawal}% výběru
+                  </div>
+                </div>
+              )}
+              {!fireNum && <div style={{ fontSize:13, color:T.muted, padding:"12px 0" }}>Zadej měsíční výdaje pro výpočet FIRE čísla.</div>}
             </div>
           );
         })()}
@@ -3941,11 +4169,153 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
     );
   };
 
+  // ── DIVIDENDY TAB ───────────────────────────────────────────────────────────
+  const tabDividendy = () => {
+    const MONTHS_CS = ["Led","Úno","Bře","Dub","Kvě","Čvn","Čvc","Srp","Zář","Říj","Lis","Pro"];
+    const totalAnnualIncome = dividends.reduce((s,d) => {
+      const shares = d.shares || 0;
+      const divPerShare = d.annualDiv || 0;
+      const fxRate = d.currency === "EUR" ? DEGIRO_FX : d.currency === "GBP" ? GBP_FX : 1;
+      return s + Math.round(shares * divPerShare * fxRate);
+    }, 0);
+    const totalYield = totalValue > 0 ? (totalAnnualIncome / totalValue * 100) : 0;
+    const monthlyMap = {};
+    dividends.forEach(d => {
+      if (!d.months || !d.months.length) return;
+      const perPayment = Math.round((d.shares||0) * (d.annualDiv||0) / d.months.length * (d.currency==="EUR"?DEGIRO_FX:d.currency==="GBP"?GBP_FX:1));
+      d.months.forEach(m => { monthlyMap[m] = (monthlyMap[m]||0) + perPayment; });
+    });
+    const addDiv = () => setDividends(prev => [...prev, { id: Date.now(), ticker:"", name:"", annualDiv:0, shares:0, currency:"CZK", months:[3,6,9,12] }]);
+    const updDiv = (id, field, val) => setDividends(prev => prev.map(d => d.id===id ? {...d,[field]:val} : d));
+    const delDiv = (id) => setDividends(prev => prev.filter(d => d.id!==id));
+    const toggleMonth = (id, m) => setDividends(prev => prev.map(d => {
+      if (d.id!==id) return d;
+      const ms = d.months||[];
+      return {...d, months: ms.includes(m) ? ms.filter(x=>x!==m) : [...ms,m].sort((a,b)=>a-b)};
+    }));
+    const C = { background: T.card, border: "1px solid " + T.border, borderRadius: 14, padding: "18px 20px", marginBottom: 16 };
+    return (
+      <div>
+        <div style={{ marginBottom:24 }}>
+          <h1 style={{ fontSize:26, fontWeight:800, color:T.text, letterSpacing:"-0.02em" }}>💰 Dividendy</h1>
+          <div style={{ fontSize:13, color:T.muted, marginTop:4 }}>Sleduj dividendový příjem portfolia</div>
+        </div>
+        {/* Souhrnné karty */}
+        <div className="ib-grid4" style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:12, marginBottom:16 }}>
+          {[
+            { label:"Roční příjem", value:fmt(totalAnnualIncome), color:T.green },
+            { label:"Měs. průměr",  value:fmt(Math.round(totalAnnualIncome/12)), color:T.blue },
+            { label:"Dividendový výnos", value:totalYield.toFixed(2)+"%", color:"#a78bfa" },
+            { label:"Počet titulů", value:dividends.length+" pozic", color:T.amber },
+          ].map(c => (
+            <div key={c.label} className="ib-statcard" style={{ background:T.card, border:"1px solid "+T.border, borderRadius:12, padding:"12px 16px" }}>
+              <div className="ib-statcard-lbl" style={{ fontSize:11, color:T.muted, fontWeight:600, letterSpacing:"0.07em", textTransform:"uppercase", marginBottom:4 }}>{c.label}</div>
+              <div className="ib-statcard-val" style={{ fontSize:20, fontWeight:800, color:c.color, fontFamily:"'DM Mono',monospace" }}>{c.value}</div>
+            </div>
+          ))}
+        </div>
+        {/* Měsíční kalendář */}
+        <div style={{ ...C }}>
+          <SectionTitle title="📅 Měsíční příjmy" sub="Odhadovaný příjem dividendy dle nastavených měsíců výplaty" />
+          <div style={{ display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:8, marginTop:8 }}>
+            {MONTHS_CS.map((m,i) => {
+              const v = monthlyMap[i+1]||0;
+              const maxV = Math.max(...Object.values(monthlyMap), 1);
+              return (
+                <div key={m} style={{ background:"rgba(255,255,255,0.03)", border:"1px solid "+T.border, borderRadius:10, padding:"10px 12px", textAlign:"center" }}>
+                  <div style={{ fontSize:11, color:T.muted, fontWeight:600, marginBottom:6 }}>{m}</div>
+                  <div style={{ height:40, background:"rgba(255,255,255,0.04)", borderRadius:4, overflow:"hidden", display:"flex", alignItems:"flex-end" }}>
+                    <div style={{ width:"100%", height:(v/maxV*100)+"%", background: v>0 ? T.green : "transparent", borderRadius:4, minHeight:v>0?2:0, transition:"height 0.3s" }}/>
+                  </div>
+                  <div style={{ fontSize:12, color:v>0?T.green:T.subtle, fontFamily:"'DM Mono',monospace", fontWeight:600, marginTop:5 }}>{v>0?fmt(v):"—"}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+        {/* Tabulka pozic */}
+        <div style={{ ...C }}>
+          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
+            <SectionTitle title="📋 Dividendové pozice" sub="Manuálně zadané tituly · klikni + pro přidání" />
+            <button onClick={addDiv}
+              style={{ background:T.green, border:"none", borderRadius:8, color:"#000", cursor:"pointer", padding:"7px 16px", fontSize:13, fontWeight:700, flexShrink:0 }}>
+              + Přidat
+            </button>
+          </div>
+          {dividends.length === 0 && (
+            <div style={{ fontSize:13, color:T.muted, textAlign:"center", padding:"20px 0" }}>
+              Zatím žádné dividendové pozice. Klikni "+ Přidat" pro přidání titulu.
+            </div>
+          )}
+          {dividends.map(d => {
+            const fxRate = d.currency==="EUR"?DEGIRO_FX:d.currency==="GBP"?GBP_FX:1;
+            const annualIncomeCZK = Math.round((d.shares||0)*(d.annualDiv||0)*fxRate);
+            const posValue = allRows.find(r => r.ticker && d.ticker && r.ticker.toUpperCase()===d.ticker.toUpperCase())?.valueCZK || 0;
+            const yieldPct = posValue > 0 ? (annualIncomeCZK/posValue*100) : 0;
+            return (
+              <div key={d.id} style={{ background:"rgba(255,255,255,0.02)", border:"1px solid "+T.border, borderRadius:12, padding:"14px 16px", marginBottom:10 }}>
+                {/* Řádek 1: ticker, název, tlačítka */}
+                <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10, flexWrap:"wrap" }}>
+                  <PositionLogo ticker={d.ticker} name={d.name||d.ticker} size={26}/>
+                  <input value={d.ticker} onChange={e=>updDiv(d.id,"ticker",e.target.value.toUpperCase())} placeholder="TICKER"
+                    style={{ background:T.bg, border:"1px solid "+T.border, borderRadius:6, color:T.text, fontFamily:"'DM Mono',monospace", fontSize:14, fontWeight:700, padding:"4px 10px", width:80, outline:"none" }}/>
+                  <input value={d.name} onChange={e=>updDiv(d.id,"name",e.target.value)} placeholder="Název (volitelný)"
+                    style={{ background:T.bg, border:"1px solid "+T.border, borderRadius:6, color:T.muted, fontSize:13, padding:"4px 10px", flex:1, minWidth:100, outline:"none" }}/>
+                  <select value={d.currency||"CZK"} onChange={e=>updDiv(d.id,"currency",e.target.value)}
+                    style={{ background:T.bg, border:"1px solid "+T.border, borderRadius:6, color:T.text, fontSize:13, padding:"4px 8px", outline:"none" }}>
+                    {["CZK","EUR","USD","GBP"].map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                  <button onClick={()=>delDiv(d.id)} style={{ background:"none", border:"none", color:T.subtle, cursor:"pointer", fontSize:20, padding:"2px 6px" }}>×</button>
+                </div>
+                {/* Řádek 2: div/ks, počet kusů, výsledky */}
+                <div style={{ display:"flex", gap:12, alignItems:"flex-end", flexWrap:"wrap" }}>
+                  <div>
+                    <div style={{ fontSize:11, color:T.muted, marginBottom:3 }}>Dividenda / ks / rok ({d.currency||"CZK"})</div>
+                    <input type="number" min="0" step="0.01" value={d.annualDiv||""} placeholder="0.00"
+                      onChange={e=>updDiv(d.id,"annualDiv",parseFloat(e.target.value)||0)}
+                      style={{ background:T.bg, border:"1px solid "+T.border, borderRadius:6, color:T.green, fontFamily:"'DM Mono',monospace", fontSize:15, fontWeight:700, padding:"4px 10px", width:100, outline:"none" }}/>
+                  </div>
+                  <div>
+                    <div style={{ fontSize:11, color:T.muted, marginBottom:3 }}>Počet kusů</div>
+                    <input type="number" min="0" step="1" value={d.shares||""} placeholder="0"
+                      onChange={e=>updDiv(d.id,"shares",parseFloat(e.target.value)||0)}
+                      style={{ background:T.bg, border:"1px solid "+T.border, borderRadius:6, color:T.text, fontFamily:"'DM Mono',monospace", fontSize:15, fontWeight:700, padding:"4px 10px", width:90, outline:"none" }}/>
+                  </div>
+                  <div style={{ marginLeft:"auto", textAlign:"right" }}>
+                    <div style={{ fontSize:13, color:T.muted, marginBottom:2 }}>Roční příjem CZK</div>
+                    <div style={{ fontSize:20, fontWeight:800, color:T.green, fontFamily:"'DM Mono',monospace" }}>{fmt(annualIncomeCZK)}</div>
+                    {yieldPct > 0 && <div style={{ fontSize:12, color:"#a78bfa", fontFamily:"'DM Mono',monospace" }}>yield {yieldPct.toFixed(2)}%</div>}
+                  </div>
+                </div>
+                {/* Řádek 3: měsíce výplaty */}
+                <div style={{ marginTop:10 }}>
+                  <div style={{ fontSize:11, color:T.muted, marginBottom:5 }}>Měsíce výplaty:</div>
+                  <div style={{ display:"flex", flexWrap:"wrap", gap:4 }}>
+                    {MONTHS_CS.map((m,i) => {
+                      const active = (d.months||[]).includes(i+1);
+                      return (
+                        <button key={m} onClick={()=>toggleMonth(d.id,i+1)}
+                          style={{ padding:"3px 8px", borderRadius:5, border:"1px solid "+(active?"rgba(34,197,94,0.4)":T.border), background:active?"rgba(34,197,94,0.12)":"transparent", color:active?T.green:T.muted, cursor:"pointer", fontSize:11, fontWeight:600 }}>
+                          {m}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    );
+  };
+
   const TABS = [
     { id: "portfolio", label: "Přehled" },
     { id: "analyza",   label: "Analýza" },
     { id: "penzijko",  label: "Penzijko" },
     { id: "positions", label: "Pozice" },
+    { id: "dividendy", label: "💰 Dividendy" },
     { id: "ai",        label: "🤖 AI" },
   ];
 
@@ -4149,7 +4519,7 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
               style={{ flex: 1, background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "4px 0",
                 color: activeTab === tab.id ? T.green : T.muted }}>
               <span style={{ fontSize: 20 }}>
-                {tab.id === "portfolio" ? "📊" : tab.id === "analyza" ? "🔍" : tab.id === "penzijko" ? "🏦" : tab.id === "ai" ? "🤖" : "📋"}
+                {tab.id === "portfolio" ? "📊" : tab.id === "analyza" ? "🔍" : tab.id === "penzijko" ? "🏦" : tab.id === "dividendy" ? "💰" : tab.id === "ai" ? "🤖" : "📋"}
               </span>
               <span style={{ fontSize: 13, fontWeight: 600 }}>{tab.label}</span>
             </button>
@@ -4169,6 +4539,7 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
           {activeTab === "positions" && tabPozice()}
           {activeTab === "analyza"   && tabAnalyza()}
           {activeTab === "penzijko"  && tabPenzijko()}
+          {activeTab === "dividendy" && tabDividendy()}
           {activeTab === "ai"        && tabAI()}
         </main>
       </div>
