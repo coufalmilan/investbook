@@ -256,7 +256,7 @@ const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 // otherwise calls the Gemini API directly (requires API key).
 // ── One-time localStorage migration: odstraň zastaralé Gemini modely ──────
 (function() {
-  const dep = ["gemini-2.0-flash-lite","gemini-1.5-flash-latest","gemini-1.5-pro-latest","gemini-1.0-pro"];
+  const dep = ["gemini-2.0-flash-lite","gemini-2.0-flash","gemini-1.5-flash-latest","gemini-1.5-pro-latest","gemini-1.0-pro"];
   if (dep.includes(localStorage.getItem("ib_gemini_model"))) {
     localStorage.setItem("ib_gemini_model", "gemini-2.5-flash");
   }
@@ -549,7 +549,7 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.30";
+const APP_VERSION = "v4.31";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
