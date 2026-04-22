@@ -549,10 +549,14 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.29";
+const APP_VERSION = "v4.30";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.30", date: "22. 4. 2026", changes: [
+    "Fix: Worker — odstraněn gemini-2.0-flash-lite z FALLBACK_MODELS, nahrazen gemini-2.0-flash",
+    "Fix: Benchmark — bmMap rozšířen na aktuální měsíc (live bod) pomocí new Date()",
+  ]},
   { version: "v4.29", date: "22. 4. 2026", changes: [
     "Odstraněna záložka Dividendy (CORS blokuje Yahoo Finance fetch)",
     "Fix: Gemini model — aktivní smazání flash-lite z localStorage při načtení",
@@ -1110,14 +1114,18 @@ function InvestBook() {
     const startVal = PORTFOLIO_HISTORY[0].v;
     const startYr  = Number(PORTFOLIO_HISTORY[0].d.split("-")[0]);
     const build = (annR) => {
-      const m = {};
-      PORTFOLIO_HISTORY.forEach(pt => {
-        const [yr, mo] = pt.d.split("-").map(Number);
+      const computeBm = (d) => {
+        const [yr, mo] = d.split("-").map(Number);
         let cum = 1;
         for (let y = startYr; y < yr; y++) cum *= (1 + (annR[y]||0)/100);
         cum *= (1 + ((annR[yr]||0)/100) * (mo/12));
-        m[pt.d] = Math.round(startVal * cum);
-      });
+        return Math.round(startVal * cum);
+      };
+      const m = {};
+      PORTFOLIO_HISTORY.forEach(pt => { m[pt.d] = computeBm(pt.d); });
+      // Přidej aktuální měsíc (live bod) pokud chybí
+      const liveD = `${NOW_YEAR}-${String(new Date().getMonth()+1).padStart(2,'0')}`;
+      if (!m[liveD]) m[liveD] = computeBm(liveD);
       return m;
     };
     return { sp500: build(SP500_ANN), msci: build(MSCI_ANN) };
