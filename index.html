@@ -541,10 +541,14 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.27";
+const APP_VERSION = "v4.28";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.28", date: "22. 4. 2026", changes: [
+    "Fix: Dividendy import — krypto pozice (Crypto kategorie) se přeskočí, importují se jen Akcie/ETF",
+    "Fix: Gemini model — perzistentní výběr v localStorage + automatická migrace ze zastaralého flash-lite",
+  ]},
   { version: "v4.27", date: "22. 4. 2026", changes: [
     "Fix: Benchmark S&P 500 / MSCI W normalizován na první viditelný bod grafu (ne na rok 2006)",
     "Fix: Loga krypto tickerů (DOGE-USD → DOGE) — oprava 404 chyb a zbytečného fallbacku",
@@ -961,7 +965,11 @@ function InvestBook() {
 
   // ── GEMINI AI STATE ──────────────────────────────────────────────────────────
   const [geminiKey,   setGeminiKey]   = useState(() => localStorage.getItem("ib_gemini_key") || "");
-  const [geminiModel, setGeminiModel] = useState("gemini-2.5-flash");
+  const DEPRECATED_MODELS = ["gemini-2.0-flash-lite","gemini-1.5-flash-latest","gemini-1.5-pro-latest","gemini-1.0-pro"];
+  const [geminiModel, setGeminiModel] = useState(() => {
+    const saved = localStorage.getItem("ib_gemini_model") || "";
+    return DEPRECATED_MODELS.includes(saved) ? "gemini-2.5-flash" : (saved || "gemini-2.5-flash");
+  });
   const [aiMessages,  setAiMessages]  = useState([
     { role: "assistant", content: "Ahoj! Jsem tvůj AI investiční asistent napojený na tvé portfolio. Zeptej se mě na cokoliv – analýzu pozic, doporučení nebo strategii. 📈" }
   ]);
@@ -1112,6 +1120,7 @@ function InvestBook() {
   React.useEffect(() => { localStorage.setItem("ib_fire_exp", String(fireExpenses)); }, [fireExpenses]);
   React.useEffect(() => { localStorage.setItem("ib_fire_ret", String(fireReturnPct)); }, [fireReturnPct]);
   React.useEffect(() => { localStorage.setItem("ib_fire_wd",  String(fireWithdrawal)); }, [fireWithdrawal]);
+  React.useEffect(() => { localStorage.setItem("ib_gemini_model", geminiModel); }, [geminiModel]);
 
   // ── assessRisk – vyhodnocení rizikovosti, volatelné odkudkoli ────────────
   const assessRisk = useCallback(async () => {
@@ -4367,7 +4376,7 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
               </button>
               <button onClick={() => {
                 const existing = new Set(dividends.map(d=>d.ticker.toUpperCase()));
-                const toImport = allRows.filter(r=>r.ticker && r.shares && r.shares>0 && !existing.has(r.ticker.toUpperCase()));
+                const toImport = allRows.filter(r=>r.ticker && r.shares && r.shares>0 && !existing.has(r.ticker.toUpperCase()) && r.category !== "Crypto");
                 if (toImport.length===0) { alert("Všechny pozice s tickerem a počtem kusů jsou už importovány."); return; }
                 setDividends(prev => [...prev, ...toImport.map((r,i)=>({ id:Date.now()+i, ticker:r.ticker.toUpperCase(), name:r.name||r.ticker, annualDiv:0, shares:r.shares, currency:r.currency||"CZK", months:[3,6,9,12] }))]);
               }} style={{ background:"rgba(59,130,246,0.12)", border:"1px solid rgba(59,130,246,0.3)", borderRadius:8, color:T.blue, cursor:"pointer", padding:"7px 14px", fontSize:13, fontWeight:700, whiteSpace:"nowrap" }}>
