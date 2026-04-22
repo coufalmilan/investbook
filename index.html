@@ -481,7 +481,7 @@ function PositionLogo({ ticker, name, size = 22 }) {
 
   return (
     <img
-      src={`https://financialmodelingprep.com/image-stock/${ticker}.png`}
+      src={`https://financialmodelingprep.com/image-stock/${ticker.replace(/-USD$|-EUR$|-BTC$|-USDT$/i,"").replace(/\.(PA|AS|MI|SW|BR|LS|OL|ST|HE|CO|VX|TO|AX|NZ|SG|HK|T|SS|SZ|BA|MX|SA|JK|KQ|KS|TWO|TW|DE|L|F|MC)$/i,"")}.png`}
       alt={ticker} width={size} height={size}
       style={{ borderRadius: 5, objectFit: "contain", flexShrink: 0, background: "#fff", padding: 2 }}
       onError={() => setFallback(true)}
@@ -541,10 +541,14 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.26";
+const APP_VERSION = "v4.27";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.27", date: "22. 4. 2026", changes: [
+    "Fix: Benchmark S&P 500 / MSCI W normalizován na první viditelný bod grafu (ne na rok 2006)",
+    "Fix: Loga krypto tickerů (DOGE-USD → DOGE) — oprava 404 chyb a zbytečného fallbacku",
+  ]},
   { version: "v4.26", date: "22. 4. 2026", changes: [
     "Dividendy: automatické načtení dividendy z Yahoo Finance + FMP (tlačítko per karta + načíst vše)",
     "Cílová alokace: koláčové grafy aktuální vs cílové alokace podle kategorie",
@@ -1830,12 +1834,20 @@ ${posLines}`;
                   </div>
                 </div>
                 {(() => {
+                  // Benchmark: normalizuj na první viditelný bod grafu
+                  const bmSrc = benchmarkMode === "sp500" ? bmMap.sp500 : bmMap.msci;
+                  const firstVisD = histData[0]?.d;
+                  const firstBmRaw = firstVisD ? bmSrc[firstVisD] : null;
+                  const firstPortVal = firstVisD ? (histData[0][cat.chartKey] ?? histData[0].v) : null;
                   const histDataDisplay = histData.map(d => {
                     const out = { d: d.d, isLive: d.isLive };
                     ['v','fond','akcie','crypto'].forEach(k => { if (d[k] != null) out[k] = Math.round(d[k] / dcfg.div); });
-                    if (benchmarkMode) {
-                      const bmVal = benchmarkMode === "sp500" ? bmMap.sp500[d.d] : bmMap.msci[d.d];
-                      if (bmVal != null) out.bv = Math.round(bmVal / dcfg.div);
+                    if (benchmarkMode && firstBmRaw && firstPortVal) {
+                      const bmVal = bmSrc[d.d];
+                      if (bmVal != null) {
+                        // Škáluj benchmark: zachovej relativní výnos od prvního viditelného bodu
+                        out.bv = Math.round((bmVal / firstBmRaw) * (firstPortVal / dcfg.div));
+                      }
                     }
                     return out;
                   });
