@@ -541,10 +541,16 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.24";
+const APP_VERSION = "v4.25";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.25", date: "22. 4. 2026", changes: [
+    "Fix: Cílová alokace — součet omezen na 100 %, live counter zbývá %",
+    "Fix: Gemini model gemini-2.0-flash-lite nahrazen gemini-2.0-flash",
+    "Dividendy: tlačítko Import z portfolia — načte tickery + počty kusů",
+    "UX: Ikony přidány ke všem záložkám v desktop nav i mobilní liště",
+  ]},
   { version: "v4.24", date: "22. 4. 2026", changes: [
     "Analýza: Max Drawdown, Volatilita, Sharpe Ratio spočítány z PORTFOLIO_HISTORY",
     "Analýza: Cílová alokace – editovatelné cílové % per kategorie + rebalancing helper",
@@ -3101,7 +3107,7 @@ ${posLines}`;
           });
           return (
             <div style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 16, padding: 22, marginBottom: 16 }}>
-              <SectionTitle title="🎯 Cílová alokace & rebalancing" sub={"Nastav cílové % kliknutím · celkem " + totalTarget.toFixed(0) + "% nastaveno" + (totalTarget>0&&Math.abs(totalTarget-100)>0.5?" (součet není 100 %)":"")} />
+              <SectionTitle title="🎯 Cílová alokace & rebalancing" sub={"Součet: " + totalTarget.toFixed(0) + "% · zbývá: " + Math.max(0,100-totalTarget).toFixed(0) + "% " + (totalTarget>100 ? "⚠ překročeno 100%" : totalTarget===100 ? "✓ OK" : "")} />
               <div style={{ overflowX:"auto", WebkitOverflowScrolling:"touch" }}>
                 <table style={{ width:"100%", borderCollapse:"collapse", minWidth:320 }}>
                   <thead>
@@ -3127,7 +3133,12 @@ ${posLines}`;
                           <td style={{ padding:"9px 10px", textAlign:"right" }}>
                             <input type="number" min="0" max="100" step="1" value={targetAlloc[row.k]||""}
                               placeholder="0"
-                              onChange={e => setTargetAlloc(prev => ({...prev, [row.k]: Number(e.target.value)||0}))}
+                              onChange={e => {
+                                const newVal = Number(e.target.value)||0;
+                                const others = catKeys.filter(x=>x!==row.k).reduce((s,x)=>s+(targetAlloc[x]||0),0);
+                                const capped = Math.max(0, Math.min(newVal, 100-others));
+                                setTargetAlloc(prev => ({...prev, [row.k]: capped}));
+                              }}
                               style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.12)", borderRadius:6, color:T.blue, fontFamily:"'DM Mono',monospace", fontSize:14, fontWeight:700, padding:"3px 8px", width:58, textAlign:"right", outline:"none" }}/>
                             <span style={{ fontSize:12, color:T.muted, marginLeft:3 }}>%</span>
                           </td>
@@ -3905,7 +3916,7 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
                   : <>
                       <option value="gemini-2.5-flash">gemini-2.5-flash ⚡</option>
                       <option value="gemini-2.5-pro">gemini-2.5-pro 🧠</option>
-                      <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite 🪶</option>
+                      <option value="gemini-2.0-flash">gemini-2.0-flash ⚡</option>
                     </>
                 }
               </select>
@@ -4237,10 +4248,20 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
         <div style={{ ...C }}>
           <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
             <SectionTitle title="📋 Dividendové pozice" sub="Manuálně zadané tituly · klikni + pro přidání" />
-            <button onClick={addDiv}
-              style={{ background:T.green, border:"none", borderRadius:8, color:"#000", cursor:"pointer", padding:"7px 16px", fontSize:13, fontWeight:700, flexShrink:0 }}>
-              + Přidat
-            </button>
+            <div style={{ display:"flex", gap:8, flexShrink:0 }}>
+              <button onClick={() => {
+                const existing = new Set(dividends.map(d=>d.ticker.toUpperCase()));
+                const toImport = allRows.filter(r=>r.ticker && r.shares && r.shares>0 && !existing.has(r.ticker.toUpperCase()));
+                if (toImport.length===0) { alert("Všechny pozice s tickerem a počtem kusů jsou už importovány."); return; }
+                setDividends(prev => [...prev, ...toImport.map((r,i)=>({ id:Date.now()+i, ticker:r.ticker.toUpperCase(), name:r.name||r.ticker, annualDiv:0, shares:r.shares, currency:r.currency||"CZK", months:[3,6,9,12] }))]);
+              }} style={{ background:"rgba(59,130,246,0.12)", border:"1px solid rgba(59,130,246,0.3)", borderRadius:8, color:T.blue, cursor:"pointer", padding:"7px 14px", fontSize:13, fontWeight:700, whiteSpace:"nowrap" }}>
+                📥 Import z portfolia
+              </button>
+              <button onClick={addDiv}
+                style={{ background:T.green, border:"none", borderRadius:8, color:"#000", cursor:"pointer", padding:"7px 16px", fontSize:13, fontWeight:700 }}>
+                + Přidat
+              </button>
+            </div>
           </div>
           {dividends.length === 0 && (
             <div style={{ fontSize:13, color:T.muted, textAlign:"center", padding:"20px 0" }}>
@@ -4311,12 +4332,12 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
   };
 
   const TABS = [
-    { id: "portfolio", label: "Přehled" },
-    { id: "analyza",   label: "Analýza" },
-    { id: "penzijko",  label: "Penzijko" },
-    { id: "positions", label: "Pozice" },
-    { id: "dividendy", label: "💰 Dividendy" },
-    { id: "ai",        label: "🤖 AI" },
+    { id: "portfolio", label: "📊 Přehled",   icon: "📊", short: "Přehled"   },
+    { id: "analyza",   label: "🔍 Analýza",   icon: "🔍", short: "Analýza"   },
+    { id: "penzijko",  label: "🏦 Penzijko",  icon: "🏦", short: "Penzijko"  },
+    { id: "positions", label: "📋 Pozice",     icon: "📋", short: "Pozice"    },
+    { id: "dividendy", label: "💰 Dividendy",  icon: "💰", short: "Dividendy" },
+    { id: "ai",        label: "🤖 AI",         icon: "🤖", short: "AI"        },
   ];
 
   return (
@@ -4518,10 +4539,8 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
             <button key={tab.id} onClick={() => setActiveTab(tab.id)}
               style={{ flex: 1, background: "none", border: "none", cursor: "pointer", display: "flex", flexDirection: "column", alignItems: "center", gap: 4, padding: "4px 0",
                 color: activeTab === tab.id ? T.green : T.muted }}>
-              <span style={{ fontSize: 20 }}>
-                {tab.id === "portfolio" ? "📊" : tab.id === "analyza" ? "🔍" : tab.id === "penzijko" ? "🏦" : tab.id === "dividendy" ? "💰" : tab.id === "ai" ? "🤖" : "📋"}
-              </span>
-              <span style={{ fontSize: 13, fontWeight: 600 }}>{tab.label}</span>
+              <span style={{ fontSize: 20 }}>{tab.icon}</span>
+              <span style={{ fontSize: 13, fontWeight: 600 }}>{tab.short}</span>
             </button>
           ))}
         </div>
