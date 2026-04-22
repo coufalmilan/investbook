@@ -254,6 +254,14 @@ const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/models";
 
 // callGemini – uses Cloudflare Worker proxy when workerUrl is set,
 // otherwise calls the Gemini API directly (requires API key).
+// ── One-time localStorage migration: odstraň zastaralé Gemini modely ──────
+(function() {
+  const dep = ["gemini-2.0-flash-lite","gemini-1.5-flash-latest","gemini-1.5-pro-latest","gemini-1.0-pro"];
+  if (dep.includes(localStorage.getItem("ib_gemini_model"))) {
+    localStorage.setItem("ib_gemini_model", "gemini-2.5-flash");
+  }
+})();
+
 async function callGemini(apiKey, systemPrompt, messages, model, workerUrl) {
   const contents = messages.map(m => ({
     role: m.role === "assistant" || m.role === "model" ? "model" : "user",
@@ -541,10 +549,15 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.28";
+const APP_VERSION = "v4.29";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.29", date: "22. 4. 2026", changes: [
+    "Odstraněna záložka Dividendy (CORS blokuje Yahoo Finance fetch)",
+    "Fix: Gemini model — aktivní smazání flash-lite z localStorage při načtení",
+    "Fix: Benchmark SP500/MSCI — opraveny roční výnosy 2025/2026 dle aktuálních tržních dat",
+  ]},
   { version: "v4.28", date: "22. 4. 2026", changes: [
     "Fix: Dividendy import — krypto pozice (Crypto kategorie) se přeskočí, importují se jen Akcie/ETF",
     "Fix: Gemini model — perzistentní výběr v localStorage + automatická migrace ze zastaralého flash-lite",
@@ -997,12 +1010,7 @@ function InvestBook() {
     try { return JSON.parse(localStorage.getItem("ib_target_alloc") || "{}"); } catch { return {}; }
   });
   // Dividends tracker
-  const [dividends, setDividends] = useState(() => {
-    try { return JSON.parse(localStorage.getItem("ib_dividends") || "[]"); } catch { return []; }
-  });
-  // Dividend fetch state
-  const [divFetching, setDivFetching] = React.useState(() => new Set());
-  const [divFetchError, setDivFetchError] = React.useState({});
+  // Dividendy tab odstraněn v v4.29
   // FIRE inputs
   const [fireExpenses, setFireExpenses] = useState(() => Number(localStorage.getItem("ib_fire_exp") || "50000"));
   const [fireReturnPct, setFireReturnPct] = useState(() => Number(localStorage.getItem("ib_fire_ret") || "7"));
@@ -1094,8 +1102,9 @@ function InvestBook() {
   }, [portfolioCAGR_hist, portfolioVolatility]);
 
   // ── Benchmark data (S&P 500 + MSCI World annual returns, normalizovano) ─
-  const SP500_ANN = { 2006:15.8,2007:5.5,2008:-37.0,2009:26.5,2010:15.1,2011:2.1,2012:16.0,2013:32.4,2014:13.7,2015:1.4,2016:12.0,2017:21.8,2018:-4.4,2019:31.5,2020:18.4,2021:28.7,2022:-18.1,2023:26.3,2024:25.0,2025:-5.5,2026:0 };
-  const MSCI_ANN  = { 2006:20.1,2007:9.6,2008:-40.3,2009:30.0,2010:11.8,2011:-5.5,2012:15.8,2013:26.7,2014:5.5,2015:-0.3,2016:7.5,2017:22.4,2018:-8.7,2019:27.7,2020:15.9,2021:21.8,2022:-17.7,2023:23.8,2024:18.0,2025:-4.0,2026:0 };
+  // SP500/MSCI roční výnosy — 2025 a 2026 aktualizovány dle reálných tržních dat (S&P 500 v 04/2026 = 7 064)
+  const SP500_ANN = { 2006:15.8,2007:5.5,2008:-37.0,2009:26.5,2010:15.1,2011:2.1,2012:16.0,2013:32.4,2014:13.7,2015:1.4,2016:12.0,2017:21.8,2018:-4.4,2019:31.5,2020:18.4,2021:28.7,2022:-18.1,2023:26.3,2024:25.0,2025:9.0,2026:32.0 };
+  const MSCI_ANN  = { 2006:20.1,2007:9.6,2008:-40.3,2009:30.0,2010:11.8,2011:-5.5,2012:15.8,2013:26.7,2014:5.5,2015:-0.3,2016:7.5,2017:22.4,2018:-8.7,2019:27.7,2020:15.9,2021:21.8,2022:-17.7,2023:23.8,2024:18.0,2025:7.0,2026:26.0 };
   const bmMap = React.useMemo(() => {
     if (PORTFOLIO_HISTORY.length === 0) return { sp500: {}, msci: {} };
     const startVal = PORTFOLIO_HISTORY[0].v;
@@ -1115,7 +1124,6 @@ function InvestBook() {
   }, []);
 
   // ── localStorage persist for dividends + targetAlloc + FIRE ─────────────
-  React.useEffect(() => { localStorage.setItem("ib_dividends", JSON.stringify(dividends)); }, [dividends]);
   React.useEffect(() => { localStorage.setItem("ib_target_alloc", JSON.stringify(targetAlloc)); }, [targetAlloc]);
   React.useEffect(() => { localStorage.setItem("ib_fire_exp", String(fireExpenses)); }, [fireExpenses]);
   React.useEffect(() => { localStorage.setItem("ib_fire_ret", String(fireReturnPct)); }, [fireReturnPct]);
@@ -4242,234 +4250,12 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
   };
 
   // ── DIVIDENDY TAB ───────────────────────────────────────────────────────────
-  const tabDividendy = () => {
-    const MONTHS_CS = ["Led","Úno","Bře","Dub","Kvě","Čvn","Čvc","Srp","Zář","Říj","Lis","Pro"];
-    const totalAnnualIncome = dividends.reduce((s,d) => {
-      const shares = d.shares || 0;
-      const divPerShare = d.annualDiv || 0;
-      const fxRate = d.currency === "EUR" ? DEGIRO_FX : d.currency === "GBP" ? GBP_FX : 1;
-      return s + Math.round(shares * divPerShare * fxRate);
-    }, 0);
-    const totalYield = totalValue > 0 ? (totalAnnualIncome / totalValue * 100) : 0;
-    const monthlyMap = {};
-    dividends.forEach(d => {
-      if (!d.months || !d.months.length) return;
-      const perPayment = Math.round((d.shares||0) * (d.annualDiv||0) / d.months.length * (d.currency==="EUR"?DEGIRO_FX:d.currency==="GBP"?GBP_FX:1));
-      d.months.forEach(m => { monthlyMap[m] = (monthlyMap[m]||0) + perPayment; });
-    });
-    const addDiv = () => setDividends(prev => [...prev, { id: Date.now(), ticker:"", name:"", annualDiv:0, shares:0, currency:"CZK", months:[3,6,9,12] }]);
-    const updDiv = (id, field, val) => setDividends(prev => prev.map(d => d.id===id ? {...d,[field]:val} : d));
-    const delDiv = (id) => setDividends(prev => prev.filter(d => d.id!==id));
-    const toggleMonth = (id, m) => setDividends(prev => prev.map(d => {
-      if (d.id!==id) return d;
-      const ms = d.months||[];
-      return {...d, months: ms.includes(m) ? ms.filter(x=>x!==m) : [...ms,m].sort((a,b)=>a-b)};
-    }));
-    // Fetch dividend data from Yahoo Finance → FMP fallback
-    const fetchDivFromYahoo = async (id, ticker) => {
-      if (!ticker) return;
-      setDivFetching(prev => new Set([...prev, id]));
-      setDivFetchError(prev => { const n={...prev}; delete n[id]; return n; });
-      try {
-        let annualDiv = 0, months = [3,6,9,12], found = false;
-        // 1. Yahoo Finance quoteSummary
-        try {
-          const r1 = await fetch(`https://query2.finance.yahoo.com/v10/finance/quoteSummary/${encodeURIComponent(ticker)}?modules=summaryDetail`, { signal: AbortSignal.timeout(6000) });
-          if (r1.ok) {
-            const d1 = await r1.json();
-            const det = d1?.quoteSummary?.result?.[0]?.summaryDetail;
-            if (det?.dividendRate?.raw > 0) { annualDiv = det.dividendRate.raw; found = true; }
-            // Payment months from chart events
-            const r2 = await fetch(`https://query2.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(ticker)}?interval=3mo&range=3y&events=dividends`, { signal: AbortSignal.timeout(6000) });
-            if (r2.ok) {
-              const d2 = await r2.json();
-              const evts = d2?.chart?.result?.[0]?.events?.dividends;
-              if (evts && Object.keys(evts).length > 0) {
-                const ms = new Set(Object.values(evts).map(e => new Date(e.date*1000).getMonth()+1));
-                months = [...ms].sort((a,b)=>a-b);
-              }
-            }
-          }
-        } catch {}
-        // 2. FMP fallback
-        if (!found) {
-          try {
-            const r3 = await fetch(`https://financialmodelingprep.com/api/v3/historical-price-full/stock_dividend/${encodeURIComponent(ticker)}?limit=8&apikey=demo`, { signal: AbortSignal.timeout(6000) });
-            if (r3.ok) {
-              const d3 = await r3.json();
-              const hist = d3?.historical;
-              if (hist && hist.length > 0) {
-                const yearAgo = Date.now() - 365*24*3600*1000;
-                const recent = hist.filter(h => new Date(h.date).getTime() > yearAgo);
-                const src = recent.length > 0 ? recent : hist.slice(0,4);
-                if (src.length > 0) {
-                  annualDiv = Math.round(src.reduce((s,h)=>s+(h.adjDividend||h.dividend||0),0)*100)/100;
-                  months = [...new Set(src.map(h=>new Date(h.date).getMonth()+1))].sort((a,b)=>a-b);
-                  found = true;
-                }
-              }
-            }
-          } catch {}
-        }
-        if (!found || annualDiv === 0) {
-          setDivFetchError(prev => ({...prev, [id]: 'Dividenda nenalezena — ticker neplatí dividendu nebo je nedostupný'}));
-        } else {
-          setDividends(prev => prev.map(d => d.id===id ? {...d, annualDiv, months} : d));
-        }
-      } catch(e) {
-        setDivFetchError(prev => ({...prev, [id]: 'Chyba: ' + e.message}));
-      } finally {
-        setDivFetching(prev => { const s = new Set(prev); s.delete(id); return s; });
-      }
-    };
-    const fetchAllDivs = async () => {
-      for (const d of dividends) { if (d.ticker) await fetchDivFromYahoo(d.id, d.ticker); }
-    };
-    const C = { background: T.card, border: "1px solid " + T.border, borderRadius: 14, padding: "18px 20px", marginBottom: 16 };
-    return (
-      <div>
-        <div style={{ marginBottom:24 }}>
-          <h1 style={{ fontSize:26, fontWeight:800, color:T.text, letterSpacing:"-0.02em" }}>💰 Dividendy</h1>
-          <div style={{ fontSize:13, color:T.muted, marginTop:4 }}>Sleduj dividendový příjem portfolia</div>
-        </div>
-        {/* Souhrnné karty */}
-        <div className="ib-grid4" style={{ display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:12, marginBottom:16 }}>
-          {[
-            { label:"Roční příjem", value:fmt(totalAnnualIncome), color:T.green },
-            { label:"Měs. průměr",  value:fmt(Math.round(totalAnnualIncome/12)), color:T.blue },
-            { label:"Dividendový výnos", value:totalYield.toFixed(2)+"%", color:"#a78bfa" },
-            { label:"Počet titulů", value:dividends.length+" pozic", color:T.amber },
-          ].map(c => (
-            <div key={c.label} className="ib-statcard" style={{ background:T.card, border:"1px solid "+T.border, borderRadius:12, padding:"12px 16px" }}>
-              <div className="ib-statcard-lbl" style={{ fontSize:11, color:T.muted, fontWeight:600, letterSpacing:"0.07em", textTransform:"uppercase", marginBottom:4 }}>{c.label}</div>
-              <div className="ib-statcard-val" style={{ fontSize:20, fontWeight:800, color:c.color, fontFamily:"'DM Mono',monospace" }}>{c.value}</div>
-            </div>
-          ))}
-        </div>
-        {/* Měsíční kalendář */}
-        <div style={{ ...C }}>
-          <SectionTitle title="📅 Měsíční příjmy" sub="Odhadovaný příjem dividendy dle nastavených měsíců výplaty" />
-          <div style={{ display:"grid", gridTemplateColumns:"repeat(6,1fr)", gap:8, marginTop:8 }}>
-            {MONTHS_CS.map((m,i) => {
-              const v = monthlyMap[i+1]||0;
-              const maxV = Math.max(...Object.values(monthlyMap), 1);
-              return (
-                <div key={m} style={{ background:"rgba(255,255,255,0.03)", border:"1px solid "+T.border, borderRadius:10, padding:"10px 12px", textAlign:"center" }}>
-                  <div style={{ fontSize:11, color:T.muted, fontWeight:600, marginBottom:6 }}>{m}</div>
-                  <div style={{ height:40, background:"rgba(255,255,255,0.04)", borderRadius:4, overflow:"hidden", display:"flex", alignItems:"flex-end" }}>
-                    <div style={{ width:"100%", height:(v/maxV*100)+"%", background: v>0 ? T.green : "transparent", borderRadius:4, minHeight:v>0?2:0, transition:"height 0.3s" }}/>
-                  </div>
-                  <div style={{ fontSize:12, color:v>0?T.green:T.subtle, fontFamily:"'DM Mono',monospace", fontWeight:600, marginTop:5 }}>{v>0?fmt(v):"—"}</div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-        {/* Tabulka pozic */}
-        <div style={{ ...C }}>
-          <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:14 }}>
-            <SectionTitle title="📋 Dividendové pozice" sub="Manuálně zadané tituly · klikni + pro přidání" />
-            <div style={{ display:"flex", gap:8, flexShrink:0, flexWrap:"wrap" }}>
-              <button onClick={fetchAllDivs} title="Pokusí se načíst roční dividendu a platební měsíce pro všechny tickery"
-                style={{ background:"rgba(168,85,247,0.12)", border:"1px solid rgba(168,85,247,0.3)", borderRadius:8, color:"#a78bfa", cursor:"pointer", padding:"7px 14px", fontSize:13, fontWeight:700, whiteSpace:"nowrap" }}>
-                🔄 Načíst vše z Yahoo
-              </button>
-              <button onClick={() => {
-                const existing = new Set(dividends.map(d=>d.ticker.toUpperCase()));
-                const toImport = allRows.filter(r=>r.ticker && r.shares && r.shares>0 && !existing.has(r.ticker.toUpperCase()) && r.category !== "Crypto");
-                if (toImport.length===0) { alert("Všechny pozice s tickerem a počtem kusů jsou už importovány."); return; }
-                setDividends(prev => [...prev, ...toImport.map((r,i)=>({ id:Date.now()+i, ticker:r.ticker.toUpperCase(), name:r.name||r.ticker, annualDiv:0, shares:r.shares, currency:r.currency||"CZK", months:[3,6,9,12] }))]);
-              }} style={{ background:"rgba(59,130,246,0.12)", border:"1px solid rgba(59,130,246,0.3)", borderRadius:8, color:T.blue, cursor:"pointer", padding:"7px 14px", fontSize:13, fontWeight:700, whiteSpace:"nowrap" }}>
-                📥 Import z portfolia
-              </button>
-              <button onClick={addDiv}
-                style={{ background:T.green, border:"none", borderRadius:8, color:"#000", cursor:"pointer", padding:"7px 16px", fontSize:13, fontWeight:700 }}>
-                + Přidat
-              </button>
-            </div>
-          </div>
-          {dividends.length === 0 && (
-            <div style={{ fontSize:13, color:T.muted, textAlign:"center", padding:"20px 0" }}>
-              Zatím žádné dividendové pozice. Klikni "+ Přidat" pro přidání titulu.
-            </div>
-          )}
-          {dividends.map(d => {
-            const fxRate = d.currency==="EUR"?DEGIRO_FX:d.currency==="GBP"?GBP_FX:1;
-            const annualIncomeCZK = Math.round((d.shares||0)*(d.annualDiv||0)*fxRate);
-            const posValue = allRows.find(r => r.ticker && d.ticker && r.ticker.toUpperCase()===d.ticker.toUpperCase())?.valueCZK || 0;
-            const yieldPct = posValue > 0 ? (annualIncomeCZK/posValue*100) : 0;
-            return (
-              <div key={d.id} style={{ background:"rgba(255,255,255,0.02)", border:"1px solid "+T.border, borderRadius:12, padding:"14px 16px", marginBottom:10 }}>
-                {/* Řádek 1: ticker, název, tlačítka */}
-                <div style={{ display:"flex", alignItems:"center", gap:10, marginBottom:10, flexWrap:"wrap" }}>
-                  <PositionLogo ticker={d.ticker} name={d.name||d.ticker} size={26}/>
-                  <input value={d.ticker} onChange={e=>updDiv(d.id,"ticker",e.target.value.toUpperCase())} placeholder="TICKER"
-                    style={{ background:T.bg, border:"1px solid "+T.border, borderRadius:6, color:T.text, fontFamily:"'DM Mono',monospace", fontSize:14, fontWeight:700, padding:"4px 10px", width:80, outline:"none" }}/>
-                  <input value={d.name} onChange={e=>updDiv(d.id,"name",e.target.value)} placeholder="Název (volitelný)"
-                    style={{ background:T.bg, border:"1px solid "+T.border, borderRadius:6, color:T.muted, fontSize:13, padding:"4px 10px", flex:1, minWidth:100, outline:"none" }}/>
-                  <select value={d.currency||"CZK"} onChange={e=>updDiv(d.id,"currency",e.target.value)}
-                    style={{ background:T.bg, border:"1px solid "+T.border, borderRadius:6, color:T.text, fontSize:13, padding:"4px 8px", outline:"none" }}>
-                    {["CZK","EUR","USD","GBP"].map(c => <option key={c} value={c}>{c}</option>)}
-                  </select>
-                  <button onClick={()=>fetchDivFromYahoo(d.id,d.ticker)} disabled={divFetching.has(d.id)||!d.ticker}
-                    title="Načíst dividendu z Yahoo Finance / FMP"
-                    style={{ background:"none", border:"1px solid rgba(168,85,247,0.3)", borderRadius:6, color: divFetching.has(d.id)?"#a78bfa":T.subtle, cursor:d.ticker?"pointer":"not-allowed", fontSize:13, padding:"3px 8px", transition:"color 0.2s" }}>
-                    {divFetching.has(d.id) ? "⏳" : "🔄"}
-                  </button>
-                  <button onClick={()=>delDiv(d.id)} style={{ background:"none", border:"none", color:T.subtle, cursor:"pointer", fontSize:20, padding:"2px 6px" }}>×</button>
-                </div>
-                {divFetchError[d.id] && (
-                  <div style={{ fontSize:11, color:T.red, marginBottom:6, padding:"4px 8px", background:"rgba(239,68,68,0.08)", borderRadius:6 }}>{divFetchError[d.id]}</div>
-                )}
-                {/* Řádek 2: div/ks, počet kusů, výsledky */}
-                <div style={{ display:"flex", gap:12, alignItems:"flex-end", flexWrap:"wrap" }}>
-                  <div>
-                    <div style={{ fontSize:11, color:T.muted, marginBottom:3 }}>Dividenda / ks / rok ({d.currency||"CZK"})</div>
-                    <input type="number" min="0" step="0.01" value={d.annualDiv||""} placeholder="0.00"
-                      onChange={e=>updDiv(d.id,"annualDiv",parseFloat(e.target.value)||0)}
-                      style={{ background:T.bg, border:"1px solid "+T.border, borderRadius:6, color:T.green, fontFamily:"'DM Mono',monospace", fontSize:15, fontWeight:700, padding:"4px 10px", width:100, outline:"none" }}/>
-                  </div>
-                  <div>
-                    <div style={{ fontSize:11, color:T.muted, marginBottom:3 }}>Počet kusů</div>
-                    <input type="number" min="0" step="1" value={d.shares||""} placeholder="0"
-                      onChange={e=>updDiv(d.id,"shares",parseFloat(e.target.value)||0)}
-                      style={{ background:T.bg, border:"1px solid "+T.border, borderRadius:6, color:T.text, fontFamily:"'DM Mono',monospace", fontSize:15, fontWeight:700, padding:"4px 10px", width:90, outline:"none" }}/>
-                  </div>
-                  <div style={{ marginLeft:"auto", textAlign:"right" }}>
-                    <div style={{ fontSize:13, color:T.muted, marginBottom:2 }}>Roční příjem CZK</div>
-                    <div style={{ fontSize:20, fontWeight:800, color:T.green, fontFamily:"'DM Mono',monospace" }}>{fmt(annualIncomeCZK)}</div>
-                    {yieldPct > 0 && <div style={{ fontSize:12, color:"#a78bfa", fontFamily:"'DM Mono',monospace" }}>yield {yieldPct.toFixed(2)}%</div>}
-                  </div>
-                </div>
-                {/* Řádek 3: měsíce výplaty */}
-                <div style={{ marginTop:10 }}>
-                  <div style={{ fontSize:11, color:T.muted, marginBottom:5 }}>Měsíce výplaty:</div>
-                  <div style={{ display:"flex", flexWrap:"wrap", gap:4 }}>
-                    {MONTHS_CS.map((m,i) => {
-                      const active = (d.months||[]).includes(i+1);
-                      return (
-                        <button key={m} onClick={()=>toggleMonth(d.id,i+1)}
-                          style={{ padding:"3px 8px", borderRadius:5, border:"1px solid "+(active?"rgba(34,197,94,0.4)":T.border), background:active?"rgba(34,197,94,0.12)":"transparent", color:active?T.green:T.muted, cursor:"pointer", fontSize:11, fontWeight:600 }}>
-                          {m}
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-      </div>
-    );
-  };
 
   const TABS = [
     { id: "portfolio", label: "📊 Přehled",   icon: "📊", short: "Přehled"   },
     { id: "analyza",   label: "🔍 Analýza",   icon: "🔍", short: "Analýza"   },
     { id: "penzijko",  label: "🏦 Penzijko",  icon: "🏦", short: "Penzijko"  },
     { id: "positions", label: "📋 Pozice",     icon: "📋", short: "Pozice"    },
-    { id: "dividendy", label: "💰 Dividendy",  icon: "💰", short: "Dividendy" },
     { id: "ai",        label: "🤖 AI",         icon: "🤖", short: "AI"        },
   ];
 
@@ -4691,7 +4477,6 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
           {activeTab === "positions" && tabPozice()}
           {activeTab === "analyza"   && tabAnalyza()}
           {activeTab === "penzijko"  && tabPenzijko()}
-          {activeTab === "dividendy" && tabDividendy()}
           {activeTab === "ai"        && tabAI()}
         </main>
       </div>
