@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="cs">
+<head>
+  <meta charset="UTF-8"/>
+  <title>InvestBook — Testy</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <style>
+    body { background: #0f0f13; color: #e5e7eb; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; padding: 24px; max-width: 900px; margin: 0 auto; }
+    h1 { font-size: 22px; margin-bottom: 4px; }
+    .sub { color: #9ca3af; font-size: 13px; margin-bottom: 20px; }
+    .summary { background: #18181c; border-radius: 10px; padding: 14px 18px; margin-bottom: 20px; border: 1px solid #2a2a30; }
+    .summary.pass { border-color: #22c55e; }
+    .summary.fail { border-color: #ef4444; }
+    .group { margin-top: 20px; }
+    .group h2 { font-size: 14px; color: #9ca3af; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 8px; font-weight: 600; }
+    .test { padding: 8px 12px; border-radius: 6px; margin-bottom: 4px; font-size: 13px; font-family: "DM Mono", ui-monospace, monospace; display: flex; gap: 10px; align-items: flex-start; }
+    .test.pass { background: rgba(34,197,94,0.08); border-left: 3px solid #22c55e; }
+    .test.fail { background: rgba(239,68,68,0.12); border-left: 3px solid #ef4444; }
+    .icon { font-weight: 700; min-width: 18px; }
+    .pass .icon { color: #22c55e; }
+    .fail .icon { color: #ef4444; }
+    .msg { flex: 1; white-space: pre-wrap; word-break: break-word; }
+    .expected { color: #9ca3af; font-size: 12px; margin-top: 4px; }
+    code { background: #18181c; padding: 2px 6px; border-radius: 4px; font-size: 12px; }
+  </style>
+</head>
+<body>
+  <h1>🧪 InvestBook — testy klíčové logiky</h1>
+  <div class="sub">Testuje funkce z <code>investbook-core.js</code>. Zelený ✓ = OK, červený ✗ = něco se rozbilo.</div>
+  <div id="summary" class="summary">Spouštím testy…</div>
+  <div id="results"></div>
+
+  <script src="./investbook-core.js"></script>
+  <script>
+    // ─── Malý test framework (žádné knihovny) ──────────────────────────
+    const groups = {};
+    let passed = 0, failed = 0;
+    const failures = [];
+
+    // Blízké si k sobě pro porovnání desetinných čísel
+    const near = (a, b, eps) => Math.abs(a - b) < (eps || 1e-6);
+
+    function test(groupName, name, fn) {
+      if (!groups[groupName]) groups[groupName] = [];
+      try {
+        fn();
+        groups[groupName].push({ name, ok: true });
+        passed++;
+      } catch (e) {
+        groups[groupName].push({ name, ok: false, err: e.message });
+        failures.push(`${groupName} → ${name}: ${e.message}`);
+        failed++;
+      }
+    }
+    function expect(actual) {
+      return {
+        toBe(expected) { if (actual !== expected) throw new Error(`čekal ${JSON.stringify(expected)}, dostal ${JSON.stringify(actual)}`); },
+        toBeNull() { if (actual !== null) throw new Error(`čekal null, dostal ${JSON.stringify(actual)}`); },
+        toBeNear(expected, eps) { if (!near(actual, expected, eps)) throw new Error(`čekal ≈ ${expected} (±${eps||1e-6}), dostal ${actual}`); },
+        toBeGreaterThan(x) { if (!(actual > x)) throw new Error(`čekal > ${x}, dostal ${actual}`); },
+        toBeLessThan(x) { if (!(actual < x)) throw new Error(`čekal < ${x}, dostal ${actual}`); },
+        toEqual(expected) {
+          if (JSON.stringify(actual) !== JSON.stringify(expected))
+            throw new Error(`čekal ${JSON.stringify(expected)}, dostal ${JSON.stringify(actual)}`);
+        },
+      };
+    }
+
+    const C = window.InvestBookCore;
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  1) PARSING ČÍSEL (pf, pfn, parseFlt)
+    // ═══════════════════════════════════════════════════════════════════
+    test("Parsing čísel", "pf: běžné číslo", () => expect(C.pf("1234")).toBe(1234));
+    test("Parsing čísel", "pf: s mezerami (tisíce)", () => expect(C.pf("1 234 567")).toBe(1234567));
+    test("Parsing čísel", "pf: s čárkou (desetinná)", () => expect(C.pf("12,5")).toBe(12.5));
+    test("Parsing čísel", "pf: mezery i čárka současně", () => expect(C.pf("1 234,56")).toBe(1234.56));
+    test("Parsing čísel", "pf: null → 0", () => expect(C.pf(null)).toBe(0));
+    test("Parsing čísel", "pf: '' → 0", () => expect(C.pf("")).toBe(0));
+    test("Parsing čísel", "pf: nesmysl → 0", () => expect(C.pf("abc")).toBe(0));
+    test("Parsing čísel", "pf: záporné", () => expect(C.pf("-42,5")).toBe(-42.5));
+
+    test("Parsing čísel", "pfn: null → null (!0!)", () => expect(C.pfn(null)).toBeNull());
+    test("Parsing čísel", "pfn: '' → null", () => expect(C.pfn("")).toBeNull());
+    test("Parsing čísel", "pfn: číslo → číslo", () => expect(C.pfn("3,14")).toBe(3.14));
+    test("Parsing čísel", "pfn: nesmysl → null", () => expect(C.pfn("xxx")).toBeNull());
+
+    test("Parsing čísel", "parseFlt: běžné", () => expect(C.parseFlt("42")).toBe(42));
+    test("Parsing čísel", "parseFlt: undefined → 0", () => expect(C.parseFlt(undefined)).toBe(0));
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  2) FX konverze
+    // ═══════════════════════════════════════════════════════════════════
+    const RATES = { EUR: 24.23, USD: 20.57, GBP: 25.80 };
+    test("FX konverze", "fxRate: explicitní fx má přednost",
+      () => expect(C.fxRate({ fx: 22.0, currency: "USD" }, RATES)).toBe(22.0));
+    test("FX konverze", "fxRate: EUR → 24.23",
+      () => expect(C.fxRate({ currency: "EUR" }, RATES)).toBe(24.23));
+    test("FX konverze", "fxRate: USD → 20.57",
+      () => expect(C.fxRate({ currency: "USD" }, RATES)).toBe(20.57));
+    test("FX konverze", "fxRate: GBP → 25.80",
+      () => expect(C.fxRate({ currency: "GBP" }, RATES)).toBe(25.80));
+    test("FX konverze", "fxRate: CZK → 1",
+      () => expect(C.fxRate({ currency: "CZK" }, RATES)).toBe(1));
+    test("FX konverze", "fxRate: neznámá měna → 1",
+      () => expect(C.fxRate({ currency: "XYZ" }, RATES)).toBe(1));
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  3) Max Drawdown — největší propad od vrcholu
+    // ═══════════════════════════════════════════════════════════════════
+    test("Max Drawdown", "prázdná historie → 0",
+      () => expect(C.maxDrawdown([])).toBe(0));
+    test("Max Drawdown", "jen rostoucí → 0",
+      () => expect(C.maxDrawdown([{d:"2024-01",v:100},{d:"2024-02",v:120},{d:"2024-03",v:150}])).toBe(0));
+    test("Max Drawdown", "propad 100→50 → 50%",
+      () => expect(C.maxDrawdown([{d:"2024-01",v:100},{d:"2024-02",v:50}])).toBeNear(50, 0.01));
+    test("Max Drawdown", "V-tvar 100→80→120: propad 20%",
+      () => expect(C.maxDrawdown([{d:"2024-01",v:100},{d:"2024-02",v:80},{d:"2024-03",v:120}])).toBeNear(20, 0.01));
+    test("Max Drawdown", "vícenásobné propady — bere nejhlubší",
+      () => expect(C.maxDrawdown([
+        {d:"2024-01",v:100},{d:"2024-02",v:90},{d:"2024-03",v:110},
+        {d:"2024-04",v:60},{d:"2024-05",v:80}
+      ])).toBeNear(45.45, 0.01)); // 110 → 60 = 45.45%
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  4) Volatilita
+    // ═══════════════════════════════════════════════════════════════════
+    test("Volatilita", "prázdná historie → 0",
+      () => expect(C.portfolioVolatility([])).toBe(0));
+    test("Volatilita", "jeden bod → 0",
+      () => expect(C.portfolioVolatility([{d:"2024-01",v:100}])).toBe(0));
+    test("Volatilita", "konstantní portfolio → 0",
+      () => expect(C.portfolioVolatility([
+        {d:"2024-01",v:100},{d:"2024-02",v:100},{d:"2024-03",v:100}
+      ])).toBeNear(0, 0.01));
+    test("Volatilita", "kolísavá historie vrací kladné číslo", () => {
+      const v = C.portfolioVolatility([
+        {d:"2024-01",v:100},{d:"2024-02",v:110},{d:"2024-03",v:95},
+        {d:"2024-04",v:105},{d:"2024-05",v:120}
+      ]);
+      if (v <= 0) throw new Error(`čekal > 0, dostal ${v}`);
+      if (v > 500) throw new Error(`volatilita nesmí být šílená, dostal ${v}`);
+    });
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  5) CAGR z historie
+    // ═══════════════════════════════════════════════════════════════════
+    test("CAGR", "prázdná historie → null",
+      () => expect(C.portfolioCAGR([])).toBeNull());
+    test("CAGR", "jeden bod → null",
+      () => expect(C.portfolioCAGR([{d:"2024-01",v:100}])).toBeNull());
+    test("CAGR", "stejná hodnota za 1 rok → 0 %",
+      () => expect(C.portfolioCAGR([
+        {d:"2024-01",v:100},{d:"2025-01",v:100}
+      ])).toBeNear(0, 0.01));
+    // Rok 2024 je přestupný → 366/365.25 = 1.00205 let → CAGR ~99.72 % (ne přesně 100)
+    test("CAGR", "zdvojnásobení za 1 rok → ~100 %",
+      () => expect(C.portfolioCAGR([
+        {d:"2024-01",v:100},{d:"2025-01",v:200}
+      ])).toBeNear(100, 0.5));
+    test("CAGR", "10 % za 1 rok = ~10 %",
+      () => expect(C.portfolioCAGR([
+        {d:"2024-01",v:100},{d:"2025-01",v:110}
+      ])).toBeNear(10, 0.5));
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  6) Sharpe ratio
+    // ═══════════════════════════════════════════════════════════════════
+    test("Sharpe", "(10 - 3.5) / 5 = 1.3",
+      () => expect(C.sharpeRatio(10, 5, 3.5)).toBeNear(1.3, 0.001));
+    test("Sharpe", "nulová volatilita → null",
+      () => expect(C.sharpeRatio(10, 0)).toBeNull());
+    test("Sharpe", "null CAGR → null",
+      () => expect(C.sharpeRatio(null, 5)).toBeNull());
+    test("Sharpe", "default bezriziková sazba = 3.5",
+      () => expect(C.sharpeRatio(10, 10)).toBeNear(0.65, 0.001));
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  7) Vážený CAGR portfolia (calcWeightedAnnReturn)
+    // ═══════════════════════════════════════════════════════════════════
+    test("Vážený CAGR", "prázdný seznam → 0",
+      () => expect(C.calcWeightedAnnReturn([], 2026)).toBe(0));
+    test("Vážený CAGR", "jedna CZK pozice: 100→150 za 5 let = ~8.45 %", () => {
+      const rows = [{ currency:"CZK", invested:100, value:150, investedCZK:100, start:2021 }];
+      expect(C.calcWeightedAnnReturn(rows, 2026)).toBeNear(8.447, 0.01);
+    });
+    test("Vážený CAGR", "pozice bez ceny se přeskočí",
+      () => expect(C.calcWeightedAnnReturn([
+        { currency:"USD", invested:100, investedCZK:2000, start:2021 } // chybí priceCZK+shares
+      ], 2026)).toBe(0));
+    test("Vážený CAGR", "USD pozice s priceCZK*shares",
+      () => {
+        // invested=100 USD, investedCZK=2000, priceCZK=25, shares=6 → valCZK=150
+        // ratio=150/2000=0.075 → CAGR záporné
+        const r = C.calcWeightedAnnReturn([
+          { currency:"USD", invested:100, investedCZK:2000, priceCZK:25, shares:6, start:2021 }
+        ], 2026);
+        if (r >= 0) throw new Error(`čekal záporné CAGR, dostal ${r}`);
+      });
+    test("Vážený CAGR", "crypto malá, mnoho let — NEprotahuje celé portfolio", () => {
+      // 1.5M v CZK pozice, 3 roky + 50k crypto pozice, 8 let
+      // vážené roky ≈ (1500000*3 + 50000*8)/1550000 = ~3.16 → ne 8
+      const rows = [
+        { currency:"CZK", invested:1500000, value:2000000, investedCZK:1500000, start:2023 },
+        { currency:"USD", invested:2000,    investedCZK:50000, priceCZK:500, shares:100, start:2018 },
+      ];
+      const cagr = C.calcWeightedAnnReturn(rows, 2026);
+      // Roční CAGR by měl být cca 10-15 %, rozhodně ne miniaturní (jako by se vážily roky rovnoměrně)
+      if (cagr < 5 || cagr > 25) throw new Error(`CAGR mimo rozumný rozsah: ${cagr}`);
+    });
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  8) YTD výnos s FX korekcí
+    // ═══════════════════════════════════════════════════════════════════
+    const HIST_YTD = [
+      { d:"2025-01", v:2000000 }, { d:"2025-06", v:2200000 },
+      { d:"2026-01", v:2500000 }, { d:"2026-02", v:2600000 },
+    ];
+    test("YTD", "CZK: 2.5M → 2.6M = 4 %",
+      () => expect(C.ytdGainPct({
+        history: HIST_YTD, nowYear: 2026, dispValue: 2600000, janFx: 1, nowFx: 1
+      })).toBeNear(4, 0.01));
+    test("YTD", "FX korekce: USD přepnutí — CZK efekt se nezapočítává", () => {
+      // CZK hodnota: 2.5M → 2.6M = +4 %
+      // V USD: 2.5M/23.50 = 106383, 2.6M/20.57 = 126397 → +18.8 % (kvůli silné USD)
+      // To je správně (chceš vidět "YTD v USD" včetně FX efektu), v reálném kódu to tak je.
+      const pct = C.ytdGainPct({
+        history: HIST_YTD, nowYear: 2026, dispValue: 2600000,
+        janFx: 23.50, nowFx: 20.57
+      });
+      if (pct < 10 || pct > 30) throw new Error(`USD YTD mimo rozsah: ${pct}`);
+    });
+    test("YTD", "chybí lednový bod → null",
+      () => expect(C.ytdGainPct({
+        history: [{d:"2026-02",v:100}], nowYear: 2026, dispValue: 110, janFx: 1, nowFx: 1
+      })).toBeNull());
+    test("YTD", "prázdná historie → null",
+      () => expect(C.ytdGainPct({
+        history: [], nowYear: 2026, dispValue: 100, janFx: 1, nowFx: 1
+      })).toBeNull());
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  9) Benchmark mapa
+    // ═══════════════════════════════════════════════════════════════════
+    const HIST_BM = [{ d:"2024-01", v:1000 }, { d:"2025-01", v:1100 }];
+    const RETS = { 2024: 20, 2025: 10 };
+    // Záměr: měsíc 1 znamená že 1/12 roku už uplynulo, takže start bod má malý příspěvek.
+    // 1000 * (1 + 0.20/12) = 1016.67 → 1017. 1000 * 1.20 * (1 + 0.10/12) = 1210.
+    test("Benchmark", "start: 1/12 ročního výnosu aplikováno",
+      () => expect(C.buildBenchmarkMap(HIST_BM, RETS)["2024-01"]).toBe(1017));
+    test("Benchmark", "po roce +20 % a 1/12 z 10 %",
+      () => expect(C.buildBenchmarkMap(HIST_BM, RETS)["2025-01"]).toBe(1210));
+    test("Benchmark", "extraDates přidá nový bod",
+      () => {
+        const m = C.buildBenchmarkMap(HIST_BM, RETS, ["2025-07"]);
+        if (!m["2025-07"]) throw new Error("chybí extra datum");
+      });
+    test("Benchmark", "prázdná historie → prázdná mapa",
+      () => expect(C.buildBenchmarkMap([], RETS)).toEqual({}));
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 10) FIRE kalkulačka
+    // ═══════════════════════════════════════════════════════════════════
+    test("FIRE", "bez výdajů → null",
+      () => expect(C.calcFireYears({
+        totalValue: 1000000, fireExpenses: 0, fireWithdrawal: 4, fireReturnPct: 7, monthlyContrib: 10000
+      })).toBeNull());
+    test("FIRE", "už nad cílem → 0 let",
+      () => expect(C.calcFireYears({
+        totalValue: 10000000, fireExpenses: 30000, fireWithdrawal: 4, fireReturnPct: 7, monthlyContrib: 10000
+      })).toBe(0));
+    test("FIRE", "konzistence: N let ≥ 1 u rozumných vstupů", () => {
+      const y = C.calcFireYears({
+        totalValue: 2500000, fireExpenses: 40000, fireWithdrawal: 4, fireReturnPct: 7, monthlyContrib: 20000
+      });
+      if (y === null || y < 1) throw new Error(`neočekávaný výsledek: ${y}`);
+      if (y > 40) throw new Error(`neuvěřitelně dlouho: ${y} let`);
+    });
+    test("FIRE", "bez příkupu a růstu → null (nedosažitelné)", () => {
+      const y = C.calcFireYears({
+        totalValue: 100000, fireExpenses: 40000, fireWithdrawal: 4, fireReturnPct: 0, monthlyContrib: 0
+      });
+      expect(y).toBeNull();
+    });
+
+    // ═══════════════════════════════════════════════════════════════════
+    // 11) Inflace — kumulativní + reálný výnos (Fisher)
+    // ═══════════════════════════════════════════════════════════════════
+    test("Inflace", "reálný výnos: nominal=10, inflace=0 → 10",
+      () => expect(C.realReturn(10, 0)).toBeNear(10, 0.01));
+    test("Inflace", "reálný výnos: nominal=10, inflace=10 → ~0",
+      () => expect(C.realReturn(10, 10)).toBeNear(0, 0.01));
+    test("Inflace", "reálný výnos: nominal=5, inflace=15 → záporný",
+      () => {
+        const r = C.realReturn(5, 15);
+        if (r >= 0) throw new Error(`čekal zápornou hodnotu, dostal ${r}`);
+      });
+    test("Inflace", "kumulativní: leden-leden (0 měsíců) → 0",
+      () => expect(C.cumulativeInflation("2024-01", "2024-01", {2024: 10})).toBeNear(0, 0.01));
+    test("Inflace", "kumulativní: 1 rok při 10 % → 10 %",
+      () => expect(C.cumulativeInflation("2024-01", "2025-01", {2024: 10, 2025: 0})).toBeNear(10, 0.1));
+    test("Inflace", "kumulativní: 2 roky po 10 % → 21 % (compound)",
+      () => expect(C.cumulativeInflation("2023-01", "2025-01", {2023: 10, 2024: 10, 2025: 0})).toBeNear(21, 0.2));
+    test("Inflace", "CZ_CPI_YEARLY obsahuje 2022 (15.1 %)",
+      () => expect(C.CZ_CPI_YEARLY[2022]).toBe(15.1));
+
+    // ═══════════════════════════════════════════════════════════════════
+    //  RENDER
+    // ═══════════════════════════════════════════════════════════════════
+    const resultsEl = document.getElementById("results");
+    const summaryEl = document.getElementById("summary");
+
+    Object.keys(groups).forEach(gName => {
+      const gEl = document.createElement("div");
+      gEl.className = "group";
+      gEl.innerHTML = `<h2>${gName}</h2>`;
+      groups[gName].forEach(t => {
+        const tEl = document.createElement("div");
+        tEl.className = "test " + (t.ok ? "pass" : "fail");
+        tEl.innerHTML = `
+          <span class="icon">${t.ok ? "✓" : "✗"}</span>
+          <span class="msg">${t.name}${t.err ? `\n<span class="expected">${t.err}</span>` : ""}</span>
+        `;
+        gEl.appendChild(tEl);
+      });
+      resultsEl.appendChild(gEl);
+    });
+
+    summaryEl.className = "summary " + (failed === 0 ? "pass" : "fail");
+    summaryEl.innerHTML = failed === 0
+      ? `<strong style="color:#22c55e;">✓ Všechny testy prošly</strong> · ${passed} OK`
+      : `<strong style="color:#ef4444;">✗ ${failed} test${failed===1?"":"y"} selhal${failed===1?"":"y"}</strong> · ${passed} OK / ${failed} FAIL`;
+  </script>
+</body>
+</html>

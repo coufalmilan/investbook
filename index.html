@@ -44,6 +44,8 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js" integrity="sha384-1qlE7MZPM2pHD/pBZCU/yB8UCP52RYL8bge/qNdfNBCWToySp8/M+JL2waXU4hjJ" crossorigin="anonymous"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="https://apis.google.com/js/api.js" async defer></script>
+  <!-- InvestBook Core — čisté funkce pro výpočty (pure JS, bez JSX, testovatelné) -->
+  <script src="./investbook-core.js"></script>
   <style>*{margin:0;padding:0;box-sizing:border-box}html,body{background:#0f0f13;overflow-x:hidden;width:100%}</style>
 </head>
 <body>
@@ -114,8 +116,9 @@ async function ensureSheets() {
 const PHDR = ["id","name","broker","category","invested","value","currency","fx","start","annReturn","shares","ticker"];
 const PHDR_IMP = ["id","name","broker","category","invested","currency","fx","start","shares","ticker","priceCZK"];
 const posToRowImp = p => [p.id,p.name,p.broker,p.category,p.invested,p.currency,p.fx??"",p.start,p.shares??"",p.ticker??"",p.priceCZK??""];
-const pf = s => { if (s==null||s==="") return 0; const n = parseFloat(String(s).replace(/\s/g,"").replace(",",".")); return isFinite(n)?n:0; };
-const pfn = s => { if (s==null||s==="") return null; const n = parseFloat(String(s).replace(/\s/g,"").replace(",",".")); return isFinite(n)?n:null; };
+// ↓ načteno z investbook-core.js (aby šlo testovat samostatně)
+const pf  = window.InvestBookCore.pf;
+const pfn = window.InvestBookCore.pfn;
 const rowToImp = r => ({
   id: Number(r[0])||0, name: r[1]||"", broker: r[2]||"", category: r[3]||"Akcie",
   invested: pf(r[4]), value: pf(r[4]),
@@ -549,10 +552,15 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.31";
+const APP_VERSION = "v4.32";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.32", date: "23. 4. 2026", changes: [
+    "Nový soubor investbook-core.js — klíčové výpočty (maxDrawdown, volatilita, Sharpe, CAGR, YTD, FIRE, benchmark) vytaženy do samostatného souboru, aby šly testovat",
+    "Nová záložka Analýza → 📉 Reálný výnos po inflaci — porovnání nominálního výnosu s ČSÚ CPI, reálný CAGR po odečtení inflace koruny",
+    "Nový tests.html — testovací runner pro všechny klíčové funkce, otevři v prohlížeči a uvidíš zelené/červené výsledky",
+  ]},
   { version: "v4.30", date: "22. 4. 2026", changes: [
     "Fix: Worker — odstraněn gemini-2.0-flash-lite z FALLBACK_MODELS, nahrazen gemini-2.0-flash",
     "Fix: Benchmark — bmMap rozšířen na aktuální měsíc (live bod) pomocí new Date()",
@@ -750,7 +758,7 @@ const BROKER_COLORS = ["#3b82f6","#22c55e","#8b5cf6","#f59e0b","#ec4899","#06b6d
 const CATEGORIES = ["Fond","ETF","Portfolio","Akcie","Crypto","Jiné"];
 
 const fmtCZK = (v) => { const n = Number(v); if (!isFinite(n)) return "— Kč"; return new Intl.NumberFormat("cs-CZ", { style: "currency", currency: "CZK", maximumFractionDigits: 0 }).format(n); };
-const parseFlt = (s) => { const n = parseFloat(String(s).replace(/\s/g,"").replace(",",".")); return isNaN(n) ? 0 : n; };
+const parseFlt = window.InvestBookCore.parseFlt; // z investbook-core.js
 
 // Convert position value to CZK
 const FX_EUR = 24.23;
@@ -1072,63 +1080,27 @@ function InvestBook() {
     }, 0);
   const totalInvested = allRows.reduce((s, p) => s + p.investedCZK, 0);
 
-  // ── Performance metrics (computed from PORTFOLIO_HISTORY) ────────────────
-  const maxDrawdown = React.useMemo(() => {
-    let peak = 0, dd = 0;
-    PORTFOLIO_HISTORY.forEach(pt => {
-      if (pt.v > peak) peak = pt.v;
-      const d = peak > 0 ? (peak - pt.v) / peak * 100 : 0;
-      if (d > dd) dd = d;
-    });
-    return dd;
-  }, []);
-  const portfolioVolatility = React.useMemo(() => {
-    if (PORTFOLIO_HISTORY.length < 2) return 0;
-    const rets = [];
-    for (let i = 1; i < PORTFOLIO_HISTORY.length; i++) {
-      if (PORTFOLIO_HISTORY[i-1].v > 0) rets.push((PORTFOLIO_HISTORY[i].v - PORTFOLIO_HISTORY[i-1].v) / PORTFOLIO_HISTORY[i-1].v);
-    }
-    const mean = rets.reduce((a,b)=>a+b,0)/rets.length;
-    const variance = rets.reduce((s,r)=>s+Math.pow(r-mean,2),0)/(rets.length-1);
-    return Math.sqrt(variance*12)*100;
-  }, []);
-  const portfolioCAGR_hist = React.useMemo(() => {
-    if (PORTFOLIO_HISTORY.length < 2) return null;
-    const first = PORTFOLIO_HISTORY[0].v;
-    const last  = PORTFOLIO_HISTORY[PORTFOLIO_HISTORY.length-1].v;
-    const yrs   = (new Date(PORTFOLIO_HISTORY[PORTFOLIO_HISTORY.length-1].d+"-01") - new Date(PORTFOLIO_HISTORY[0].d+"-01")) / (1000*60*60*24*365.25);
-    if (yrs <= 0 || first <= 0) return null;
-    return (Math.pow(last/first, 1/yrs) - 1) * 100;
-  }, []);
-  const sharpeRatio = React.useMemo(() => {
-    if (!portfolioCAGR_hist || portfolioVolatility === 0) return null;
-    return (portfolioCAGR_hist - 3.5) / portfolioVolatility; // 3.5% bezrizikova sazba CZK
-  }, [portfolioCAGR_hist, portfolioVolatility]);
+  // ── Performance metrics (z investbook-core.js, testovatelné) ───────────
+  const IBC = window.InvestBookCore;
+  const maxDrawdown        = React.useMemo(() => IBC.maxDrawdown(PORTFOLIO_HISTORY), []);
+  const portfolioVolatility = React.useMemo(() => IBC.portfolioVolatility(PORTFOLIO_HISTORY), []);
+  const portfolioCAGR_hist  = React.useMemo(() => IBC.portfolioCAGR(PORTFOLIO_HISTORY), []);
+  const sharpeRatio         = React.useMemo(
+    () => IBC.sharpeRatio(portfolioCAGR_hist, portfolioVolatility, 3.5),
+    [portfolioCAGR_hist, portfolioVolatility]
+  );
 
   // ── Benchmark data (S&P 500 + MSCI World annual returns, normalizovano) ─
   // SP500/MSCI roční výnosy — 2025 a 2026 aktualizovány dle reálných tržních dat (S&P 500 v 04/2026 = 7 064)
   const SP500_ANN = { 2006:15.8,2007:5.5,2008:-37.0,2009:26.5,2010:15.1,2011:2.1,2012:16.0,2013:32.4,2014:13.7,2015:1.4,2016:12.0,2017:21.8,2018:-4.4,2019:31.5,2020:18.4,2021:28.7,2022:-18.1,2023:26.3,2024:25.0,2025:9.0,2026:32.0 };
   const MSCI_ANN  = { 2006:20.1,2007:9.6,2008:-40.3,2009:30.0,2010:11.8,2011:-5.5,2012:15.8,2013:26.7,2014:5.5,2015:-0.3,2016:7.5,2017:22.4,2018:-8.7,2019:27.7,2020:15.9,2021:21.8,2022:-17.7,2023:23.8,2024:18.0,2025:7.0,2026:26.0 };
   const bmMap = React.useMemo(() => {
-    if (PORTFOLIO_HISTORY.length === 0) return { sp500: {}, msci: {} };
-    const startVal = PORTFOLIO_HISTORY[0].v;
-    const startYr  = Number(PORTFOLIO_HISTORY[0].d.split("-")[0]);
-    const build = (annR) => {
-      const computeBm = (d) => {
-        const [yr, mo] = d.split("-").map(Number);
-        let cum = 1;
-        for (let y = startYr; y < yr; y++) cum *= (1 + (annR[y]||0)/100);
-        cum *= (1 + ((annR[yr]||0)/100) * (mo/12));
-        return Math.round(startVal * cum);
-      };
-      const m = {};
-      PORTFOLIO_HISTORY.forEach(pt => { m[pt.d] = computeBm(pt.d); });
-      // Přidej aktuální měsíc (live bod) pokud chybí
-      const liveD = `${NOW_YEAR}-${String(new Date().getMonth()+1).padStart(2,'0')}`;
-      if (!m[liveD]) m[liveD] = computeBm(liveD);
-      return m;
+    // Live bod = aktuální měsíc (aby benchmark linka sahala k dnešku)
+    const liveD = `${NOW_YEAR}-${String(new Date().getMonth()+1).padStart(2,'0')}`;
+    return {
+      sp500: IBC.buildBenchmarkMap(PORTFOLIO_HISTORY, SP500_ANN, [liveD]),
+      msci:  IBC.buildBenchmarkMap(PORTFOLIO_HISTORY, MSCI_ANN,  [liveD]),
     };
-    return { sp500: build(SP500_ANN), msci: build(MSCI_ANN) };
   }, []);
 
   // ── localStorage persist for dividends + targetAlloc + FIRE ─────────────
@@ -1207,31 +1179,8 @@ ${posLines}`;
   // Průměrný roční výnos — vážený průměr p.a., počítáno v původní měně pozice
   // valueOrig/invested jsou obojí ve stejné měně → žádné zkreslení FX
   // Váha = investedCZK (proporce v portfoliu)
-  const calcWeightedAnnReturn = (rows) => {
-    // Počítáme portfolio-level CAGR s váženými roky
-    // Každá pozice přispívá svou dobou držení váženou investicí (invCZK × years)
-    // → crypto (88k, 8 let) nemůže natáhnout jmenovatel celého portfolia (1.5M, 3-5 let)
-    let totalValCZK = 0, totalInvCZK = 0, weightedYearsSum = 0;
-    for (const p of rows) {
-      if (!p.invested || p.invested <= 0 || !p.investedCZK || p.investedCZK <= 0) continue;
-      let valCZK;
-      if (p.currency === "CZK") {
-        valCZK = p.value || p.invested;
-      } else {
-        valCZK = (p.priceCZK && p.shares) ? p.priceCZK * p.shares : null;
-      }
-      if (valCZK === null) continue;
-      const years = Math.max(1, NOW_YEAR - (p.start || NOW_YEAR));
-      totalValCZK += valCZK;
-      totalInvCZK += p.investedCZK;
-      weightedYearsSum += p.investedCZK * years;
-    }
-    if (totalInvCZK <= 0 || totalValCZK <= 0) return 0;
-    const years = Math.max(1, weightedYearsSum / totalInvCZK);
-    const ratio = totalValCZK / totalInvCZK;
-    const cagr = (Math.pow(ratio, 1 / years) - 1) * 100;
-    return isFinite(cagr) ? cagr : 0;
-  };
+  // CAGR s váženými roky (pure z investbook-core.js — testovatelné)
+  const calcWeightedAnnReturn = (rows) => IBC.calcWeightedAnnReturn(rows, NOW_YEAR);
   // Pokud žádná importovaná pozice nemá priceCZK, ceny ještě nejsou načteny ze Sheets
   // → použij STATIC hodnoty (ručně zadané) jako fallback
   const hasPrices = importedRows.some(p => p.priceCZK && p.priceCZK > 0);
@@ -3023,6 +2972,118 @@ ${posLines}`;
           );
         })()}
 
+        {/* ── REÁLNÝ VÝNOS PO INFLACI ─────────────────────────────────────
+            Ukazuje kolik sis skutečně vydělal po odečtení znehodnocení CZK.
+            Data: ČSÚ roční CPI (prosinec) — udržováno v investbook-core.js.
+        */}
+        {(() => {
+          // Seskup historii po letech (první bod roku)
+          const yrsMap = {};
+          PORTFOLIO_HISTORY.forEach(p => {
+            const yr = p.d.split("-")[0];
+            if (!yrsMap[yr]) yrsMap[yr] = p;
+          });
+          yrsMap[String(NOW_YEAR)] = PORTFOLIO_HISTORY[PORTFOLIO_HISTORY.length - 1];
+          const yrKeys = Object.keys(yrsMap).sort();
+          const CPI = IBC.CZ_CPI_YEARLY;
+
+          // Roční řádky — nominál, inflace, reál
+          const inflRows = yrKeys.map((yr, i) => {
+            if (i === 0) return null;
+            const cur = yrsMap[yr].v;
+            const prev = yrsMap[yrKeys[i - 1]].v;
+            const nominalPct   = prev > 0 ? ((cur - prev) / prev) * 100 : 0;
+            const inflationPct = CPI[Number(yr)] || 0;
+            const realPct      = IBC.realReturn(nominalPct, inflationPct);
+            return { yr, nominalPct, inflationPct, realPct };
+          }).filter(Boolean);
+
+          // Souhrn za celé období — nominální CAGR vs. inflace CAGR vs. reálný CAGR
+          const firstPt = PORTFOLIO_HISTORY[0];
+          const lastPt  = PORTFOLIO_HISTORY[PORTFOLIO_HISTORY.length - 1];
+          const yrsSpan = (new Date(lastPt.d + "-01") - new Date(firstPt.d + "-01"))
+                           / (1000 * 60 * 60 * 24 * 365.25);
+          const nominalCAGR = yrsSpan > 0 && firstPt.v > 0
+            ? (Math.pow(lastPt.v / firstPt.v, 1 / yrsSpan) - 1) * 100
+            : 0;
+          const cumInflPct = IBC.cumulativeInflation(firstPt.d, lastPt.d, CPI);
+          const inflCAGR   = yrsSpan > 0
+            ? (Math.pow(1 + cumInflPct / 100, 1 / yrsSpan) - 1) * 100
+            : 0;
+          const realCAGR   = IBC.realReturn(nominalCAGR, inflCAGR);
+
+          return (
+            <div style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 16, padding: 22, marginBottom: 16 }}>
+              <SectionTitle
+                title="📉 Reálný výnos po inflaci"
+                sub="Nominální výnos − znehodnocení koruny (ČSÚ CPI) = kolik sis skutečně vydělal"
+              />
+
+              {/* 3 stat karty: nominál, inflace, reál */}
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 18 }}>
+                <StatCard
+                  label="Nominální CAGR"
+                  value={(nominalCAGR >= 0 ? "+" : "") + nominalCAGR.toFixed(1) + " % p.a."}
+                  color={nominalCAGR >= 0 ? T.green : T.red}
+                  sub="tvůj roční růst portfolia"
+                />
+                <StatCard
+                  label="Inflace CAGR"
+                  value={inflCAGR.toFixed(1) + " % p.a."}
+                  color={T.red}
+                  sub="roční znehodnocení koruny (ČSÚ)"
+                />
+                <StatCard
+                  label="Reálný CAGR"
+                  value={(realCAGR >= 0 ? "+" : "") + realCAGR.toFixed(1) + " % p.a."}
+                  color={realCAGR >= 0 ? T.green : T.red}
+                  accent={realCAGR >= 0 ? T.green : T.red}
+                  sub="co ti zbylo po odečtení inflace"
+                />
+              </div>
+
+              {/* Tabulka po letech */}
+              <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+                <table style={{ width: "100%", minWidth: 320, borderCollapse: "collapse" }}>
+                  <thead>
+                    <tr style={{ borderBottom: "1px solid " + T.border }}>
+                      <th style={{ padding: "6px 12px", textAlign: "left",  fontSize: 12, color: T.subtle, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase" }}>Rok</th>
+                      <th style={{ padding: "6px 12px", textAlign: "right", fontSize: 12, color: T.subtle, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase" }}>Nominální %</th>
+                      <th style={{ padding: "6px 12px", textAlign: "right", fontSize: 12, color: T.subtle, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase" }}>Inflace ČR %</th>
+                      <th style={{ padding: "6px 12px", textAlign: "right", fontSize: 12, color: T.subtle, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase" }}>Reálný výnos %</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {inflRows.map((r, i) => {
+                      const nomC  = r.nominalPct >= 0 ? T.green : T.red;
+                      const realC = r.realPct    >= 0 ? T.green : T.red;
+                      return (
+                        <tr key={r.yr} style={{ borderBottom: "1px solid rgba(255,255,255,0.03)", background: i % 2 === 0 ? "rgba(255,255,255,0.01)" : "transparent" }}>
+                          <td style={{ padding: "10px 12px", fontSize: 14, color: T.text, fontWeight: 700 }}>{r.yr}</td>
+                          <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: nomC, fontFamily: "'DM Mono',monospace", fontWeight: 600 }}>
+                            {r.nominalPct >= 0 ? "+" : ""}{r.nominalPct.toFixed(1)}%
+                          </td>
+                          <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: T.muted, fontFamily: "'DM Mono',monospace" }}>
+                            {r.inflationPct.toFixed(1)}%
+                          </td>
+                          <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: realC, fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>
+                            {r.realPct >= 0 ? "+" : ""}{r.realPct.toFixed(1)}%
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              <div style={{ fontSize: 11, color: T.subtle, marginTop: 12, fontStyle: "italic", lineHeight: 1.5 }}>
+                Zdroj: meziroční CPI prosinec (ČSÚ). Hodnota 2026 je předběžný odhad — uprav v <code>investbook-core.js</code> (CZ_CPI_YEARLY), jakmile vyjdou nová data.
+                Reálný výnos = (1+nominální)/(1+inflace) − 1 (Fisherova rovnice).
+              </div>
+            </div>
+          );
+        })()}
+
         {/* ── PREDIKCE PORTFOLIA – jeden kombinovaný graf ────────────────── */}
         {(() => {
           const base    = totalValue;
@@ -3249,17 +3310,10 @@ ${posLines}`;
           const remaining = Math.max(0, fireNum - totalValue);
           const annualGrowth = totalValue * (fireReturnPct / 100);
           const annContrib   = monthlyContrib * 12;
-          // Kolik let do FI (iterativní výpočet)
-          let fireYears = null;
-          if (fireNum > 0 && totalValue < fireNum) {
-            let v = totalValue;
-            for (let y = 1; y <= 80; y++) {
-              v = v * (1 + fireReturnPct/100) + annContrib;
-              if (v >= fireNum) { fireYears = y; break; }
-            }
-          } else if (totalValue >= fireNum && fireNum > 0) {
-            fireYears = 0;
-          }
+          // Kolik let do FI — pure fn z investbook-core.js (testovatelné)
+          const fireYears = IBC.calcFireYears({
+            totalValue, fireExpenses, fireWithdrawal, fireReturnPct, monthlyContrib
+          });
           // Vizualizace: path to FI (milníky každých 5 let)
           const milestones = [0.25, 0.5, 0.75, 1.0];
           return (
@@ -4536,8 +4590,8 @@ ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(
         const regs = await navigator.serviceWorker.getRegistrations();
         for (const reg of regs) await reg.unregister();
         navigator.serviceWorker.register('./sw.js')
-          .then(r => console.log('SW registered:', r.scope))
-          .catch(e => console.log('SW error:', e));
+          .then(() => {})
+          .catch(() => {});
       });
     }
   </script>
