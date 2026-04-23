@@ -464,13 +464,18 @@ const INITIAL_CSOB = [
 const DEGIRO_FX = 24.23; // EUR→CZK
 
 // ── Loga firem ───────────────────────────────────────────────────────────────
-// Víceúrovňový fallback systém (v4.33):
-//   1. FMP (Financial Modeling Prep) — zdarma pro US akcie
-//   2. CoinGecko — pro crypto (pokud FMP selže nebo je -USD suffix)
-//   3. Barevný odznak s iniciálami — poslední záchrana
-// Díky tomu mají XRP, DOGE, SOL atd. skutečná loga a ne písmena.
+// Víceúrovňový fallback systém (v4.34):
+//   1. Přednastavená mapa (crypto → CoinGecko, ETF/EU akcie → Google favicon)
+//   2. FMP (Financial Modeling Prep) — pro US akcie, které nejsou v mapě
+//   3. Barevný odznak s iniciálami — když selže i to
+//
+// Změna od v4.33: Clearbit Logo API bylo v 2024 vypnuté (ERR_NAME_NOT_RESOLVED),
+// nahrazeno Google favicon proxy přes doménu emitenta / firmy.
 
-// Mapování tickerů na CoinGecko slug (ID = adresa v /coins/<slug>/...)
+// Google favicon proxy — funguje pro libovolnou doménu
+const FAVICON = d => `https://www.google.com/s2/favicons?sz=64&domain=${d}`;
+
+// Crypto tickers → CoinGecko obrázek
 const CRYPTO_LOGO_URLS = {
   "BTC":  "https://assets.coingecko.com/coins/images/1/small/bitcoin.png",
   "ETH":  "https://assets.coingecko.com/coins/images/279/small/ethereum.png",
@@ -486,21 +491,28 @@ const CRYPTO_LOGO_URLS = {
   "AVAX": "https://assets.coingecko.com/coins/images/12559/small/Avalanche_Circle_RedWhite_Trans.png",
 };
 
-// ETF loga — přes iShares CDN / veřejně dostupné zdroje
-// (FMP nemívá ETF s cizoměnovou příponou jako .DE, .L, .AS)
+// ETF tickers → favicon emitenta (iShares)
 const ETF_LOGO_URLS = {
-  "SXR8.DE":  "https://logo.clearbit.com/ishares.com",
-  "SXR8":     "https://logo.clearbit.com/ishares.com",
-  "CSPX.L":   "https://logo.clearbit.com/ishares.com",
-  "CSPX":     "https://logo.clearbit.com/ishares.com",
-  "DFND.PA":  "https://logo.clearbit.com/ishares.com",
-  "DFND":     "https://logo.clearbit.com/ishares.com",
-  "IWDA.AS":  "https://logo.clearbit.com/ishares.com",
-  "EUNL.DE":  "https://logo.clearbit.com/ishares.com",
+  "SXR8.DE":  FAVICON("ishares.com"),
+  "SXR8":     FAVICON("ishares.com"),
+  "CSPX.L":   FAVICON("ishares.com"),
+  "CSPX":     FAVICON("ishares.com"),
+  "DFND.PA":  FAVICON("ishares.com"),
+  "DFND":     FAVICON("ishares.com"),
+  "IWDA.AS":  FAVICON("ishares.com"),
+  "EUNL.DE":  FAVICON("ishares.com"),
+};
+
+// Evropské akcie, u kterých FMP vrací 404 → favicon firmy
+const STOCK_LOGO_URLS = {
+  "BA-.L":  FAVICON("boeing.com"),
+  "BA-":    FAVICON("boeing.com"),
+  "RHM.DE": FAVICON("rheinmetall.com"),
+  "RHM":    FAVICON("rheinmetall.com"),
 };
 
 function PositionLogo({ ticker, name, size = 22 }) {
-  // stage: 0 = FMP, 1 = Crypto/ETF fallback, 2 = iniciálky
+  // stage: 0 = primární zdroj, 1 = iniciálky
   const [stage, setStage] = React.useState(0);
 
   const getInitials = () => (ticker || name || "?")
@@ -508,8 +520,8 @@ function PositionLogo({ ticker, name, size = 22 }) {
     .replace(/\s.*/, "")
     .slice(0, 2).toUpperCase();
 
-  // Bez tickeru → rovnou iniciálky
-  if (!ticker || stage >= 2) {
+  // Bez tickeru nebo selhal obrázek → iniciálky
+  if (!ticker || stage >= 1) {
     const label = getInitials();
     const pal = ["#6366f1","#22c55e","#f59e0b","#ef4444","#06b6d4","#ec4899","#8b5cf6","#14b8a6"];
     const bg  = pal[(label.charCodeAt(0) + (label.charCodeAt(1) || 0)) % pal.length];
@@ -523,37 +535,23 @@ function PositionLogo({ ticker, name, size = 22 }) {
     );
   }
 
-  // Určit zdroj loga podle stage a typu tickeru
-  let src = null;
+  // Výběr zdroje (mapy mají přednost, jinak FMP)
+  const upperTicker = ticker.toUpperCase();
   const baseTicker = ticker.replace(/-USD$|-EUR$|-BTC$|-USDT$/i, "").toUpperCase();
-  const isCrypto = /-USD$|-EUR$|-BTC$|-USDT$/i.test(ticker) || CRYPTO_LOGO_URLS[baseTicker];
-  const isEtfWithSuffix = /\.(DE|L|AS|PA|MI|SW)$/i.test(ticker);
+  let src;
 
-  if (stage === 0) {
-    // Stage 0: FMP (funguje pro US akcie)
-    if (isCrypto && CRYPTO_LOGO_URLS[baseTicker]) {
-      // Pro crypto rovnou přeskoč na CoinGecko (FMP crypto loga mívá jen částečně)
-      src = CRYPTO_LOGO_URLS[baseTicker];
-    } else if (isEtfWithSuffix && ETF_LOGO_URLS[ticker.toUpperCase()]) {
-      // Pro ETF s příponou rovnou alternativní zdroj
-      src = ETF_LOGO_URLS[ticker.toUpperCase()];
-    } else {
-      // Jinak FMP
-      const fmpTicker = ticker
-        .replace(/-USD$|-EUR$|-BTC$|-USDT$/i, "")
-        .replace(/\.(PA|AS|MI|SW|BR|LS|OL|ST|HE|CO|VX|TO|AX|NZ|SG|HK|T|SS|SZ|BA|MX|SA|JK|KQ|KS|TWO|TW|DE|L|F|MC)$/i, "");
-      src = `https://financialmodelingprep.com/image-stock/${fmpTicker}.png`;
-    }
-  } else if (stage === 1) {
-    // Stage 1: Sekundární fallback (crypto → CoinGecko, ETF → Clearbit)
-    if (CRYPTO_LOGO_URLS[baseTicker]) {
-      src = CRYPTO_LOGO_URLS[baseTicker];
-    } else if (ETF_LOGO_URLS[ticker.toUpperCase()]) {
-      src = ETF_LOGO_URLS[ticker.toUpperCase()];
-    } else {
-      // Žádný fallback nemáme → rovnou iniciálky
-      return <PositionLogo ticker={null} name={name} size={size} />;
-    }
+  if (ETF_LOGO_URLS[upperTicker]) {
+    src = ETF_LOGO_URLS[upperTicker];
+  } else if (STOCK_LOGO_URLS[upperTicker]) {
+    src = STOCK_LOGO_URLS[upperTicker];
+  } else if (CRYPTO_LOGO_URLS[baseTicker]) {
+    src = CRYPTO_LOGO_URLS[baseTicker];
+  } else {
+    // FMP pro US akcie (a fallback pro zbytek)
+    const fmpTicker = ticker
+      .replace(/-USD$|-EUR$|-BTC$|-USDT$/i, "")
+      .replace(/\.(PA|AS|MI|SW|BR|LS|OL|ST|HE|CO|VX|TO|AX|NZ|SG|HK|T|SS|SZ|BA|MX|SA|JK|KQ|KS|TWO|TW|DE|L|F|MC)$/i, "");
+    src = `https://financialmodelingprep.com/image-stock/${fmpTicker}.png`;
   }
 
   return (
@@ -561,7 +559,7 @@ function PositionLogo({ ticker, name, size = 22 }) {
       src={src}
       alt={ticker} width={size} height={size}
       style={{ borderRadius: 5, objectFit: "contain", flexShrink: 0, background: "#fff", padding: 2 }}
-      onError={() => setStage(s => s + 1)}
+      onError={() => setStage(1)}
     />
   );
 }
@@ -618,10 +616,15 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.33";
+const APP_VERSION = "v4.34";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.34", date: "23. 4. 2026", changes: [
+    "Fix: Clearbit Logo API bylo vypnuté (ERR_NAME_NOT_RESOLVED) — nahrazeno Google favicon proxy pro ETF (iShares) a evropské akcie",
+    "Loga: přidána mapa evropských akcií (BA-.L → Boeing, RHM.DE → Rheinmetall), aby se neukazoval FMP 404 v konzoli",
+    "Loga: zjednodušený fallback — primární zdroj vybrán podle typu tickeru, při selhání rovnou iniciálky (místo opakovaného neúspěšného pokusu)",
+  ]},
   { version: "v4.33", date: "23. 4. 2026", changes: [
     "Mobil: zvětšeny fonty v úvodních StatCards (Přehled) pro lepší čitelnost na Motorola Edge 50 a podobných telefonech — hodnota 13→19 px, popisek 9→11 px",
     "Loga: víceúrovňový fallback systém — crypto (XRP, DOGE, SOL, ETC...) přes CoinGecko, ETF s cizoměnovými příponami (SXR8, CSPX, DFND) přes iShares/Clearbit",
