@@ -464,19 +464,52 @@ const INITIAL_CSOB = [
 const DEGIRO_FX = 24.23; // EUR→CZK
 
 // ── Loga firem ───────────────────────────────────────────────────────────────
-// FMP (Financial Modeling Prep) vrací skutečné logo pro US akcie zdarma.
-// Pro européské akcie, ETF a krypto zobrazíme barevný odznak s iniciálami.
+// Víceúrovňový fallback systém (v4.33):
+//   1. FMP (Financial Modeling Prep) — zdarma pro US akcie
+//   2. CoinGecko — pro crypto (pokud FMP selže nebo je -USD suffix)
+//   3. Barevný odznak s iniciálami — poslední záchrana
+// Díky tomu mají XRP, DOGE, SOL atd. skutečná loga a ne písmena.
+
+// Mapování tickerů na CoinGecko slug (ID = adresa v /coins/<slug>/...)
+const CRYPTO_LOGO_URLS = {
+  "BTC":  "https://assets.coingecko.com/coins/images/1/small/bitcoin.png",
+  "ETH":  "https://assets.coingecko.com/coins/images/279/small/ethereum.png",
+  "XRP":  "https://assets.coingecko.com/coins/images/44/small/xrp-symbol-white-128.png",
+  "LTC":  "https://assets.coingecko.com/coins/images/2/small/litecoin.png",
+  "ETC":  "https://assets.coingecko.com/coins/images/453/small/ethereum-classic-logo.png",
+  "SOL":  "https://assets.coingecko.com/coins/images/4128/small/solana.png",
+  "DOGE": "https://assets.coingecko.com/coins/images/5/small/dogecoin.png",
+  "BNB":  "https://assets.coingecko.com/coins/images/825/small/bnb-icon2_2x.png",
+  "ADA":  "https://assets.coingecko.com/coins/images/975/small/cardano.png",
+  "DOT":  "https://assets.coingecko.com/coins/images/12171/small/polkadot.png",
+  "MATIC":"https://assets.coingecko.com/coins/images/4713/small/polygon.png",
+  "AVAX": "https://assets.coingecko.com/coins/images/12559/small/Avalanche_Circle_RedWhite_Trans.png",
+};
+
+// ETF loga — přes iShares CDN / veřejně dostupné zdroje
+// (FMP nemívá ETF s cizoměnovou příponou jako .DE, .L, .AS)
+const ETF_LOGO_URLS = {
+  "SXR8.DE":  "https://logo.clearbit.com/ishares.com",
+  "SXR8":     "https://logo.clearbit.com/ishares.com",
+  "CSPX.L":   "https://logo.clearbit.com/ishares.com",
+  "CSPX":     "https://logo.clearbit.com/ishares.com",
+  "DFND.PA":  "https://logo.clearbit.com/ishares.com",
+  "DFND":     "https://logo.clearbit.com/ishares.com",
+  "IWDA.AS":  "https://logo.clearbit.com/ishares.com",
+  "EUNL.DE":  "https://logo.clearbit.com/ishares.com",
+};
 
 function PositionLogo({ ticker, name, size = 22 }) {
-  const [fallback, setFallback] = React.useState(false);
+  // stage: 0 = FMP, 1 = Crypto/ETF fallback, 2 = iniciálky
+  const [stage, setStage] = React.useState(0);
 
   const getInitials = () => (ticker || name || "?")
     .replace(/-USD$|-EUR$|\.DE$|\.L$|\.AS$|\.PA$|\.MI$|\.SW$/g, "")
     .replace(/\s.*/, "")
     .slice(0, 2).toUpperCase();
 
-  // Bez tickeru vždy iniciálky
-  if (!ticker || fallback) {
+  // Bez tickeru → rovnou iniciálky
+  if (!ticker || stage >= 2) {
     const label = getInitials();
     const pal = ["#6366f1","#22c55e","#f59e0b","#ef4444","#06b6d4","#ec4899","#8b5cf6","#14b8a6"];
     const bg  = pal[(label.charCodeAt(0) + (label.charCodeAt(1) || 0)) % pal.length];
@@ -490,12 +523,45 @@ function PositionLogo({ ticker, name, size = 22 }) {
     );
   }
 
+  // Určit zdroj loga podle stage a typu tickeru
+  let src = null;
+  const baseTicker = ticker.replace(/-USD$|-EUR$|-BTC$|-USDT$/i, "").toUpperCase();
+  const isCrypto = /-USD$|-EUR$|-BTC$|-USDT$/i.test(ticker) || CRYPTO_LOGO_URLS[baseTicker];
+  const isEtfWithSuffix = /\.(DE|L|AS|PA|MI|SW)$/i.test(ticker);
+
+  if (stage === 0) {
+    // Stage 0: FMP (funguje pro US akcie)
+    if (isCrypto && CRYPTO_LOGO_URLS[baseTicker]) {
+      // Pro crypto rovnou přeskoč na CoinGecko (FMP crypto loga mívá jen částečně)
+      src = CRYPTO_LOGO_URLS[baseTicker];
+    } else if (isEtfWithSuffix && ETF_LOGO_URLS[ticker.toUpperCase()]) {
+      // Pro ETF s příponou rovnou alternativní zdroj
+      src = ETF_LOGO_URLS[ticker.toUpperCase()];
+    } else {
+      // Jinak FMP
+      const fmpTicker = ticker
+        .replace(/-USD$|-EUR$|-BTC$|-USDT$/i, "")
+        .replace(/\.(PA|AS|MI|SW|BR|LS|OL|ST|HE|CO|VX|TO|AX|NZ|SG|HK|T|SS|SZ|BA|MX|SA|JK|KQ|KS|TWO|TW|DE|L|F|MC)$/i, "");
+      src = `https://financialmodelingprep.com/image-stock/${fmpTicker}.png`;
+    }
+  } else if (stage === 1) {
+    // Stage 1: Sekundární fallback (crypto → CoinGecko, ETF → Clearbit)
+    if (CRYPTO_LOGO_URLS[baseTicker]) {
+      src = CRYPTO_LOGO_URLS[baseTicker];
+    } else if (ETF_LOGO_URLS[ticker.toUpperCase()]) {
+      src = ETF_LOGO_URLS[ticker.toUpperCase()];
+    } else {
+      // Žádný fallback nemáme → rovnou iniciálky
+      return <PositionLogo ticker={null} name={name} size={size} />;
+    }
+  }
+
   return (
     <img
-      src={`https://financialmodelingprep.com/image-stock/${ticker.replace(/-USD$|-EUR$|-BTC$|-USDT$/i,"").replace(/\.(PA|AS|MI|SW|BR|LS|OL|ST|HE|CO|VX|TO|AX|NZ|SG|HK|T|SS|SZ|BA|MX|SA|JK|KQ|KS|TWO|TW|DE|L|F|MC)$/i,"")}.png`}
+      src={src}
       alt={ticker} width={size} height={size}
       style={{ borderRadius: 5, objectFit: "contain", flexShrink: 0, background: "#fff", padding: 2 }}
-      onError={() => setFallback(true)}
+      onError={() => setStage(s => s + 1)}
     />
   );
 }
@@ -552,10 +618,15 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.32";
+const APP_VERSION = "v4.33";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.33", date: "23. 4. 2026", changes: [
+    "Mobil: zvětšeny fonty v úvodních StatCards (Přehled) pro lepší čitelnost na Motorola Edge 50 a podobných telefonech — hodnota 13→19 px, popisek 9→11 px",
+    "Loga: víceúrovňový fallback systém — crypto (XRP, DOGE, SOL, ETC...) přes CoinGecko, ETF s cizoměnovými příponami (SXR8, CSPX, DFND) přes iShares/Clearbit",
+    "Fix: žádné logo → 2 fallback pokusy před barevným odznakem s iniciálami",
+  ]},
   { version: "v4.32", date: "23. 4. 2026", changes: [
     "Nový soubor investbook-core.js — klíčové výpočty (maxDrawdown, volatilita, Sharpe, CAGR, YTD, FIRE, benchmark) vytaženy do samostatného souboru, aby šly testovat",
     "Nová záložka Analýza → 📉 Reálný výnos po inflaci — porovnání nominálního výnosu s ČSÚ CPI, reálný CAGR po odečtení inflace koruny",
@@ -4398,17 +4469,17 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
           .ib-mkt-card { min-width: 100px !important; flex-shrink: 0 !important; }
 
           /* Hero hodnota */
-          .ib-hero-value { font-size: 26px !important; letter-spacing: -0.02em !important; }
-          .ib-hero-sub   { font-size: 10px !important; }
+          .ib-hero-value { font-size: 28px !important; letter-spacing: -0.02em !important; }
+          .ib-hero-sub   { font-size: 12px !important; }
           /* Hero stats: zabalí do 2 řádků (hodnota+zisk / výnosy), nescroluje */
           .ib-hero-row   { gap: 12px !important; flex-wrap: wrap !important; }
           .ib-hero-row > * { min-width: 0; }
 
-          /* StatCard kompaktnější */
-          .ib-statcard     { padding: 10px 12px !important; border-radius: 10px !important; }
-          .ib-statcard-val { font-size: 13px !important; word-break: break-word !important; overflow-wrap: anywhere !important; }
-          .ib-statcard-lbl { font-size: 9px !important; }
-          .ib-statcard-sub { font-size: 10px !important; word-break: break-word !important; overflow-wrap: anywhere !important; }
+          /* StatCard — větší písmo pro lepší čitelnost na mobilu (v4.33) */
+          .ib-statcard     { padding: 12px 14px !important; border-radius: 10px !important; }
+          .ib-statcard-val { font-size: 19px !important; word-break: break-word !important; overflow-wrap: anywhere !important; }
+          .ib-statcard-lbl { font-size: 11px !important; }
+          .ib-statcard-sub { font-size: 12px !important; word-break: break-word !important; overflow-wrap: anywhere !important; }
 
           /* Tabulky – horizontální scroll */
           .ib-table-wrap { overflow-x: auto !important; -webkit-overflow-scrolling: touch !important; border-radius: 10px !important; }
