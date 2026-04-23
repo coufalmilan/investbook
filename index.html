@@ -509,6 +509,8 @@ const STOCK_LOGO_URLS = {
   "BA-":    FAVICON("boeing.com"),
   "RHM.DE": FAVICON("rheinmetall.com"),
   "RHM":    FAVICON("rheinmetall.com"),
+  "CSG.AS": FAVICON("csg.com"),
+  "CSG":    FAVICON("csg.com"),
 };
 
 function PositionLogo({ ticker, name, size = 22 }) {
@@ -616,10 +618,13 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.34";
+const APP_VERSION = "v4.35";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.35", date: "23. 4. 2026", changes: [
+    "Loga: přidáno CSG.AS → csg.com (logo firmy)",
+  ]},
   { version: "v4.34", date: "23. 4. 2026", changes: [
     "Fix: Clearbit Logo API bylo vypnuté (ERR_NAME_NOT_RESOLVED) — nahrazeno Google favicon proxy pro ETF (iShares) a evropské akcie",
     "Loga: přidána mapa evropských akcií (BA-.L → Boeing, RHM.DE → Rheinmetall), aby se neukazoval FMP 404 v konzoli",
