@@ -44,8 +44,6 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js" integrity="sha384-1qlE7MZPM2pHD/pBZCU/yB8UCP52RYL8bge/qNdfNBCWToySp8/M+JL2waXU4hjJ" crossorigin="anonymous"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="https://apis.google.com/js/api.js" async defer></script>
-  <!-- InvestBook Core — čisté funkce pro výpočty (pure JS, bez JSX, testovatelné) -->
-  <script src="./investbook-core.js"></script>
   <style>*{margin:0;padding:0;box-sizing:border-box}html,body{background:#0f0f13;overflow-x:hidden;width:100%}</style>
 </head>
 <body>
@@ -116,9 +114,8 @@ async function ensureSheets() {
 const PHDR = ["id","name","broker","category","invested","value","currency","fx","start","annReturn","shares","ticker"];
 const PHDR_IMP = ["id","name","broker","category","invested","currency","fx","start","shares","ticker","priceCZK"];
 const posToRowImp = p => [p.id,p.name,p.broker,p.category,p.invested,p.currency,p.fx??"",p.start,p.shares??"",p.ticker??"",p.priceCZK??""];
-// ↓ načteno z investbook-core.js (aby šlo testovat samostatně)
-const pf  = window.InvestBookCore.pf;
-const pfn = window.InvestBookCore.pfn;
+const pf = s => { if (s==null||s==="") return 0; const n = parseFloat(String(s).replace(/\s/g,"").replace(",",".")); return isFinite(n)?n:0; };
+const pfn = s => { if (s==null||s==="") return null; const n = parseFloat(String(s).replace(/\s/g,"").replace(",",".")); return isFinite(n)?n:null; };
 const rowToImp = r => ({
   id: Number(r[0])||0, name: r[1]||"", broker: r[2]||"", category: r[3]||"Akcie",
   invested: pf(r[4]), value: pf(r[4]),
@@ -464,66 +461,19 @@ const INITIAL_CSOB = [
 const DEGIRO_FX = 24.23; // EUR→CZK
 
 // ── Loga firem ───────────────────────────────────────────────────────────────
-// Víceúrovňový fallback systém (v4.34):
-//   1. Přednastavená mapa (crypto → CoinGecko, ETF/EU akcie → Google favicon)
-//   2. FMP (Financial Modeling Prep) — pro US akcie, které nejsou v mapě
-//   3. Barevný odznak s iniciálami — když selže i to
-//
-// Změna od v4.33: Clearbit Logo API bylo v 2024 vypnuté (ERR_NAME_NOT_RESOLVED),
-// nahrazeno Google favicon proxy přes doménu emitenta / firmy.
-
-// Google favicon proxy — funguje pro libovolnou doménu
-const FAVICON = d => `https://www.google.com/s2/favicons?sz=64&domain=${d}`;
-
-// Crypto tickers → CoinGecko obrázek
-const CRYPTO_LOGO_URLS = {
-  "BTC":  "https://assets.coingecko.com/coins/images/1/small/bitcoin.png",
-  "ETH":  "https://assets.coingecko.com/coins/images/279/small/ethereum.png",
-  "XRP":  "https://assets.coingecko.com/coins/images/44/small/xrp-symbol-white-128.png",
-  "LTC":  "https://assets.coingecko.com/coins/images/2/small/litecoin.png",
-  "ETC":  "https://assets.coingecko.com/coins/images/453/small/ethereum-classic-logo.png",
-  "SOL":  "https://assets.coingecko.com/coins/images/4128/small/solana.png",
-  "DOGE": "https://assets.coingecko.com/coins/images/5/small/dogecoin.png",
-  "BNB":  "https://assets.coingecko.com/coins/images/825/small/bnb-icon2_2x.png",
-  "ADA":  "https://assets.coingecko.com/coins/images/975/small/cardano.png",
-  "DOT":  "https://assets.coingecko.com/coins/images/12171/small/polkadot.png",
-  "MATIC":"https://assets.coingecko.com/coins/images/4713/small/polygon.png",
-  "AVAX": "https://assets.coingecko.com/coins/images/12559/small/Avalanche_Circle_RedWhite_Trans.png",
-};
-
-// ETF tickers → favicon emitenta (iShares)
-const ETF_LOGO_URLS = {
-  "SXR8.DE":  FAVICON("ishares.com"),
-  "SXR8":     FAVICON("ishares.com"),
-  "CSPX.L":   FAVICON("ishares.com"),
-  "CSPX":     FAVICON("ishares.com"),
-  "DFND.PA":  FAVICON("ishares.com"),
-  "DFND":     FAVICON("ishares.com"),
-  "IWDA.AS":  FAVICON("ishares.com"),
-  "EUNL.DE":  FAVICON("ishares.com"),
-};
-
-// Evropské akcie, u kterých FMP vrací 404 → favicon firmy
-const STOCK_LOGO_URLS = {
-  "BA-.L":  FAVICON("boeing.com"),
-  "BA-":    FAVICON("boeing.com"),
-  "RHM.DE": FAVICON("rheinmetall.com"),
-  "RHM":    FAVICON("rheinmetall.com"),
-  "CSG.AS": FAVICON("csg.com"),
-  "CSG":    FAVICON("csg.com"),
-};
+// FMP (Financial Modeling Prep) vrací skutečné logo pro US akcie zdarma.
+// Pro européské akcie, ETF a krypto zobrazíme barevný odznak s iniciálami.
 
 function PositionLogo({ ticker, name, size = 22 }) {
-  // stage: 0 = primární zdroj, 1 = iniciálky
-  const [stage, setStage] = React.useState(0);
+  const [fallback, setFallback] = React.useState(false);
 
   const getInitials = () => (ticker || name || "?")
     .replace(/-USD$|-EUR$|\.DE$|\.L$|\.AS$|\.PA$|\.MI$|\.SW$/g, "")
     .replace(/\s.*/, "")
     .slice(0, 2).toUpperCase();
 
-  // Bez tickeru nebo selhal obrázek → iniciálky
-  if (!ticker || stage >= 1) {
+  // Bez tickeru vždy iniciálky
+  if (!ticker || fallback) {
     const label = getInitials();
     const pal = ["#6366f1","#22c55e","#f59e0b","#ef4444","#06b6d4","#ec4899","#8b5cf6","#14b8a6"];
     const bg  = pal[(label.charCodeAt(0) + (label.charCodeAt(1) || 0)) % pal.length];
@@ -537,31 +487,12 @@ function PositionLogo({ ticker, name, size = 22 }) {
     );
   }
 
-  // Výběr zdroje (mapy mají přednost, jinak FMP)
-  const upperTicker = ticker.toUpperCase();
-  const baseTicker = ticker.replace(/-USD$|-EUR$|-BTC$|-USDT$/i, "").toUpperCase();
-  let src;
-
-  if (ETF_LOGO_URLS[upperTicker]) {
-    src = ETF_LOGO_URLS[upperTicker];
-  } else if (STOCK_LOGO_URLS[upperTicker]) {
-    src = STOCK_LOGO_URLS[upperTicker];
-  } else if (CRYPTO_LOGO_URLS[baseTicker]) {
-    src = CRYPTO_LOGO_URLS[baseTicker];
-  } else {
-    // FMP pro US akcie (a fallback pro zbytek)
-    const fmpTicker = ticker
-      .replace(/-USD$|-EUR$|-BTC$|-USDT$/i, "")
-      .replace(/\.(PA|AS|MI|SW|BR|LS|OL|ST|HE|CO|VX|TO|AX|NZ|SG|HK|T|SS|SZ|BA|MX|SA|JK|KQ|KS|TWO|TW|DE|L|F|MC)$/i, "");
-    src = `https://financialmodelingprep.com/image-stock/${fmpTicker}.png`;
-  }
-
   return (
     <img
-      src={src}
+      src={`https://financialmodelingprep.com/image-stock/${ticker.replace(/-USD$|-EUR$|-BTC$|-USDT$/i,"").replace(/\.(PA|AS|MI|SW|BR|LS|OL|ST|HE|CO|VX|TO|AX|NZ|SG|HK|T|SS|SZ|BA|MX|SA|JK|KQ|KS|TWO|TW|DE|L|F|MC)$/i,"")}.png`}
       alt={ticker} width={size} height={size}
       style={{ borderRadius: 5, objectFit: "contain", flexShrink: 0, background: "#fff", padding: 2 }}
-      onError={() => setStage(1)}
+      onError={() => setFallback(true)}
     />
   );
 }
@@ -622,23 +553,13 @@ const APP_VERSION = "v4.35";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
-  { version: "v4.35", date: "23. 4. 2026", changes: [
-    "Loga: přidáno CSG.AS → csg.com (logo firmy)",
-  ]},
-  { version: "v4.34", date: "23. 4. 2026", changes: [
-    "Fix: Clearbit Logo API bylo vypnuté (ERR_NAME_NOT_RESOLVED) — nahrazeno Google favicon proxy pro ETF (iShares) a evropské akcie",
-    "Loga: přidána mapa evropských akcií (BA-.L → Boeing, RHM.DE → Rheinmetall), aby se neukazoval FMP 404 v konzoli",
-    "Loga: zjednodušený fallback — primární zdroj vybrán podle typu tickeru, při selhání rovnou iniciálky (místo opakovaného neúspěšného pokusu)",
-  ]},
-  { version: "v4.33", date: "23. 4. 2026", changes: [
-    "Mobil: zvětšeny fonty v úvodních StatCards (Přehled) pro lepší čitelnost na Motorola Edge 50 a podobných telefonech — hodnota 13→19 px, popisek 9→11 px",
-    "Loga: víceúrovňový fallback systém — crypto (XRP, DOGE, SOL, ETC...) přes CoinGecko, ETF s cizoměnovými příponami (SXR8, CSPX, DFND) přes iShares/Clearbit",
-    "Fix: žádné logo → 2 fallback pokusy před barevným odznakem s iniciálami",
-  ]},
-  { version: "v4.32", date: "23. 4. 2026", changes: [
-    "Nový soubor investbook-core.js — klíčové výpočty (maxDrawdown, volatilita, Sharpe, CAGR, YTD, FIRE, benchmark) vytaženy do samostatného souboru, aby šly testovat",
-    "Nová záložka Analýza → 📉 Reálný výnos po inflaci — porovnání nominálního výnosu s ČSÚ CPI, reálný CAGR po odečtení inflace koruny",
-    "Nový tests.html — testovací runner pro všechny klíčové funkce, otevři v prohlížeči a uvidíš zelené/červené výsledky",
+  { version: "v4.35", date: "25. 5. 2026", changes: [
+    "Fix: Graf Vývoj portfolia v USD/EUR — křivka nyní odpovídá číslům Začátek/Konec (FX interpolace)",
+    "UX: Živý bod na konci křivky grafu označen tečkou",
+    "UX: Filtry kategorií zobrazují počet pozic v závorce (Akcie (8))",
+    "UX: Benchmark toggle přepracován — vizuálně jasnější, na mobilu na celou šířku",
+    "Design: Sjednocen border-radius karet na 12px",
+    "UX: Hypotéka editovatelná přímo v kartě Čistý majetek",
   ]},
   { version: "v4.30", date: "22. 4. 2026", changes: [
     "Fix: Worker — odstraněn gemini-2.0-flash-lite z FALLBACK_MODELS, nahrazen gemini-2.0-flash",
@@ -837,7 +758,7 @@ const BROKER_COLORS = ["#3b82f6","#22c55e","#8b5cf6","#f59e0b","#ec4899","#06b6d
 const CATEGORIES = ["Fond","ETF","Portfolio","Akcie","Crypto","Jiné"];
 
 const fmtCZK = (v) => { const n = Number(v); if (!isFinite(n)) return "— Kč"; return new Intl.NumberFormat("cs-CZ", { style: "currency", currency: "CZK", maximumFractionDigits: 0 }).format(n); };
-const parseFlt = window.InvestBookCore.parseFlt; // z investbook-core.js
+const parseFlt = (s) => { const n = parseFloat(String(s).replace(/\s/g,"").replace(",",".")); return isNaN(n) ? 0 : n; };
 
 // Convert position value to CZK
 const FX_EUR = 24.23;
@@ -1159,27 +1080,63 @@ function InvestBook() {
     }, 0);
   const totalInvested = allRows.reduce((s, p) => s + p.investedCZK, 0);
 
-  // ── Performance metrics (z investbook-core.js, testovatelné) ───────────
-  const IBC = window.InvestBookCore;
-  const maxDrawdown        = React.useMemo(() => IBC.maxDrawdown(PORTFOLIO_HISTORY), []);
-  const portfolioVolatility = React.useMemo(() => IBC.portfolioVolatility(PORTFOLIO_HISTORY), []);
-  const portfolioCAGR_hist  = React.useMemo(() => IBC.portfolioCAGR(PORTFOLIO_HISTORY), []);
-  const sharpeRatio         = React.useMemo(
-    () => IBC.sharpeRatio(portfolioCAGR_hist, portfolioVolatility, 3.5),
-    [portfolioCAGR_hist, portfolioVolatility]
-  );
+  // ── Performance metrics (computed from PORTFOLIO_HISTORY) ────────────────
+  const maxDrawdown = React.useMemo(() => {
+    let peak = 0, dd = 0;
+    PORTFOLIO_HISTORY.forEach(pt => {
+      if (pt.v > peak) peak = pt.v;
+      const d = peak > 0 ? (peak - pt.v) / peak * 100 : 0;
+      if (d > dd) dd = d;
+    });
+    return dd;
+  }, []);
+  const portfolioVolatility = React.useMemo(() => {
+    if (PORTFOLIO_HISTORY.length < 2) return 0;
+    const rets = [];
+    for (let i = 1; i < PORTFOLIO_HISTORY.length; i++) {
+      if (PORTFOLIO_HISTORY[i-1].v > 0) rets.push((PORTFOLIO_HISTORY[i].v - PORTFOLIO_HISTORY[i-1].v) / PORTFOLIO_HISTORY[i-1].v);
+    }
+    const mean = rets.reduce((a,b)=>a+b,0)/rets.length;
+    const variance = rets.reduce((s,r)=>s+Math.pow(r-mean,2),0)/(rets.length-1);
+    return Math.sqrt(variance*12)*100;
+  }, []);
+  const portfolioCAGR_hist = React.useMemo(() => {
+    if (PORTFOLIO_HISTORY.length < 2) return null;
+    const first = PORTFOLIO_HISTORY[0].v;
+    const last  = PORTFOLIO_HISTORY[PORTFOLIO_HISTORY.length-1].v;
+    const yrs   = (new Date(PORTFOLIO_HISTORY[PORTFOLIO_HISTORY.length-1].d+"-01") - new Date(PORTFOLIO_HISTORY[0].d+"-01")) / (1000*60*60*24*365.25);
+    if (yrs <= 0 || first <= 0) return null;
+    return (Math.pow(last/first, 1/yrs) - 1) * 100;
+  }, []);
+  const sharpeRatio = React.useMemo(() => {
+    if (!portfolioCAGR_hist || portfolioVolatility === 0) return null;
+    return (portfolioCAGR_hist - 3.5) / portfolioVolatility; // 3.5% bezrizikova sazba CZK
+  }, [portfolioCAGR_hist, portfolioVolatility]);
 
   // ── Benchmark data (S&P 500 + MSCI World annual returns, normalizovano) ─
   // SP500/MSCI roční výnosy — 2025 a 2026 aktualizovány dle reálných tržních dat (S&P 500 v 04/2026 = 7 064)
   const SP500_ANN = { 2006:15.8,2007:5.5,2008:-37.0,2009:26.5,2010:15.1,2011:2.1,2012:16.0,2013:32.4,2014:13.7,2015:1.4,2016:12.0,2017:21.8,2018:-4.4,2019:31.5,2020:18.4,2021:28.7,2022:-18.1,2023:26.3,2024:25.0,2025:9.0,2026:32.0 };
   const MSCI_ANN  = { 2006:20.1,2007:9.6,2008:-40.3,2009:30.0,2010:11.8,2011:-5.5,2012:15.8,2013:26.7,2014:5.5,2015:-0.3,2016:7.5,2017:22.4,2018:-8.7,2019:27.7,2020:15.9,2021:21.8,2022:-17.7,2023:23.8,2024:18.0,2025:7.0,2026:26.0 };
   const bmMap = React.useMemo(() => {
-    // Live bod = aktuální měsíc (aby benchmark linka sahala k dnešku)
-    const liveD = `${NOW_YEAR}-${String(new Date().getMonth()+1).padStart(2,'0')}`;
-    return {
-      sp500: IBC.buildBenchmarkMap(PORTFOLIO_HISTORY, SP500_ANN, [liveD]),
-      msci:  IBC.buildBenchmarkMap(PORTFOLIO_HISTORY, MSCI_ANN,  [liveD]),
+    if (PORTFOLIO_HISTORY.length === 0) return { sp500: {}, msci: {} };
+    const startVal = PORTFOLIO_HISTORY[0].v;
+    const startYr  = Number(PORTFOLIO_HISTORY[0].d.split("-")[0]);
+    const build = (annR) => {
+      const computeBm = (d) => {
+        const [yr, mo] = d.split("-").map(Number);
+        let cum = 1;
+        for (let y = startYr; y < yr; y++) cum *= (1 + (annR[y]||0)/100);
+        cum *= (1 + ((annR[yr]||0)/100) * (mo/12));
+        return Math.round(startVal * cum);
+      };
+      const m = {};
+      PORTFOLIO_HISTORY.forEach(pt => { m[pt.d] = computeBm(pt.d); });
+      // Přidej aktuální měsíc (live bod) pokud chybí
+      const liveD = `${NOW_YEAR}-${String(new Date().getMonth()+1).padStart(2,'0')}`;
+      if (!m[liveD]) m[liveD] = computeBm(liveD);
+      return m;
     };
+    return { sp500: build(SP500_ANN), msci: build(MSCI_ANN) };
   }, []);
 
   // ── localStorage persist for dividends + targetAlloc + FIRE ─────────────
@@ -1258,8 +1215,31 @@ ${posLines}`;
   // Průměrný roční výnos — vážený průměr p.a., počítáno v původní měně pozice
   // valueOrig/invested jsou obojí ve stejné měně → žádné zkreslení FX
   // Váha = investedCZK (proporce v portfoliu)
-  // CAGR s váženými roky (pure z investbook-core.js — testovatelné)
-  const calcWeightedAnnReturn = (rows) => IBC.calcWeightedAnnReturn(rows, NOW_YEAR);
+  const calcWeightedAnnReturn = (rows) => {
+    // Počítáme portfolio-level CAGR s váženými roky
+    // Každá pozice přispívá svou dobou držení váženou investicí (invCZK × years)
+    // → crypto (88k, 8 let) nemůže natáhnout jmenovatel celého portfolia (1.5M, 3-5 let)
+    let totalValCZK = 0, totalInvCZK = 0, weightedYearsSum = 0;
+    for (const p of rows) {
+      if (!p.invested || p.invested <= 0 || !p.investedCZK || p.investedCZK <= 0) continue;
+      let valCZK;
+      if (p.currency === "CZK") {
+        valCZK = p.value || p.invested;
+      } else {
+        valCZK = (p.priceCZK && p.shares) ? p.priceCZK * p.shares : null;
+      }
+      if (valCZK === null) continue;
+      const years = Math.max(1, NOW_YEAR - (p.start || NOW_YEAR));
+      totalValCZK += valCZK;
+      totalInvCZK += p.investedCZK;
+      weightedYearsSum += p.investedCZK * years;
+    }
+    if (totalInvCZK <= 0 || totalValCZK <= 0) return 0;
+    const years = Math.max(1, weightedYearsSum / totalInvCZK);
+    const ratio = totalValCZK / totalInvCZK;
+    const cagr = (Math.pow(ratio, 1 / years) - 1) * 100;
+    return isFinite(cagr) ? cagr : 0;
+  };
   // Pokud žádná importovaná pozice nemá priceCZK, ceny ještě nejsou načteny ze Sheets
   // → použij STATIC hodnoty (ručně zadané) jako fallback
   const hasPrices = importedRows.some(p => p.priceCZK && p.priceCZK > 0);
@@ -1670,7 +1650,43 @@ ${posLines}`;
                 sub={ytdCardAbs != null ? (ytdCardAbs >= 0 ? "+" : "") + fmt(ytdCardAbs) : "data chybí"}
                 subTitle={dispCurrency !== "CZK" ? "FX-korektní: baseline přepočten leden. kurzem" : "vč. pohybu kurzu USD→CZK"} />
               <StatCard label={isFiltered ? "Hodnota " + cat.label : "Hodnota majetku"} value={isFiltered ? fmt(fValue) : fmt(hodnotaMajetku)} color={T.text} accent={T.blue} sub={!isFiltered && zustatek > 0 ? "vč. hotovosti " + fmt(zustatek) : null} />
-              <StatCard label="Čistý majetek −hypotéka" value={fmt(cistyMajetek)}   color={T.amber}  accent={T.amber}  sub={"hypotéka " + fmt(hypoteka)} />
+              {/* Čistý majetek – s editovatelnou hypotékou přímo v kartě */}
+              {(() => {
+                const [editHyp, setEditHyp] = useState(false);
+                const [hypDraft, setHypDraft] = useState(String(hypoteka));
+                const commitHyp = () => {
+                  const n = parseFloat(hypDraft.replace(/\s/g,"").replace(",","."));
+                  if (isFinite(n) && n >= 0) setHypoteka(n);
+                  setEditHyp(false);
+                };
+                return (
+                  <div className="ib-statcard" style={{ background:T.card, border:"1px solid "+T.border, borderRadius:14, padding:"18px 20px", position:"relative", overflow:"hidden" }}>
+                    <div style={{ position:"absolute", top:0, left:0, right:0, height:2, background:T.amber, borderRadius:"14px 14px 0 0" }}/>
+                    <div className="ib-statcard-lbl" style={{ fontSize:14, color:T.muted, letterSpacing:"0.08em", fontWeight:500, marginBottom:10, textTransform:"uppercase" }}>Čistý majetek −hypotéka</div>
+                    <div className="ib-statcard-val" style={{ fontSize:22, fontWeight:700, color:T.amber, fontFamily:"'DM Mono',monospace" }}>{fmt(cistyMajetek)}</div>
+                    {/* Editovatelná hypotéka */}
+                    <div className="ib-statcard-sub" style={{ marginTop:6, fontSize:12, color:T.muted, display:"flex", alignItems:"center", gap:4, flexWrap:"wrap" }}>
+                      <span>hypotéka</span>
+                      {editHyp ? (
+                        <input autoFocus type="text" value={hypDraft}
+                          onChange={e => setHypDraft(e.target.value)}
+                          onBlur={commitHyp}
+                          onKeyDown={e => { if(e.key==="Enter") commitHyp(); if(e.key==="Escape") setEditHyp(false); }}
+                          style={{ background:"rgba(255,255,255,0.08)", border:"1px solid "+T.amber, borderRadius:4, color:T.text,
+                            fontFamily:"'DM Mono',monospace", fontSize:12, padding:"1px 6px", outline:"none", width:120, textAlign:"right" }}/>
+                      ) : (
+                        <span onClick={() => { setHypDraft(String(hypoteka)); setEditHyp(true); }}
+                          title="Klikni pro úpravu"
+                          style={{ cursor:"pointer", color:T.amber, fontFamily:"'DM Mono',monospace", fontWeight:600,
+                            borderBottom:"1px dashed rgba(251,191,36,0.4)", paddingBottom:1 }}>
+                          {fmt(hypoteka)}
+                        </span>
+                      )}
+                      <span style={{ fontSize:10, color:T.subtle, marginLeft:2 }}>✎</span>
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           );
         })()}
@@ -1697,15 +1713,20 @@ ${posLines}`;
           return (<>
             {/* Sdílené pill filtry */}
             <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
-              {CATS.map(c => (
-                <button key={c.id} onClick={() => setActiveCat(c.id)}
-                  style={{ padding: "6px 16px", borderRadius: 22, border: "1px solid " + (activeCat === c.id ? c.color : "rgba(255,255,255,0.08)"),
-                    cursor: "pointer", fontSize: 13, fontWeight: 600, transition: "all 0.15s",
-                    background: activeCat === c.id ? c.color + "22" : "transparent",
-                    color: activeCat === c.id ? c.color : T.muted }}>
-                  {c.label}
-                </button>
-              ))}
+              {CATS.map(c => {
+                  // Počet pozic pro danou kategorii
+                  const catCount = c.tblFilter ? allRows.filter(p => c.tblFilter.includes(p.category)).length : allRows.length;
+                  return (
+                    <button key={c.id} onClick={() => setActiveCat(c.id)}
+                      style={{ padding: "6px 16px", borderRadius: 22, border: "1px solid " + (activeCat === c.id ? c.color : "rgba(255,255,255,0.08)"),
+                        cursor: "pointer", fontSize: 13, fontWeight: 600, transition: "all 0.15s",
+                        background: activeCat === c.id ? c.color + "22" : "transparent",
+                        color: activeCat === c.id ? c.color : T.muted }}>
+                      {c.label}
+                      <span style={{ marginLeft: 5, fontSize: 11, fontWeight: 500, opacity: 0.7 }}>({catCount})</span>
+                    </button>
+                  );
+                })}
             </div>
 
             {/* Graf */}
@@ -1874,11 +1895,13 @@ ${posLines}`;
                     ))}
                   </div>
                   {/* Benchmark toggle */}
-                  <div style={{ display:"flex", gap:4 }}>
-                    {[{id:null,label:"Jen portfolio"},{id:"sp500",label:"vs S&P 500"},{id:"msci",label:"vs MSCI W"}].map(bm => (
+                  <div className="ib-benchmark-bar" style={{ display:"flex", gap:3, background:"rgba(255,255,255,0.04)", borderRadius:8, padding:"3px" }}>
+                    {[{id:null,label:"Portfolio"},{id:"sp500",label:"S&P 500"},{id:"msci",label:"MSCI W"}].map(bm => (
                       <button key={String(bm.id)} onClick={() => setBenchmarkMode(bm.id)}
-                        style={{ padding:"3px 8px", borderRadius:5, border:"none", cursor:"pointer", fontSize:11, fontWeight:600, transition:"all .12s",
-                          background: benchmarkMode===bm.id ? "rgba(251,191,36,0.2)" : "rgba(255,255,255,0.05)",
+                        style={{ padding:"4px 9px", borderRadius:6,
+                          border: benchmarkMode===bm.id ? "1px solid rgba(251,191,36,0.4)" : "1px solid transparent",
+                          cursor:"pointer", fontSize:11, fontWeight:600, transition:"all .15s",
+                          background: benchmarkMode===bm.id ? "rgba(251,191,36,0.18)" : "transparent",
                           color: benchmarkMode===bm.id ? "#fbbf24" : T.muted }}>
                         {bm.label}
                       </button>
@@ -1892,14 +1915,31 @@ ${posLines}`;
                   const firstVisD = histData[0]?.d;
                   const firstBmRaw = firstVisD ? bmSrc[firstVisD] : null;
                   const firstPortVal = firstVisD ? (histData[0][cat.chartKey] ?? histData[0].v) : null;
+                  // Interpolace FX kurzu: body před 2026-01 = lednový kurz, body od 2026-01 do teď = plynulý přechod.
+                  // Díky tomu křivka v USD/EUR odpovídá číslům v boxíčcích Začátek/Konec.
+                  const JAN_RATE = { CZK: 1, USD: JAN_2026_USDCZK, EUR: JAN_2026_EURCZK };
+                  const NOW_RATE = { CZK: 1, USD: FX_USD, EUR: FX_EUR };
+                  const janRateDisp = JAN_RATE[dispCurrency] || 1;
+                  const nowRateDisp = NOW_RATE[dispCurrency] || 1;
+                  const janMs = new Date("2026-01-01").getTime();
+                  const nowMs = Date.now();
+                  const getInterpolatedDiv = (dateStr) => {
+                    if (dispCurrency === "CZK") return 1;
+                    const ptMs = new Date(dateStr + "-01").getTime();
+                    if (ptMs <= janMs) return janRateDisp;          // starší data → lednový kurz
+                    if (ptMs >= nowMs) return nowRateDisp;          // aktuální → současný kurz
+                    const t = (ptMs - janMs) / (nowMs - janMs);     // 0..1
+                    return janRateDisp + (nowRateDisp - janRateDisp) * t; // lineární interpolace
+                  };
                   const histDataDisplay = histData.map(d => {
                     const out = { d: d.d, isLive: d.isLive };
-                    ['v','fond','akcie','crypto'].forEach(k => { if (d[k] != null) out[k] = Math.round(d[k] / dcfg.div); });
+                    const div = getInterpolatedDiv(d.d);
+                    ['v','fond','akcie','crypto'].forEach(k => { if (d[k] != null) out[k] = Math.round(d[k] / div); });
                     if (benchmarkMode && firstBmRaw && firstPortVal) {
                       const bmVal = bmSrc[d.d];
                       if (bmVal != null) {
                         // Škáluj benchmark: zachovej relativní výnos od prvního viditelného bodu
-                        out.bv = Math.round((bmVal / firstBmRaw) * (firstPortVal / dcfg.div));
+                        out.bv = Math.round((bmVal / firstBmRaw) * (firstPortVal / getInterpolatedDiv(firstVisD)));
                       }
                     }
                     return out;
@@ -1923,7 +1963,19 @@ ${posLines}`;
                           domain={[ dMin => Math.floor(dMin * 0.95 / chartStep) * chartStep, dMax => Math.ceil(dMax * 1.05 / chartStep) * chartStep ]}
                           tickFormatter={v => { const s = window.innerWidth<=480 ? "" : " "+sym; return v >= 1000000 ? (v/1000000).toFixed(1)+"M"+s : v >= 1000 ? Math.round(v/1000)+"k"+s : Math.round(v)+s; }} />
                         <Tooltip {...ttStyle} wrapperStyle={{ maxWidth: 220, zIndex: 10 }} formatter={(v) => [fmtN(v), cat.label]} labelFormatter={d => d} />
-                        <Area type="monotone" dataKey={cat.chartKey} stroke={cat.color} strokeWidth={2.5} fill="url(#gChart)" dot={false}
+                        <Area type="monotone" dataKey={cat.chartKey} stroke={cat.color} strokeWidth={2.5} fill="url(#gChart)"
+                          dot={(props) => {
+                            const { cx, cy, payload } = props;
+                            if (!payload.isLive) return null;
+                            // Pulzující živý bod na aktuálním měsíci
+                            return (
+                              <g key="live-dot">
+                                <circle cx={cx} cy={cy} r={7} fill={cat.color} opacity={0.25}/>
+                                <circle cx={cx} cy={cy} r={4} fill={cat.color} opacity={0.6}/>
+                                <circle cx={cx} cy={cy} r={2.5} fill={cat.color}/>
+                              </g>
+                            );
+                          }}
                           activeDot={{ r: 4, fill: cat.color, strokeWidth: 0 }} />
                         {benchmarkMode && (
                           <Area type="monotone" dataKey="bv" stroke="#fbbf24" strokeWidth={1.5} strokeDasharray="5 3"
@@ -3051,118 +3103,6 @@ ${posLines}`;
           );
         })()}
 
-        {/* ── REÁLNÝ VÝNOS PO INFLACI ─────────────────────────────────────
-            Ukazuje kolik sis skutečně vydělal po odečtení znehodnocení CZK.
-            Data: ČSÚ roční CPI (prosinec) — udržováno v investbook-core.js.
-        */}
-        {(() => {
-          // Seskup historii po letech (první bod roku)
-          const yrsMap = {};
-          PORTFOLIO_HISTORY.forEach(p => {
-            const yr = p.d.split("-")[0];
-            if (!yrsMap[yr]) yrsMap[yr] = p;
-          });
-          yrsMap[String(NOW_YEAR)] = PORTFOLIO_HISTORY[PORTFOLIO_HISTORY.length - 1];
-          const yrKeys = Object.keys(yrsMap).sort();
-          const CPI = IBC.CZ_CPI_YEARLY;
-
-          // Roční řádky — nominál, inflace, reál
-          const inflRows = yrKeys.map((yr, i) => {
-            if (i === 0) return null;
-            const cur = yrsMap[yr].v;
-            const prev = yrsMap[yrKeys[i - 1]].v;
-            const nominalPct   = prev > 0 ? ((cur - prev) / prev) * 100 : 0;
-            const inflationPct = CPI[Number(yr)] || 0;
-            const realPct      = IBC.realReturn(nominalPct, inflationPct);
-            return { yr, nominalPct, inflationPct, realPct };
-          }).filter(Boolean);
-
-          // Souhrn za celé období — nominální CAGR vs. inflace CAGR vs. reálný CAGR
-          const firstPt = PORTFOLIO_HISTORY[0];
-          const lastPt  = PORTFOLIO_HISTORY[PORTFOLIO_HISTORY.length - 1];
-          const yrsSpan = (new Date(lastPt.d + "-01") - new Date(firstPt.d + "-01"))
-                           / (1000 * 60 * 60 * 24 * 365.25);
-          const nominalCAGR = yrsSpan > 0 && firstPt.v > 0
-            ? (Math.pow(lastPt.v / firstPt.v, 1 / yrsSpan) - 1) * 100
-            : 0;
-          const cumInflPct = IBC.cumulativeInflation(firstPt.d, lastPt.d, CPI);
-          const inflCAGR   = yrsSpan > 0
-            ? (Math.pow(1 + cumInflPct / 100, 1 / yrsSpan) - 1) * 100
-            : 0;
-          const realCAGR   = IBC.realReturn(nominalCAGR, inflCAGR);
-
-          return (
-            <div style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 16, padding: 22, marginBottom: 16 }}>
-              <SectionTitle
-                title="📉 Reálný výnos po inflaci"
-                sub="Nominální výnos − znehodnocení koruny (ČSÚ CPI) = kolik sis skutečně vydělal"
-              />
-
-              {/* 3 stat karty: nominál, inflace, reál */}
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12, marginBottom: 18 }}>
-                <StatCard
-                  label="Nominální CAGR"
-                  value={(nominalCAGR >= 0 ? "+" : "") + nominalCAGR.toFixed(1) + " % p.a."}
-                  color={nominalCAGR >= 0 ? T.green : T.red}
-                  sub="tvůj roční růst portfolia"
-                />
-                <StatCard
-                  label="Inflace CAGR"
-                  value={inflCAGR.toFixed(1) + " % p.a."}
-                  color={T.red}
-                  sub="roční znehodnocení koruny (ČSÚ)"
-                />
-                <StatCard
-                  label="Reálný CAGR"
-                  value={(realCAGR >= 0 ? "+" : "") + realCAGR.toFixed(1) + " % p.a."}
-                  color={realCAGR >= 0 ? T.green : T.red}
-                  accent={realCAGR >= 0 ? T.green : T.red}
-                  sub="co ti zbylo po odečtení inflace"
-                />
-              </div>
-
-              {/* Tabulka po letech */}
-              <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
-                <table style={{ width: "100%", minWidth: 320, borderCollapse: "collapse" }}>
-                  <thead>
-                    <tr style={{ borderBottom: "1px solid " + T.border }}>
-                      <th style={{ padding: "6px 12px", textAlign: "left",  fontSize: 12, color: T.subtle, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase" }}>Rok</th>
-                      <th style={{ padding: "6px 12px", textAlign: "right", fontSize: 12, color: T.subtle, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase" }}>Nominální %</th>
-                      <th style={{ padding: "6px 12px", textAlign: "right", fontSize: 12, color: T.subtle, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase" }}>Inflace ČR %</th>
-                      <th style={{ padding: "6px 12px", textAlign: "right", fontSize: 12, color: T.subtle, fontWeight: 600, letterSpacing: "0.08em", textTransform: "uppercase" }}>Reálný výnos %</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {inflRows.map((r, i) => {
-                      const nomC  = r.nominalPct >= 0 ? T.green : T.red;
-                      const realC = r.realPct    >= 0 ? T.green : T.red;
-                      return (
-                        <tr key={r.yr} style={{ borderBottom: "1px solid rgba(255,255,255,0.03)", background: i % 2 === 0 ? "rgba(255,255,255,0.01)" : "transparent" }}>
-                          <td style={{ padding: "10px 12px", fontSize: 14, color: T.text, fontWeight: 700 }}>{r.yr}</td>
-                          <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: nomC, fontFamily: "'DM Mono',monospace", fontWeight: 600 }}>
-                            {r.nominalPct >= 0 ? "+" : ""}{r.nominalPct.toFixed(1)}%
-                          </td>
-                          <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: T.muted, fontFamily: "'DM Mono',monospace" }}>
-                            {r.inflationPct.toFixed(1)}%
-                          </td>
-                          <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: realC, fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>
-                            {r.realPct >= 0 ? "+" : ""}{r.realPct.toFixed(1)}%
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
-              </div>
-
-              <div style={{ fontSize: 11, color: T.subtle, marginTop: 12, fontStyle: "italic", lineHeight: 1.5 }}>
-                Zdroj: meziroční CPI prosinec (ČSÚ). Hodnota 2026 je předběžný odhad — uprav v <code>investbook-core.js</code> (CZ_CPI_YEARLY), jakmile vyjdou nová data.
-                Reálný výnos = (1+nominální)/(1+inflace) − 1 (Fisherova rovnice).
-              </div>
-            </div>
-          );
-        })()}
-
         {/* ── PREDIKCE PORTFOLIA – jeden kombinovaný graf ────────────────── */}
         {(() => {
           const base    = totalValue;
@@ -3389,10 +3329,17 @@ ${posLines}`;
           const remaining = Math.max(0, fireNum - totalValue);
           const annualGrowth = totalValue * (fireReturnPct / 100);
           const annContrib   = monthlyContrib * 12;
-          // Kolik let do FI — pure fn z investbook-core.js (testovatelné)
-          const fireYears = IBC.calcFireYears({
-            totalValue, fireExpenses, fireWithdrawal, fireReturnPct, monthlyContrib
-          });
+          // Kolik let do FI (iterativní výpočet)
+          let fireYears = null;
+          if (fireNum > 0 && totalValue < fireNum) {
+            let v = totalValue;
+            for (let y = 1; y <= 80; y++) {
+              v = v * (1 + fireReturnPct/100) + annContrib;
+              if (v >= fireNum) { fireYears = y; break; }
+            }
+          } else if (totalValue >= fireNum && fireNum > 0) {
+            fireYears = 0;
+          }
           // Vizualizace: path to FI (milníky každých 5 let)
           const milestones = [0.25, 0.5, 0.75, 1.0];
           return (
@@ -4409,6 +4356,9 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
         ::-webkit-scrollbar { width: 4px; height: 4px; }
         ::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.1); border-radius: 2px; }
         @keyframes pulse { 0%,100%{opacity:1}50%{opacity:0.3} }
+        @keyframes livePulse { 0%{opacity:0.6;transform:scale(1)}50%{opacity:0.15;transform:scale(2)}100%{opacity:0.6;transform:scale(1)} }
+        /* Sjednocené karty – jednotný border-radius 12px */
+        .ib-card, .ib-chart-card, .ib-statcard, .ib-mkt-card { border-radius: 12px !important; }
 
         /* ── Grid systém ── */
         .ib-grid4   { display: grid; grid-template-columns: repeat(4,1fr); gap: 12px; }
@@ -4433,6 +4383,8 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
 
         /* ── Header ── */
         .ib-hdr-fx       { display: flex; align-items: center; gap: 6px; }
+        /* Chart card – konzistentní padding */
+        .ib-chart-card   { border-radius: 12px; }
         .ib-nav          { display: flex; }
         .ib-tab-bar      { display: none; }
         .ib-hdr-currency { display: flex; }
@@ -4477,17 +4429,17 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
           .ib-mkt-card { min-width: 100px !important; flex-shrink: 0 !important; }
 
           /* Hero hodnota */
-          .ib-hero-value { font-size: 28px !important; letter-spacing: -0.02em !important; }
-          .ib-hero-sub   { font-size: 12px !important; }
+          .ib-hero-value { font-size: 26px !important; letter-spacing: -0.02em !important; }
+          .ib-hero-sub   { font-size: 10px !important; }
           /* Hero stats: zabalí do 2 řádků (hodnota+zisk / výnosy), nescroluje */
           .ib-hero-row   { gap: 12px !important; flex-wrap: wrap !important; }
           .ib-hero-row > * { min-width: 0; }
 
-          /* StatCard — větší písmo pro lepší čitelnost na mobilu (v4.33) */
-          .ib-statcard     { padding: 12px 14px !important; border-radius: 10px !important; }
-          .ib-statcard-val { font-size: 19px !important; word-break: break-word !important; overflow-wrap: anywhere !important; }
-          .ib-statcard-lbl { font-size: 11px !important; }
-          .ib-statcard-sub { font-size: 12px !important; word-break: break-word !important; overflow-wrap: anywhere !important; }
+          /* StatCard kompaktnější */
+          .ib-statcard     { padding: 10px 12px !important; border-radius: 10px !important; }
+          .ib-statcard-val { font-size: 13px !important; word-break: break-word !important; overflow-wrap: anywhere !important; }
+          .ib-statcard-lbl { font-size: 9px !important; }
+          .ib-statcard-sub { font-size: 10px !important; word-break: break-word !important; overflow-wrap: anywhere !important; }
 
           /* Tabulky – horizontální scroll */
           .ib-table-wrap { overflow-x: auto !important; -webkit-overflow-scrolling: touch !important; border-radius: 10px !important; }
@@ -4510,6 +4462,10 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
           /* Přehled – period tlačítka: nikdy se nezalamují, scroll pokud se nevejdou */
           .ib-period-row { flex-wrap: nowrap !important; overflow-x: auto !important; -webkit-overflow-scrolling: touch !important; gap: 3px !important; scrollbar-width: none !important; }
           .ib-period-row::-webkit-scrollbar { display: none; }
+
+          /* Benchmark bar – na mobilu roztáhne na celou šířku */
+          .ib-benchmark-bar { width: 100% !important; }
+          .ib-benchmark-bar button { flex: 1 !important; text-align: center !important; }
 
           /* Pozice – záhlaví a akce */
           .ib-pos-header  { flex-direction: column !important; align-items: flex-start !important; gap: 10px !important; }
