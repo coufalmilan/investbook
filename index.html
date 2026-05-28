@@ -745,7 +745,7 @@ const T = {
   border:  "rgba(255,255,255,0.06)",
   text:    "#f4f4f6",
   muted:   "#9ca3af",
-  subtle:  "#6b7280",
+  subtle:  "#8b95a8",
   green:   "#22c55e",
   blue:    "#3b82f6",
   red:     "#ef4444",
@@ -870,7 +870,7 @@ function EditCell({ value, onSave, align, suffix, color, type, isSelect, options
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(String(value));
   const commit = () => { setEditing(false); onSave(draft); };
-  const inputStyle = { background: "#0f0f13", border: "1px solid " + T.blue, borderRadius: 6, color: T.text, fontFamily: "'DM Mono','Fira Mono',monospace", fontSize: 13, padding: "4px 8px", width: "100%", outline: "none", textAlign: align };
+  const inputStyle = { background: "#0f0f13", border: "1px solid " + T.blue, borderRadius: 6, color: T.text, fontFamily: "'DM Mono','Fira Mono',monospace", fontSize: 13, padding: "10px 12px", width: "100%", outline: "none", textAlign: align };
 
   if (locked) {
     return (
@@ -898,6 +898,7 @@ function EditCell({ value, onSave, align, suffix, color, type, isSelect, options
   }
   return (
     <td onClick={() => { setDraft(String(value)); setEditing(true); }} title="Klikni pro editaci"
+      className="ib-cell"
       style={{ padding: "10px 12px", textAlign: align, cursor: "text", fontFamily: "'DM Mono',monospace", fontSize: type === "text" ? 13 : 13, color: color || T.text }}>
       <span style={{ borderBottom: "1px dashed rgba(255,255,255,0.1)", paddingBottom: 1 }}>{value}{suffix}</span>
     </td>
@@ -1613,7 +1614,7 @@ ${posLines}`;
             <div>
               <div className="ib-hero-value" style={{ fontSize: 56, fontWeight: 800, color: isFiltered ? cat.color : T.text, letterSpacing: "-0.03em", lineHeight: 1 }}>{fmt(dispValue)}</div>
               <div style={{ display: "flex", gap: 12, marginTop: 6, alignItems: "center" }}>
-                <span style={{ fontSize: 14, color: T.muted }}>{"≈ $" + Math.round(dispValue / 20.57).toLocaleString("en-US")}</span>
+                <span className="ib-hero-equiv" style={{ fontSize: 14, color: T.muted }}>{"≈ $" + Math.round(dispValue / 20.57).toLocaleString("en-US")}</span>
                 <span className="ib-hero-sub" style={{ fontSize: 13, color: T.muted }}>{isFiltered ? "hodnota · " + cat.label : "celková hodnota"}</span>
                 {isFiltered && <span style={{ fontSize: 12, color: cat.color, background: cat.color + "18", border: "1px solid " + cat.color + "40", borderRadius: 6, padding: "1px 8px" }}>{((fValue / totalValue) * 100).toFixed(1)} % portfolia</span>}
               </div>
@@ -1700,7 +1701,7 @@ ${posLines}`;
 
           return (<>
             {/* Sdílené pill filtry */}
-            <div style={{ display: "flex", gap: 8, marginBottom: 16 }}>
+            <div className="ib-cat-pills" style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
               {CATS.map(c => {
                   // Počet pozic pro danou kategorii
                   const catCount = c.tblFilter ? allRows.filter(p => c.tblFilter.includes(p.category)).length : allRows.length;
@@ -2426,7 +2427,7 @@ ${posLines}`;
                     <PositionLogo ticker={pos.ticker} name={pos.name} size={26} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 700, fontSize: 14, color: CAT_COLOR[pos.category]||T.text, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pos.name}</div>
-                      <div style={{ fontSize: 11, color: T.muted, marginTop: 1 }}>{pos.broker} · {pos.category} · od {pos.start}</div>
+                      <div className="ib-card-meta" style={{ fontSize: 11, color: T.muted, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pos.broker} · {pos.category} · od {pos.start}</div>
                     </div>
                     <button onClick={() => deleteManual(pos.id)} style={{ background: "none", border: "none", color: T.subtle, cursor: "pointer", fontSize: 18, padding: "2px 4px" }}>×</button>
                   </div>
@@ -2583,6 +2584,7 @@ ${posLines}`;
                 e.target.value = '';
               }} />
             <button onClick={() => document.getElementById('csvFileInput').click()}
+              className="ib-tertiary-btn"
               style={{ background:"rgba(59,130,246,0.12)", border:"1px solid rgba(59,130,246,0.25)", borderRadius:7, color:T.blue, cursor:"pointer", padding:"5px 12px", fontSize:12, fontWeight:600 }}>
               ↑ CSV import
             </button>
@@ -2607,7 +2609,7 @@ ${posLines}`;
                     <PositionLogo ticker={pos.ticker} name={pos.name} size={26} />
                     <div style={{ flex: 1, minWidth: 0 }}>
                       <div style={{ fontWeight: 700, fontSize: 14, color: T.text }}>{pos.ticker || pos.name.split("(")[0].trim()}</div>
-                      <div style={{ fontSize: 11, color: T.muted, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pos.broker} · {pos.category} · od {pos.start}</div>
+                      <div className="ib-card-meta" style={{ fontSize: 11, color: T.muted, marginTop: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{pos.broker} · {pos.category} · od {pos.start}</div>
                     </div>
                     <span style={{ fontSize: 11, color: CAT_COLOR[pos.category]||T.muted, background: "rgba(255,255,255,0.05)", borderRadius: 4, padding: "2px 6px", flexShrink: 0 }}>{pos.currency}</span>
                   </div>
@@ -3500,6 +3502,7 @@ ${posLines}`;
                   </div>
                 </div>
                 <button onClick={assessRisk} disabled={riskLoading || (!geminiKey && !workerUrl)}
+                  className="ib-tertiary-btn"
                   style={{ padding: "7px 16px", borderRadius: 8, border: "none", flexShrink: 0,
                     background: (riskLoading || (!geminiKey && !workerUrl)) ? "rgba(245,158,11,0.2)" : "linear-gradient(135deg,#f59e0b,#ef4444)",
                     color: "#fff", cursor: (riskLoading || (!geminiKey && !workerUrl)) ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" }}>
@@ -3542,7 +3545,7 @@ ${posLines}`;
                               {/* Řádek 1: jméno + expand */}
                               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
                                 <span style={{ fontSize: 14, fontWeight: 700, color: T.text }}>{r.name}</span>
-                                <span style={{ fontSize: 11, color: T.subtle }}>{isExp ? "▲" : "▼"}</span>
+                                <span style={{ fontSize: 14, color: T.muted }}>{isExp ? "▲" : "▼"}</span>
                               </div>
                               {/* Řádek 2: badges */}
                               <div style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "center" }}>
@@ -4067,6 +4070,7 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
               </select>
             )}
             <button onClick={() => setShowGeminiSettings(s => !s)}
+              className="ib-tertiary-btn"
               style={{ padding: "7px 16px", borderRadius: 8, border: "1px solid " + T.border, background: T.card, color: T.muted, cursor: "pointer", fontSize: 13, fontWeight: 600, display: "flex", alignItems: "center", gap: 6 }}>
               ⚙️ {workerUrl ? "Worker ✓" : geminiKey ? "API klíč ✓" : "Nastavit"}{sheetId && sheetId !== DEFAULT_SHEET_ID ? " · Sheet ✓" : ""}
             </button>
@@ -4204,6 +4208,7 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
                 <div style={{ fontSize: 12, color: T.muted }}>Gemini analyzuje všech <strong style={{ color: T.text }}>{allRows.length}</strong> pozic</div>
                 <button onClick={analyzePortfolio} disabled={aiAnalysisLoading}
+                  className="ib-tertiary-btn"
                   style={{ padding: "8px 18px", borderRadius: 8, border: "none",
                     background: aiAnalysisLoading ? "rgba(99,102,241,0.3)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
                     color: "#fff", cursor: aiAnalysisLoading ? "not-allowed" : "pointer",
@@ -4235,6 +4240,7 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
                   {marketNewsDate ? <span>Načteno: <strong style={{ color: T.text }}>{marketNewsDate}</strong></span> : "Denní AI přehled novinek k tvým pozicím"}
                 </div>
                 <button onClick={loadMktNews} disabled={marketNewsLoading}
+                  className="ib-tertiary-btn"
                   style={{ padding: "8px 18px", borderRadius: 8, border: "none",
                     background: marketNewsLoading ? "rgba(99,102,241,0.3)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
                     color: "#fff", cursor: marketNewsLoading ? "not-allowed" : "pointer",
@@ -4310,9 +4316,11 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
                 onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); } }}
                 placeholder="Zeptej se na své portfolio…"
                 disabled={aiLoading}
+                className="ib-ai-input"
                 style={{ ...inputBase, flex: 1 }}
               />
               <button onClick={sendChat} disabled={aiLoading || !aiInput.trim()}
+                className="ib-ai-send-btn"
                 style={{ padding: "9px 18px", borderRadius: 8, border: "none",
                   background: aiLoading || !aiInput.trim() ? "rgba(99,102,241,0.25)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
                   color: "#fff", cursor: aiLoading || !aiInput.trim() ? "not-allowed" : "pointer", fontSize: 16 }}>
@@ -4417,24 +4425,24 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
           .ib-mkt-card { min-width: 100px !important; flex-shrink: 0 !important; }
 
           /* Hero hodnota */
-          .ib-hero-value { font-size: 26px !important; letter-spacing: -0.02em !important; }
-          .ib-hero-sub   { font-size: 10px !important; }
+          .ib-hero-value { font-size: 26px !important; letter-spacing: -0.025em !important; word-break: break-word !important; }
+          .ib-hero-sub   { font-size: 12px !important; }
           /* Hero stats: zabalí do 2 řádků (hodnota+zisk / výnosy), nescroluje */
           .ib-hero-row   { gap: 12px !important; flex-wrap: wrap !important; }
           .ib-hero-row > * { min-width: 0; }
 
           /* StatCard kompaktnější */
           .ib-statcard     { padding: 10px 12px !important; border-radius: 10px !important; }
-          .ib-statcard-val { font-size: 13px !important; word-break: break-word !important; overflow-wrap: anywhere !important; }
-          .ib-statcard-lbl { font-size: 9px !important; }
-          .ib-statcard-sub { font-size: 10px !important; word-break: break-word !important; overflow-wrap: anywhere !important; }
+          .ib-statcard-val { font-size: 15px !important; word-break: break-word !important; overflow-wrap: anywhere !important; }
+          .ib-statcard-lbl { font-size: 11px !important; letter-spacing: 0.05em !important; }
+          .ib-statcard-sub { font-size: 12px !important; word-break: break-word !important; overflow-wrap: anywhere !important; }
 
           /* Tabulky – horizontální scroll */
           .ib-table-wrap { overflow-x: auto !important; -webkit-overflow-scrolling: touch !important; border-radius: 10px !important; }
           .ib-table-wrap table { min-width: 560px !important; }
 
           /* Karty */
-          .ib-card { border-radius: 10px !important; padding: 12px 12px !important; }
+          .ib-card { border-radius: 10px !important; padding: 14px 14px !important; }
 
           /* Penzijko */
           .ib-pension-kpi     { grid-template-columns: 1fr 1fr !important; }
@@ -4454,6 +4462,13 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
           /* Benchmark bar – na mobilu roztáhne na celou šířku */
           .ib-benchmark-bar { width: 100% !important; }
           .ib-benchmark-bar button { flex: 1 !important; text-align: center !important; }
+
+          /* Currency switcher – větší tap target */
+          .ib-hdr-currency { padding: 4px !important; gap: 2px !important; }
+          .ib-hdr-currency button { min-height: 36px !important; padding: 6px 12px !important; font-size: 13px !important; }
+
+          /* Version button – větší tap target */
+          .ib-version-btn { font-size: 13px !important; min-height: 30px !important; padding: 4px 8px !important; display: inline-flex !important; align-items: center !important; }
 
           /* Pozice – záhlaví a akce */
           .ib-pos-header  { flex-direction: column !important; align-items: flex-start !important; gap: 10px !important; }
@@ -4491,6 +4506,33 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
 
           /* Graf subtitle – skryj na mobilu */
           .ib-chart-subtitle { display: none !important; }
+
+          /* Filter pilule – větší tap target */
+          .ib-cat-pills button { padding: 9px 14px !important; font-size: 14px !important; min-height: 40px !important; }
+
+          /* EditCell – větší tap target a font */
+          .ib-cell, .ib-cell input { font-size: 14px !important; min-height: 40px !important; }
+
+          /* Tab bar buttons – vyšší pro lepší tapping */
+          .ib-tab-bar button { min-height: 52px !important; padding: 6px 0 calc(6px + env(safe-area-inset-bottom, 0)) 0 !important; }
+          .ib-tab-bar button span:last-child { font-size: 12px !important; }
+
+          /* Card meta – větší font, lepší kontrast */
+          .ib-card-meta { font-size: 12px !important; color: #9ca3af !important; }
+
+          /* Hero ≈ USD equiv */
+          .ib-hero-equiv { display: block !important; margin-top: 2px; font-size: 12px; }
+
+          /* Tertiary action buttons */
+          .ib-tertiary-btn { min-height: 40px !important; padding: 9px 14px !important; font-size: 13px !important; }
+
+          /* AI chat input + send button */
+          .ib-ai-input { min-height: 44px !important; font-size: 16px !important; }
+          .ib-ai-send-btn { min-height: 44px !important; min-width: 44px !important; }
+
+          /* Period buttons – větší tap target */
+          .ib-period-row button { padding: 8px 11px !important; font-size: 13px !important; min-height: 36px !important; }
+          .ib-pos-period-btns button { padding: 8px 11px !important; font-size: 13px !important; min-height: 36px !important; min-width: 38px !important; }
         }
 
         @media (min-width: 481px) {
@@ -4507,8 +4549,10 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
             <div style={{ width: 28, height: 28, borderRadius: 8, background: "linear-gradient(135deg," + T.green + "," + T.blue + ")", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 16, fontWeight: 800, color: "#000" }}>i</div>
             <div>
               <span style={{ fontSize: 17, fontWeight: 700, color: T.text, letterSpacing: "-0.01em" }}>InvestBook</span>
-              <span onClick={() => setShowChangelog(true)} title="Zobrazit changelog"
-                style={{ fontSize: 12, color: T.blue, marginLeft: 6, fontFamily: "'DM Mono',monospace", cursor: "pointer", textDecoration: "underline dotted", textUnderlineOffset: 3 }}>{APP_VERSION}</span>
+              <button onClick={() => setShowChangelog(true)} title="Zobrazit changelog"
+                className="ib-version-btn"
+                style={{ fontSize: 12, color: T.blue, marginLeft: 6, fontFamily: "'DM Mono',monospace", cursor: "pointer",
+                  background: "rgba(59,130,246,0.08)", border: "none", borderRadius: 6, padding: "4px 8px", lineHeight: 1 }}>{APP_VERSION}</button>
             </div>
           </div>
           <nav className="ib-nav" style={{ gap: 2 }}>
