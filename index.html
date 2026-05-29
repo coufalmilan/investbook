@@ -897,7 +897,7 @@ function EditCell({ value, onSave, align, suffix, color, type, isSelect, options
     );
   }
   return (
-    <td onClick={() => { setDraft(String(value)); setEditing(true); }} title="Klikni pro editaci"
+    <td onClick={e => { e.stopPropagation(); setDraft(String(value)); setEditing(true); }} title="Klikni pro editaci"
       className="ib-cell"
       style={{ padding: "10px 12px", textAlign: align, cursor: "text", fontFamily: "'DM Mono',monospace", fontSize: type === "text" ? 13 : 13, color: color || T.text }}>
       <span style={{ borderBottom: "1px dashed rgba(255,255,255,0.1)", paddingBottom: 1 }}>{value}{suffix}</span>
@@ -1386,6 +1386,12 @@ ${posLines}`;
         up.value = isNaN(n) ? 0 : n;
         const currentGain = (p.value || 0) - (p.invested || 0);
         up.invested = up.value - currentGain;
+      } else if (field === "gainPct") {
+        // Výnos % zadán ručně → přepočítej hodnotu = investováno × (1 + pct/100)
+        const pct = parseFlt(raw);
+        if (!isNaN(pct) && (p.invested || 0) > 0) {
+          up.value = Math.round((p.invested || 0) * (1 + pct / 100));
+        }
       } else {
         const n = parseFlt(raw);
         up[field] = isNaN(n) ? null : n;
@@ -2020,10 +2026,6 @@ ${posLines}`;
                   </div>
                   <div style={{ fontSize: 13, color: T.muted }}>{isMobile ? sortedRows.length + " pozic" : "Klikni na hlavičku pro seřazení · " + sortedRows.length + " pozic"}</div>
                 </div>
-                <button onClick={addManual}
-                  style={{ background: T.green, border: "none", borderRadius: 8, color: "#000", cursor: "pointer", padding: "7px 14px", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>
-                  + Přidat ČSOB
-                </button>
               </div>
               {isMobile && (
                 /* Mobile: sort bar */
@@ -2092,20 +2094,40 @@ ${posLines}`;
                             <span style={{ fontSize: 13, color: T.muted }}>{idx + 1}</span>
                           </div>
                         </div>
-                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, minWidth: 0 }} onClick={() => loadPosChart(p)}>
-                          <div>
-                            <div style={{ fontSize: 13, color: T.subtle, marginBottom: 2 }}>Hodnota</div>
-                            <div style={{ fontSize: 14, color: T.text, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{fmt(p.valueCZK)}</div>
+                        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, minWidth: 0 }}>
+                          <div onClick={isManual(p) ? undefined : () => loadPosChart(p)}>
+                            <div style={{ fontSize: 13, color: T.subtle, marginBottom: 2 }}>Hodnota{isManual(p) && <span style={{ fontSize: 10, color: T.blue, marginLeft: 4 }}>✎</span>}</div>
+                            {isManual(p) ? (
+                              <div onClick={e => e.stopPropagation()}>
+                                <input
+                                  defaultValue={Math.round(p.valueCZK)}
+                                  onBlur={e => updateManual(p.id, "value", e.target.value)}
+                                  onKeyDown={e => { if (e.key === "Enter") e.target.blur(); }}
+                                  style={{ background: "rgba(59,130,246,0.08)", border: "1px solid rgba(59,130,246,0.25)", borderRadius: 6, color: T.text, fontFamily: "'DM Mono',monospace", fontSize: 14, fontWeight: 700, padding: "3px 7px", width: "100%", outline: "none" }} />
+                              </div>
+                            ) : (
+                              <div style={{ fontSize: 14, color: T.text, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{fmt(p.valueCZK)}</div>
+                            )}
                           </div>
-                          <div>
+                          <div onClick={() => loadPosChart(p)}>
                             <div style={{ fontSize: 13, color: T.subtle, marginBottom: 2 }}>Výnos CZK</div>
                             <div style={{ fontSize: 14, color: gc, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{hasGain ? (gain >= 0 ? "+" : "") + fmt(gain) : "—"}</div>
                           </div>
-                          <div>
-                            <div style={{ fontSize: 13, color: T.subtle, marginBottom: 2 }}>Výnos %</div>
-                            <div style={{ fontSize: 14, color: gc, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{hasGain ? (gainPct >= 0 ? "+" : "") + gainPct.toFixed(1) + "%" : "—"}</div>
+                          <div onClick={isManual(p) ? undefined : () => loadPosChart(p)}>
+                            <div style={{ fontSize: 13, color: T.subtle, marginBottom: 2 }}>Výnos %{isManual(p) && <span style={{ fontSize: 10, color: T.blue, marginLeft: 4 }}>✎</span>}</div>
+                            {isManual(p) ? (
+                              <div onClick={e => e.stopPropagation()}>
+                                <input
+                                  defaultValue={hasGain ? gainPct.toFixed(1) : "0"}
+                                  onBlur={e => updateManual(p.id, "gainPct", e.target.value)}
+                                  onKeyDown={e => { if (e.key === "Enter") e.target.blur(); }}
+                                  style={{ background: "rgba(59,130,246,0.08)", border: "1px solid rgba(59,130,246,0.25)", borderRadius: 6, color: gc, fontFamily: "'DM Mono',monospace", fontSize: 14, fontWeight: 700, padding: "3px 7px", width: "100%", outline: "none" }} />
+                              </div>
+                            ) : (
+                              <div style={{ fontSize: 14, color: gc, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{hasGain ? (gainPct >= 0 ? "+" : "") + gainPct.toFixed(1) + "%" : "—"}</div>
+                            )}
                           </div>
-                          <div>
+                          <div onClick={() => loadPosChart(p)}>
                             <div style={{ fontSize: 13, color: T.subtle, marginBottom: 2 }}>p.a.</div>
                             <div style={{ fontSize: 14, color: cagr !== null ? gc : T.muted, fontFamily: "'DM Mono',monospace" }}>{cagr !== null ? (cagr >= 0 ? "+" : "") + cagr.toFixed(1) + "%" : "—"}</div>
                           </div>
@@ -2194,9 +2216,13 @@ ${posLines}`;
                               </div>
                             </td>
                             <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: T.muted, fontFamily: "'DM Mono',monospace" }}>{fmt(p.investedCZK)}</td>
-                            <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: T.text, fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>{fmt(p.valueCZK)}</td>
+                            {isManual(p)
+                              ? <EditCell value={Math.round(p.valueCZK)} color={T.text} onSave={v => updateManual(p.id, "value", v)} />
+                              : <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: T.text, fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>{fmt(p.valueCZK)}</td>}
                             <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: gc, fontFamily: "'DM Mono',monospace" }}>{gain >= 0 ? "+" : ""}{fmt(gain)}</td>
-                            <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: gc, fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>{hasGain ? (gainPct >= 0 ? "+" : "") + gainPct.toFixed(2) + "%" : "—"}</td>
+                            {isManual(p)
+                              ? <EditCell value={hasGain ? gainPct.toFixed(1) : "0"} suffix="%" color={gc} onSave={v => updateManual(p.id, "gainPct", v)} />
+                              : <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: gc, fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>{hasGain ? (gainPct >= 0 ? "+" : "") + gainPct.toFixed(2) + "%" : "—"}</td>}
                             {(() => { const yrs = Math.max(1, NOW_YEAR - (p.start || NOW_YEAR)); const gp = p.gainPctOrig; const ratio = gp !== null && gp !== undefined ? gp / 100 + 1 : null; const cagr = (ratio !== null && ratio > 0) ? (Math.pow(ratio, 1 / yrs) - 1) * 100 : null; return <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: cagr !== null ? gc : T.muted, fontFamily: "'DM Mono',monospace" }}>{cagr !== null ? (cagr >= 0 ? "+" : "") + cagr.toFixed(2) + "%" : "—"}</td>; })()}
                             <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 13, color: T.muted, fontFamily: "'DM Mono',monospace" }}>{share.toFixed(2)}%</td>
                             <td style={{ padding: "10px 8px", textAlign: "center" }}>
