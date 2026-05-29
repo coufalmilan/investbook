@@ -436,6 +436,26 @@ function filterHistory(period) {
   return PORTFOLIO_HISTORY.filter(p => new Date(p.d + "-01") >= cutoff);
 }
 
+// ── TIMESTAMP HELPER ──────────────────────────────────────────────────────────
+const GS_LOADED_KEY = "ib_gs_loaded_at";
+function timeAgoLabel(timestampMs) {
+  if (!timestampMs) return "neznámo";
+  const diffMs = Date.now() - timestampMs;
+  const mins = Math.floor(diffMs / 60000);
+  if (mins < 1) return "právě teď";
+  if (mins < 60) return "před " + mins + " min";
+  const hrs = Math.floor(mins / 60);
+  if (hrs < 24) return "před " + hrs + " h";
+  const days = Math.floor(hrs / 24);
+  if (days === 1) return "včera";
+  if (days < 7) return "před " + days + " dny";
+  const weeks = Math.floor(days / 7);
+  if (weeks === 1) return "před týdnem";
+  if (weeks < 5) return "před " + weeks + " týdny";
+  const months = Math.floor(days / 30);
+  return "před " + months + " měsíci";
+}
+
 // ─── ČSOB POSITIONS (manual only) ────────────────────────────────────────────
 const INITIAL_CSOB = [
   { id: 1, name: "ČSOB Akciový",         broker: "ČSOB", invested: 60079,  value: 70859,  currency: "CZK", fx: null, start: 2021, annReturn: 4.85,  category: "Fond" },
@@ -549,10 +569,19 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.35";
+const APP_VERSION = "v4.36";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.36", date: "29. 5. 2026", changes: [
+    "✨ V Portfoliu vedle hlavní hodnoty teď vidíš mini-křivku letošního vývoje (YTD sparkline)",
+    "✨ Pod hodnotou je nový timestamp ‚⟳ načteno před X minutami' — vidíš, jak čerstvá jsou data",
+    "🎨 Sparkline je zelený při růstu portfolia, červený při poklesu — vizuální signál bez čtení čísel",
+    "♻️ Záložky přeorganizovány: Portfolio (sloučený Přehled+Pozice), Plán (Predikce+FIRE+Alokace), nový ⚙️ drawer",
+    "♻️ Hodnocení rizikovosti přesunuto z Analýzy do AI tabu",
+    "🎨 ČSOB pozice v tabulce Portfolia jsou přímo editovatelné — klikni na Hodnotu nebo Výnos %",
+    "🎨 CSV import přesunut do ⚙️ Nastavení v hlavičce",
+  ]},
   { version: "v4.35", date: "25. 5. 2026", changes: [
     "Fix: Graf Vývoj portfolia v USD/EUR — křivka nyní odpovídá číslům Začátek/Konec (FX interpolace)",
     "UX: Živý bod na konci křivky grafu označen tečkou",
@@ -918,6 +947,38 @@ function SectionTitle({ title, sub }) {
   );
 }
 
+// ── HERO SPARKLINE (mini graf vývoje portfolia u hero hodnoty) ──────────────
+function HeroSparkline({ data, width = 140, height = 38 }) {
+  if (!data || data.length < 2) return null;
+  const values = data.map(d => d.v);
+  const minV = Math.min(...values);
+  const maxV = Math.max(...values);
+  const range = maxV - minV || 1;
+  const stepX = (width - 1) / (data.length - 1);
+  const points = data.map((d, i) => {
+    const x = i * stepX;
+    const y = height - ((d.v - minV) / range) * (height - 4) - 2;
+    return [x, y];
+  });
+  const linePath = "M" + points.map(p => p.join(",")).join(" L");
+  const areaPath = linePath + ` L${width},${height} L0,${height} Z`;
+  const trendColor = values[values.length - 1] >= values[0] ? T.green : T.red;
+  const last = points[points.length - 1];
+  return (
+    <svg width={width} height={height} viewBox={`0 0 ${width} ${height}`} style={{ flexShrink: 0, display: "block" }}>
+      <defs>
+        <linearGradient id="heroSparkGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stopColor={trendColor} stopOpacity={0.22} />
+          <stop offset="100%" stopColor={trendColor} stopOpacity={0} />
+        </linearGradient>
+      </defs>
+      <path d={areaPath} fill="url(#heroSparkGrad)" />
+      <path d={linePath} fill="none" stroke={trendColor} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
+      <circle cx={last[0]} cy={last[1]} r="3" fill={trendColor} />
+    </svg>
+  );
+}
+
 function StatCard({ label, value, sub, color, accent, subTitle }) {
   return (
     <div className="ib-statcard" style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 14, padding: "18px 20px", position: "relative", overflow: "hidden" }}>
@@ -990,6 +1051,11 @@ function InvestBook() {
     },
   ];
   const [pensionAccounts, setPensionAccounts] = useState(PENSION_INIT);
+
+  // ── TIMESTAMP NAČTENÍ DAT ────────────────────────────────────────────────────
+  const [gsLoadedAt, setGsLoadedAt] = useState(() => {
+    try { const raw = localStorage.getItem(GS_LOADED_KEY); return raw ? parseInt(raw) : null; } catch(e) { return null; }
+  });
 
   // ── GEMINI AI STATE ──────────────────────────────────────────────────────────
   const [geminiKey,   setGeminiKey]   = useState(() => localStorage.getItem("ib_gemini_key") || "");
@@ -1475,6 +1541,8 @@ ${posLines}`;
         applyLoadedData(data);
         setGsMsg("✓ Načteno");
         setTimeout(() => setGsMsg(""), 3000);
+        const now = Date.now(); setGsLoadedAt(now);
+        try { localStorage.setItem(GS_LOADED_KEY, String(now)); } catch(e) {}
       }).catch(() => {
         // Silent fail — user can click Refresh manually
       });
@@ -1500,6 +1568,8 @@ ${posLines}`;
       setGsStatus("idle");
       setGsMsg("✓ Načteno ze Sheets");
       setTimeout(() => setGsMsg(""), 4000);
+      const now = Date.now(); setGsLoadedAt(now);
+      try { localStorage.setItem(GS_LOADED_KEY, String(now)); } catch(e) {}
     } catch (err) {
       setGsStatus("error");
       setGsMsg("✗ " + (err.message || "Chyba při načítání"));
@@ -1611,6 +1681,17 @@ ${posLines}`;
           // Absolutní částka zpět v CZK pro fmt()
           const ytdGain        = ytdGainNative != null ? ytdGainNative * nowFx : null;
 
+          // Sparkline YTD data
+          const sparkData = (() => {
+            const ytd = filterHistory("YTD");
+            if (!ytd || ytd.length === 0) return null;
+            const today = new Date();
+            const todayLabel = today.getFullYear() + "-" + String(today.getMonth() + 1).padStart(2, "0");
+            const lastLabel = ytd[ytd.length - 1]?.d;
+            if (lastLabel === todayLabel) return ytd;
+            return [...ytd, { d: todayLabel, v: totalValue }];
+          })();
+
           return (<>
         {/* Hero */}
         <div style={{ marginBottom: 28 }}>
@@ -1619,11 +1700,25 @@ ${posLines}`;
           </div>
           <div className="ib-hero-row" style={{ display: "flex", gap: 40, alignItems: "flex-end", flexWrap: "wrap" }}>
             <div>
-              <div className="ib-hero-value" style={{ fontSize: 56, fontWeight: 800, color: isFiltered ? cat.color : T.text, letterSpacing: "-0.03em", lineHeight: 1 }}>{fmt(dispValue)}</div>
-              <div style={{ display: "flex", gap: 12, marginTop: 6, alignItems: "center" }}>
+              {/* Hodnota + sparkline vedle */}
+              <div className="ib-hero-value-row" style={{ display: "flex", alignItems: "flex-end", gap: 16, flexWrap: "wrap" }}>
+                <div className="ib-hero-value" style={{ fontSize: 56, fontWeight: 800, color: isFiltered ? cat.color : T.text, letterSpacing: "-0.03em", lineHeight: 1 }}>{fmt(dispValue)}</div>
+                {sparkData && sparkData.length >= 2 && !isFiltered && (
+                  <div className="ib-hero-spark" style={{ paddingBottom: 8 }}>
+                    <HeroSparkline data={sparkData} width={140} height={38} />
+                    <div style={{ fontSize: 10, color: T.subtle, marginTop: 2, textAlign: "center", letterSpacing: "0.06em", textTransform: "uppercase" }}>YTD vývoj</div>
+                  </div>
+                )}
+              </div>
+              <div style={{ display: "flex", gap: 12, marginTop: 6, alignItems: "center", flexWrap: "wrap" }}>
                 <span className="ib-hero-equiv" style={{ fontSize: 14, color: T.muted }}>{"≈ $" + Math.round(dispValue / 20.57).toLocaleString("en-US")}</span>
                 <span className="ib-hero-sub" style={{ fontSize: 13, color: T.muted }}>{isFiltered ? "hodnota · " + cat.label : "celková hodnota"}</span>
                 {isFiltered && <span style={{ fontSize: 12, color: cat.color, background: cat.color + "18", border: "1px solid " + cat.color + "40", borderRadius: 6, padding: "1px 8px" }}>{((fValue / totalValue) * 100).toFixed(1)} % portfolia</span>}
+                {gsLoadedAt && (
+                  <span style={{ fontSize: 12, color: T.subtle, fontFamily: "'DM Mono',monospace", display: "flex", alignItems: "center", gap: 4 }}>
+                    ⟳ načteno {timeAgoLabel(gsLoadedAt)}
+                  </span>
+                )}
               </div>
             </div>
             <div style={{ paddingBottom: 4 }}>
@@ -3976,6 +4071,9 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
 
           /* Hero hodnota */
           .ib-hero-value { font-size: 26px !important; letter-spacing: -0.025em !important; word-break: break-word !important; }
+          .ib-hero-value-row { gap: 8px !important; }
+          .ib-hero-spark { padding-bottom: 0 !important; }
+          .ib-hero-spark svg { width: 120px !important; height: 32px !important; }
           .ib-hero-sub   { font-size: 12px !important; }
           /* Hero stats: zabalí do 2 řádků (hodnota+zisk / výnosy), nescroluje */
           .ib-hero-row   { gap: 12px !important; flex-wrap: wrap !important; }
