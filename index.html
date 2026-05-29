@@ -1681,15 +1681,24 @@ ${posLines}`;
           // Absolutní částka zpět v CZK pro fmt()
           const ytdGain        = ytdGainNative != null ? ytdGainNative * nowFx : null;
 
-          // Sparkline YTD data
+          // Sparkline YTD data — přepočítaný do aktuální měny (lineární interpolace FX jako v hlavním grafu)
           const sparkData = (() => {
             const ytd = filterHistory("YTD");
             if (!ytd || ytd.length === 0) return null;
             const today = new Date();
             const todayLabel = today.getFullYear() + "-" + String(today.getMonth() + 1).padStart(2, "0");
             const lastLabel = ytd[ytd.length - 1]?.d;
-            if (lastLabel === todayLabel) return ytd;
-            return [...ytd, { d: todayLabel, v: totalValue }];
+            const withLive = lastLabel === todayLabel ? ytd : [...ytd, { d: todayLabel, v: totalValue }];
+            if (dispCurrency === "CZK") return withLive;
+            // Interpolace FX kurzu: leden 2026 = janFx, dnes = nowFx
+            const janMs = new Date("2026-01-01").getTime();
+            const nowMs = Date.now();
+            return withLive.map(pt => {
+              const ptMs = new Date(pt.d + "-01").getTime();
+              const t = nowMs > janMs ? Math.min(1, Math.max(0, (ptMs - janMs) / (nowMs - janMs))) : 1;
+              const ptFx = janFx + (nowFx - janFx) * t;
+              return { d: pt.d, v: Math.round(pt.v / (ptFx || 1)) };
+            });
           })();
 
           return (<>
