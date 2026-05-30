@@ -245,7 +245,7 @@ async function loadFromSheets() {
 // ════════════════════════════════════════════════════════════════════════════
 const { useState, useCallback, useEffect, useRef } = React;
 const { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis,
-        CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, ReferenceLine } = Recharts;
+        CartesianGrid, Tooltip, ResponsiveContainer, AreaChart, Area, ReferenceLine, Treemap } = Recharts;
 
 // ════════════════════════════════════════════════════════════════════════════
 //  GEMINI AI INTEGRATION
@@ -456,6 +456,36 @@ function timeAgoLabel(timestampMs) {
   return "před " + months + " měsíci";
 }
 
+// ── DAŇOVÝ ČASOVÝ TEST (ČR) ───────────────────────────────────────────────────
+// Vrátí: { status: "exempt"|"pending"|"crypto"|"fund", label, daysRemaining, ... }
+function taxTimeTest(pos) {
+  if (pos.category === "Crypto") return { status: "crypto", label: "Crypto — zvláštní pravidla" };
+  if (pos.category === "Portfolio") return { status: "fund", label: "Penzijko — vlastní pravidla" };
+  const startYear = pos.start || new Date().getFullYear();
+  const exemptDate = new Date(startYear + 3, 0, 1);
+  const today = new Date();
+  const diffMs = exemptDate - today;
+  if (diffMs <= 0) return { status: "exempt", label: "Test prošel", exemptDate, startDate: new Date(startYear, 0, 1) };
+  const daysRemaining = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+  const monthsRemaining = Math.floor(daysRemaining / 30);
+  return { status: "pending", label: monthsRemaining > 1 ? "Za " + monthsRemaining + " měsíců" : "Za " + daysRemaining + " dní",
+    daysRemaining, monthsRemaining, exemptDate, startDate: new Date(startYear, 0, 1) };
+}
+
+// Hypotetická daň při prodeji všeho dnes (15% sazba, ztráty nejdou započítat)
+function calcHypotheticalTax(allRows) {
+  let exemptGain = 0, taxableGain = 0, totalLoss = 0, cryptoValue = 0;
+  for (const p of allRows) {
+    const test = taxTimeTest(p);
+    const gain = p.valueCZK - p.investedCZK;
+    if (test.status === "crypto") { cryptoValue += p.valueCZK; continue; }
+    if (gain < 0) { totalLoss += -gain; continue; }
+    if (test.status === "exempt") exemptGain += gain;
+    else taxableGain += gain;
+  }
+  return { exemptGain, taxableGain, taxOwed: Math.round(taxableGain * 0.15), totalLoss, cryptoValue };
+}
+
 // ─── ČSOB POSITIONS (manual only) ────────────────────────────────────────────
 const INITIAL_CSOB = [
   { id: 1, name: "ČSOB Akciový",         broker: "ČSOB", invested: 60079,  value: 70859,  currency: "CZK", fx: null, start: 2021, annReturn: 4.85,  category: "Fond" },
@@ -569,10 +599,17 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.37";
+const APP_VERSION = "v4.38";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.38", date: "29. 5. 2026", changes: [
+    "✨ Nová sekce ‚📋 Daňový pohled' v Analýze — vidíš, které pozice prošly českým časovým testem 3 roky a kolik bys zaplatil na dani",
+    "✨ Drift alert v Portfoliu — žlutý banner upozorní, když je kategorie o víc než 5 % mimo cílovou alokaci",
+    "✨ Tabulka ‚📈 Srovnání s indexy' v Analýze — alfa vs S&P 500 a MSCI World za 1R, 3R, 5R a MAX",
+    "✨ Tabulka ‚🏦 Výkonnost podle brokera' — kolik máš kde, výnos % a top/worst pozice per broker",
+    "✨ ‚🗺️ Mapa portfolia' (treemap) — velikost = hodnota pozice, barva = výnos %",
+  ]},
   { version: "v4.37", date: "29. 5. 2026", changes: [
     "🤖 Analýza portfolia se spouští automaticky jednou denně — výsledek se ukládá, při dalším otevření se načte okamžitě z paměti",
     "🤖 Hodnocení rizikovosti má daily cache — šetří API quota, načítá okamžitě bez volání Gemini",
@@ -1890,6 +1927,43 @@ ${posLines}`;
           const arrow = (key) => tblSort === key ? (tblDir === "asc" ? " ↑" : " ↓") : "";
 
           return (<>
+            {/* ── Allocation drift alert ── */}
+            {(() => {
+              const catMap = {};
+              allRows.forEach(p => { catMap[p.category] = (catMap[p.category]||0) + p.valueCZK; });
+              const drifts = Object.keys(targetAlloc)
+                .filter(k => (targetAlloc[k]||0) > 0)
+                .map(k => {
+                  const target = targetAlloc[k];
+                  const current = totalValue > 0 ? ((catMap[k]||0) / totalValue) * 100 : 0;
+                  const diff = current - target;
+                  return { category: k, current, target, diff };
+                })
+                .filter(d => Math.abs(d.diff) >= 5)
+                .sort((a, b) => Math.abs(b.diff) - Math.abs(a.diff));
+              if (drifts.length === 0) return null;
+              return (
+                <div style={{ marginBottom: 20, padding: "12px 16px", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)", borderRadius: 10, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                  <div style={{ flex: 1, minWidth: 200 }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: T.amber, marginBottom: 4 }}>⚠️ Alokace mimo cíl</div>
+                    <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.5 }}>
+                      {drifts.map((d, i) => (
+                        <span key={d.category}>
+                          <strong style={{ color: CAT_COLOR[d.category] || T.text }}>{d.category}</strong>{" "}
+                          {d.current.toFixed(1)}% vs cíl {d.target.toFixed(1)}% ({d.diff > 0 ? "+" : ""}{d.diff.toFixed(1)}%)
+                          {i < drifts.length - 1 && " · "}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                  <button onClick={() => setActiveTab("plan")}
+                    style={{ background: "rgba(245,158,11,0.2)", border: "1px solid rgba(245,158,11,0.4)", color: T.amber, borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+                    Rebalancovat →
+                  </button>
+                </div>
+              );
+            })()}
+
             {/* Sdílené pill filtry */}
             <div className="ib-cat-pills" style={{ display: "flex", gap: 8, marginBottom: 16, flexWrap: "wrap" }}>
               {CATS.map(c => {
@@ -2994,6 +3068,47 @@ ${posLines}`;
           ))}
         </div>
 
+        {/* ── 🗺️ MAPA PORTFOLIA (Treemap) ───────────────────────────────────── */}
+        {(() => {
+          const data = allRows.slice().sort((a, b) => b.valueCZK - a.valueCZK).map(p => ({
+            name: p.ticker || p.name.split("(")[0].trim(),
+            size: p.valueCZK,
+            gainPct: p.gainPctOrig || 0,
+          }));
+          const colorFor = (g) => g >= 50 ? "#16a34a" : g >= 20 ? "#22c55e" : g >= 5 ? "#86efac" : g >= -5 ? "#475569" : g >= -20 ? "#f87171" : g >= -50 ? "#ef4444" : "#b91c1c";
+          const CustomCell = (props) => {
+            const { x, y, width, height, name, gainPct } = props;
+            if (!width || !height || width < 20 || height < 16) return null;
+            const fs = Math.min(13, Math.max(9, Math.min(width, height) / 6));
+            return (
+              <g>
+                <rect x={x} y={y} width={width} height={height} fill={colorFor(gainPct)} stroke="#0f0f13" strokeWidth={1} rx={2} />
+                {width >= 50 && height >= 26 && (<>
+                  <text x={x+width/2} y={y+height/2-3} textAnchor="middle" fill="#fff" fontFamily="'DM Sans',sans-serif" fontSize={fs} fontWeight={700}>{name}</text>
+                  <text x={x+width/2} y={y+height/2+fs} textAnchor="middle" fill="rgba(255,255,255,0.8)" fontFamily="'DM Mono',monospace" fontSize={fs-1}>{gainPct >= 0 ? "+" : ""}{gainPct.toFixed(0)}%</text>
+                </>)}
+              </g>
+            );
+          };
+          return (
+            <div style={{ ...C, marginBottom: 16 }}>
+              <SectionTitle title="🗺️ Mapa portfolia" sub="Velikost = hodnota pozice · Barva = výnos %" />
+              <div style={{ height: 340 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <Treemap data={data} dataKey="size" stroke="#0f0f13" content={<CustomCell />} />
+                </ResponsiveContainer>
+              </div>
+              <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 12, fontSize: 11, color: T.muted }}>
+                {[["#16a34a","≥ +50%"],["#22c55e","+20–50%"],["#86efac","+5–20%"],["#475569","±5%"],["#f87171","−5 až −20%"],["#ef4444","−20 až −50%"],["#b91c1c","≤ −50%"]].map(([c,l]) => (
+                  <div key={l} style={{ display: "flex", alignItems: "center", gap: 4 }}>
+                    <div style={{ width: 11, height: 11, background: c, borderRadius: 2 }} /><span>{l}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          );
+        })()}
+
         {/* Statistiky portfolia + Koncentrace */}
         {(() => {
           const yearsInvesting = oldest ? NOW_YEAR - oldest.start : 0;
@@ -3098,6 +3213,61 @@ ${posLines}`;
               <div style={{ ...C }}>
                 <SectionTitle title="📉 Bottom 3 — nejhorší výnos" sub="Podle celkového výnosu %" />
                 {bot3.map((p, i) => <Row key={p.id} p={p} rank={i + 1} isTop={false} />)}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ── 🏦 VÝKONNOST PODLE BROKERA ─────────────────────────────────── */}
+        {(() => {
+          const brokerStats = {};
+          for (const p of allRows) {
+            const b = p.broker || "Ostatní";
+            if (!brokerStats[b]) brokerStats[b] = { broker: b, value: 0, invested: 0, positions: 0, bestPos: null, bestPct: -Infinity, worstPos: null, worstPct: Infinity };
+            const s = brokerStats[b];
+            s.value += p.valueCZK; s.invested += p.investedCZK; s.positions++;
+            const pct = p.gainPctOrig || 0;
+            if (pct > s.bestPct) { s.bestPct = pct; s.bestPos = p; }
+            if (pct < s.worstPct) { s.worstPct = pct; s.worstPos = p; }
+          }
+          const rows = Object.values(brokerStats).map(s => {
+            const gain = s.value - s.invested;
+            const gainPct = s.invested > 0 ? (gain / s.invested) * 100 : 0;
+            return { ...s, gain, gainPct };
+          }).sort((a, b) => b.value - a.value);
+          return (
+            <div style={{ ...C, marginBottom: 16 }}>
+              <SectionTitle title="🏦 Výkonnost podle brokera" sub="Hodnota, výnos a nejlepší/nejhorší pozice per broker" />
+              <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 560 }}>
+                  <thead>
+                    <tr style={{ borderBottom: "1px solid " + T.border }}>
+                      {["Broker", "Pozic", "Hodnota", "Investováno", "Výnos %", "Top pozice", "Nejhorší"].map(h => (
+                        <th key={h} style={{ padding: "8px 10px", textAlign: ["Broker","Top pozice","Nejhorší"].includes(h)?"left":"right", fontSize: 11, color: T.subtle, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", whiteSpace: "nowrap" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map((r, i) => {
+                      const gc = r.gainPct >= 0 ? T.green : T.red;
+                      return (
+                        <tr key={r.broker} style={{ borderBottom: "1px solid rgba(255,255,255,0.03)", background: i%2===0?"rgba(255,255,255,0.01)":"transparent" }}>
+                          <td style={{ padding: "9px 10px", fontSize: 14, color: T.text, fontWeight: 700 }}>{r.broker}</td>
+                          <td style={{ padding: "9px 10px", textAlign: "right", fontSize: 13, color: T.muted, fontFamily: "'DM Mono',monospace" }}>{r.positions}</td>
+                          <td style={{ padding: "9px 10px", textAlign: "right", fontSize: 13, color: T.text, fontFamily: "'DM Mono',monospace", fontWeight: 600 }}>{fmt(r.value)}</td>
+                          <td style={{ padding: "9px 10px", textAlign: "right", fontSize: 13, color: T.muted, fontFamily: "'DM Mono',monospace" }}>{fmt(r.invested)}</td>
+                          <td style={{ padding: "9px 10px", textAlign: "right", fontSize: 13, color: gc, fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>{r.gainPct >= 0 ? "+" : ""}{r.gainPct.toFixed(1)}%</td>
+                          <td style={{ padding: "9px 10px", fontSize: 12, color: T.muted }}>
+                            {r.bestPos ? <><span style={{ color: T.text, fontWeight: 600 }}>{r.bestPos.ticker || r.bestPos.name.split("(")[0].trim()}</span> <span style={{ color: T.green, fontFamily: "'DM Mono',monospace" }}>{r.bestPct >= 0 ? "+" : ""}{r.bestPct.toFixed(0)}%</span></> : "—"}
+                          </td>
+                          <td style={{ padding: "9px 10px", fontSize: 12, color: T.muted }}>
+                            {r.worstPos ? <><span style={{ color: T.text, fontWeight: 600 }}>{r.worstPos.ticker || r.worstPos.name.split("(")[0].trim()}</span> <span style={{ color: r.worstPct >= 0 ? T.green : T.red, fontFamily: "'DM Mono',monospace" }}>{r.worstPct >= 0 ? "+" : ""}{r.worstPct.toFixed(0)}%</span></> : "—"}
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
               </div>
             </div>
           );
@@ -3214,6 +3384,63 @@ ${posLines}`;
           );
         })()}
 
+        {/* ── 📈 SROVNÁNÍ S INDEXY ──────────────────────────────────────────── */}
+        {(() => {
+          // Převod bmMap {d: v} na seřazené pole {d, v}
+          const toArr = (map) => Object.entries(map).map(([d, v]) => ({ d, v })).sort((a, b) => a.d.localeCompare(b.d));
+          const spArr = toArr(bmMap.sp500);
+          const msArr = toArr(bmMap.msci);
+          const portArr = PORTFOLIO_HISTORY;
+
+          const calcRet = (arr, period) => {
+            if (!arr || arr.length < 2) return null;
+            const last = arr[arr.length - 1];
+            const lastDate = new Date(last.d + "-01");
+            const cutoffs = { "1R": new Date(lastDate.getFullYear()-1, lastDate.getMonth(), 1), "3R": new Date(lastDate.getFullYear()-3, lastDate.getMonth(), 1), "5R": new Date(lastDate.getFullYear()-5, lastDate.getMonth(), 1), "MAX": new Date(2000,0,1) };
+            const filtered = arr.filter(p => new Date(p.d + "-01") >= cutoffs[period]);
+            if (filtered.length < 2) return null;
+            return ((last.v - filtered[0].v) / filtered[0].v) * 100;
+          };
+
+          const periods = ["1R", "3R", "5R", "MAX"];
+          const rows = periods.map(period => {
+            const myR  = calcRet(portArr, period);
+            const spR  = calcRet(spArr, period);
+            const msR  = calcRet(msArr, period);
+            return { period, myR, spR, msR, alfaSp: myR != null && spR != null ? myR - spR : null, alfaMs: myR != null && msR != null ? myR - msR : null };
+          });
+
+          const fmtPct = (v) => v == null ? "—" : (v >= 0 ? "+" : "") + v.toFixed(1) + "%";
+          return (
+            <div style={{ ...C, marginBottom: 16 }}>
+              <SectionTitle title="📈 Srovnání s indexy" sub="Výnos portfolia vs S&P 500 a MSCI World za různá období" />
+              <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 480 }}>
+                  <thead>
+                    <tr style={{ borderBottom: "1px solid " + T.border }}>
+                      {["Období", "Tvoje", "S&P 500", "Alfa S&P", "MSCI World", "Alfa MSCI"].map(h => (
+                        <th key={h} style={{ padding: "8px 10px", textAlign: h==="Období"?"left":"right", fontSize: 11, color: T.subtle, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", whiteSpace: "nowrap" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {rows.map(r => (
+                      <tr key={r.period} style={{ borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
+                        <td style={{ padding: "10px 10px", fontSize: 14, color: T.text, fontWeight: 700 }}>{r.period}</td>
+                        <td style={{ padding: "10px 10px", textAlign: "right", fontSize: 14, color: r.myR == null ? T.muted : r.myR >= 0 ? T.green : T.red, fontFamily: "'DM Mono',monospace", fontWeight: 600 }}>{fmtPct(r.myR)}</td>
+                        <td style={{ padding: "10px 10px", textAlign: "right", fontSize: 13, color: T.muted, fontFamily: "'DM Mono',monospace" }}>{fmtPct(r.spR)}</td>
+                        <td style={{ padding: "10px 10px", textAlign: "right", fontSize: 13, fontFamily: "'DM Mono',monospace", fontWeight: 700, color: r.alfaSp == null ? T.muted : r.alfaSp >= 0 ? T.green : T.red }}>{fmtPct(r.alfaSp)}</td>
+                        <td style={{ padding: "10px 10px", textAlign: "right", fontSize: 13, color: T.muted, fontFamily: "'DM Mono',monospace" }}>{fmtPct(r.msR)}</td>
+                        <td style={{ padding: "10px 10px", textAlign: "right", fontSize: 13, fontFamily: "'DM Mono',monospace", fontWeight: 700, color: r.alfaMs == null ? T.muted : r.alfaMs >= 0 ? T.green : T.red }}>{fmtPct(r.alfaMs)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          );
+        })()}
+
         {/* ── ANALÝZA TRHU ─────────────────────────────────────────────────── */}
         <div style={{ marginTop: 36, marginBottom: 24 }}>
           <h1 style={{ fontSize: 27, fontWeight: 800, color: T.text, letterSpacing: "-0.02em" }}>Analýza trhu</h1>
@@ -3257,6 +3484,83 @@ ${posLines}`;
             <div style={{ color: T.muted, fontSize: 12, marginTop: 12, textAlign: "center" }}>Data nejsou dostupná – zkuste Aktualizovat nebo zkontrolujte připojení.</div>
           )}
         </div>
+
+        {/* ── 📋 DAŇOVÝ POHLED — Časový test ČR ──────────────────────────────── */}
+        {(() => {
+          const taxSummary = calcHypotheticalTax(allRows);
+          const sortedByTest = allRows.slice().sort((a, b) => {
+            const order = { exempt: 0, pending: 1, crypto: 2, fund: 3 };
+            return order[taxTimeTest(a).status] - order[taxTimeTest(b).status];
+          });
+          return (
+            <div style={{ ...C, marginBottom: 16 }}>
+              <SectionTitle title="📋 Daňový pohled" sub="Časový test 3 roky pro cenné papíry · 15% daň z neosvobozeného zisku" />
+              <div className="ib-grid4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 18 }}>
+                <div style={{ background: "rgba(34,197,94,0.06)", border: "1px solid rgba(34,197,94,0.2)", borderRadius: 10, padding: "12px 14px" }}>
+                  <div style={{ fontSize: 11, color: T.muted, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>Osvobozený zisk</div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: T.green, fontFamily: "'DM Mono',monospace" }}>{fmt(taxSummary.exemptGain)}</div>
+                  <div style={{ fontSize: 11, color: T.subtle, marginTop: 2 }}>pozice po časovém testu</div>
+                </div>
+                <div style={{ background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.2)", borderRadius: 10, padding: "12px 14px" }}>
+                  <div style={{ fontSize: 11, color: T.muted, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>Zdanitelný zisk</div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: T.amber, fontFamily: "'DM Mono',monospace" }}>{fmt(taxSummary.taxableGain)}</div>
+                  <div style={{ fontSize: 11, color: T.subtle, marginTop: 2 }}>pozice před testem</div>
+                </div>
+                <div style={{ background: "rgba(239,68,68,0.06)", border: "1px solid rgba(239,68,68,0.2)", borderRadius: 10, padding: "12px 14px" }}>
+                  <div style={{ fontSize: 11, color: T.muted, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>Hypotetická daň (15%)</div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: T.red, fontFamily: "'DM Mono',monospace" }}>{fmt(taxSummary.taxOwed)}</div>
+                  <div style={{ fontSize: 11, color: T.subtle, marginTop: 2 }}>pokud prodáš vše dnes</div>
+                </div>
+                <div style={{ background: "rgba(139,92,246,0.06)", border: "1px solid rgba(139,92,246,0.2)", borderRadius: 10, padding: "12px 14px" }}>
+                  <div style={{ fontSize: 11, color: T.muted, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>Crypto hodnota</div>
+                  <div style={{ fontSize: 18, fontWeight: 800, color: "#a78bfa", fontFamily: "'DM Mono',monospace" }}>{fmt(taxSummary.cryptoValue)}</div>
+                  <div style={{ fontSize: 11, color: T.subtle, marginTop: 2 }}>zvláštní pravidla 2025+</div>
+                </div>
+              </div>
+              <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", minWidth: 480 }}>
+                  <thead>
+                    <tr style={{ borderBottom: "1px solid " + T.border }}>
+                      {["Pozice", "Stav testu", "Hodnota", "Zisk / Ztráta"].map(h => (
+                        <th key={h} style={{ padding: "8px 10px", textAlign: h==="Pozice"||h==="Stav testu"?"left":"right", fontSize: 11, color: T.subtle, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.07em", whiteSpace: "nowrap" }}>{h}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {sortedByTest.map((p, i) => {
+                      const test = taxTimeTest(p);
+                      const gain = p.valueCZK - p.investedCZK;
+                      const gc = gain >= 0 ? T.green : T.red;
+                      const statusColor = test.status === "exempt" ? T.green : test.status === "pending" ? T.amber : test.status === "crypto" ? "#a78bfa" : T.muted;
+                      return (
+                        <tr key={p.id} style={{ borderBottom: "1px solid rgba(255,255,255,0.03)", background: i%2===0 ? "rgba(255,255,255,0.01)" : "transparent" }}>
+                          <td style={{ padding: "9px 10px", fontSize: 13, color: T.text }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                              <PositionLogo ticker={p.ticker} name={p.name} size={20} />
+                              <span style={{ fontWeight: 600 }}>{p.ticker || p.name.split("(")[0].trim()}</span>
+                              <span style={{ fontSize: 11, color: T.subtle }}>od {p.start}</span>
+                            </div>
+                          </td>
+                          <td style={{ padding: "9px 10px" }}>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: statusColor, background: statusColor + "18", border: "1px solid " + statusColor + "40", borderRadius: 5, padding: "2px 8px", whiteSpace: "nowrap" }}>
+                              {test.label}
+                            </span>
+                          </td>
+                          <td style={{ padding: "9px 10px", textAlign: "right", fontSize: 13, color: T.text, fontFamily: "'DM Mono',monospace", fontWeight: 600 }}>{fmt(p.valueCZK)}</td>
+                          <td style={{ padding: "9px 10px", textAlign: "right", fontSize: 13, color: gc, fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>{gain >= 0 ? "+" : ""}{fmt(gain)}</td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+              <div style={{ marginTop: 12, padding: "10px 14px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8, fontSize: 12, color: T.muted, lineHeight: 1.6 }}>
+                ⚠️ Časový test se počítá z roku <code style={{ color: T.text }}>start</code> u pozice (první investice). Pro DCA nákupy je to aproximace. Tento přehled slouží orientačně, ne jako daňové poradenství.
+              </div>
+            </div>
+          );
+        })()}
+
       </div>
     );
   };
