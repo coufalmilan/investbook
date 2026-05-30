@@ -1,5 +1,5 @@
 // InvestBook Service Worker — verze se meni s kazdym deployem
-const SW_VERSION = "v4.38";
+const SW_VERSION = "v4.39";
 const CACHE_NAME = "investbook-" + SW_VERSION;
 
 self.addEventListener("install", event => {
