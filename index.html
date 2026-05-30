@@ -613,10 +613,16 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.39";
+const APP_VERSION = "v4.40";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.40", date: "29. 5. 2026", changes: [
+    "📱 Compact hero na mobilu — sekundární metriky (zisk, p.a., bez crypto) schované za ‚▼ Zobrazit detaily', hlavní KPI vidíš ihned",
+    "✨ Sticky mini-hero — při scrollu v Analýze/Plánu/AI se v hlavičce zobrazí kapsle s hodnotou portfolia + trend šipka",
+    "✨ Banner ‚👋 Vítej zpět' — po 24+ hodinách od posledního otevření ukáže, o kolik se portfolio pohnulo. Auto-zavře se po 8s",
+    "🎨 Eyebrow ‚CELKOVÉ PORTFOLIO' skrytý na mobilu — šetří vertical space před grafem",
+  ]},
   { version: "v4.39", date: "29. 5. 2026", changes: [
     "✨ V Portfoliu vidíš novou 5. stat kartu s aktuální hodnotou Penzijka (fialová) — klik tě přepne na detail",
     "✨ Pod tabulkou pozic jsou nové karty ‚🏦 Podle brokera' — hodnota, výnos % a top pozice per broker",
@@ -1079,6 +1085,43 @@ function InvestBook() {
     window.addEventListener("resize", handler);
     return () => window.removeEventListener("resize", handler);
   }, []);
+
+  // „Vítej zpět" banner — last-open timestamp + snapshot hodnoty portfolia
+  const LAST_OPEN_KEY = "ib_last_open_at";
+  const [lastOpenInfo] = useState(() => {
+    try {
+      const prev = parseInt(localStorage.getItem(LAST_OPEN_KEY) || "0");
+      const now = Date.now();
+      localStorage.setItem(LAST_OPEN_KEY, String(now));
+      if (!prev || (now - prev) < 24 * 60 * 60 * 1000) return { prevTimestamp: null, prevValue: null };
+      let prevValue = null;
+      try { const snap = JSON.parse(localStorage.getItem("ib_snapshot_prev_v1") || "null"); if (snap?.portfolioValue) prevValue = snap.portfolioValue; } catch {}
+      return { prevTimestamp: prev, prevValue };
+    } catch { return { prevTimestamp: null, prevValue: null }; }
+  });
+  const [bannerDismissed, setBannerDismissed] = useState(false);
+
+  // Compact hero na mobilu — sekundární metriky za toggle
+  const [heroExpanded, setHeroExpanded] = useState(() => {
+    try { return localStorage.getItem("ib_hero_expanded") === "1"; } catch { return false; }
+  });
+  const toggleHero = () => setHeroExpanded(prev => {
+    const next = !prev;
+    try { localStorage.setItem("ib_hero_expanded", next ? "1" : "0"); } catch(e) {}
+    return next;
+  });
+
+  // Sticky mini-hero — detekce scrollu
+  const [scrolled, setScrolled] = useState(false);
+  useEffect(() => {
+    let raf = null;
+    const onScroll = () => {
+      if (raf) return;
+      raf = requestAnimationFrame(() => { setScrolled(window.scrollY > 200); raf = null; });
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => { window.removeEventListener("scroll", onScroll); if (raf) cancelAnimationFrame(raf); };
+  }, []);
   const [monthlyContrib, setMonthlyContrib] = useState(30000);
   const [hypoteka, setHypoteka] = useState(1821963);
   const [zustatek, setZustatek] = useState(0);
@@ -1232,6 +1275,17 @@ function InvestBook() {
     }, 0);
   const totalInvested = allRows.reduce((s, p) => s + p.investedCZK, 0);
 
+  // Sparkline YTD data (dostupné globálně pro sticky mini-hero v headeru)
+  const sparkDataGlobal = React.useMemo(() => {
+    const ytd = filterHistory("YTD");
+    if (!ytd || ytd.length === 0) return null;
+    const today = new Date();
+    const todayLabel = today.getFullYear() + "-" + String(today.getMonth() + 1).padStart(2, "0");
+    const lastLabel = ytd[ytd.length - 1]?.d;
+    const withLive = lastLabel === todayLabel ? ytd : [...ytd, { d: todayLabel, v: totalValue }];
+    return withLive.length >= 2 ? withLive : null;
+  }, [totalValue]);
+
   // ── Performance metrics (computed from PORTFOLIO_HISTORY) ────────────────
   const maxDrawdown = React.useMemo(() => {
     let peak = 0, dd = 0;
@@ -1297,6 +1351,19 @@ function InvestBook() {
   React.useEffect(() => { localStorage.setItem("ib_fire_ret", String(fireReturnPct)); }, [fireReturnPct]);
   React.useEffect(() => { localStorage.setItem("ib_fire_wd",  String(fireWithdrawal)); }, [fireWithdrawal]);
   React.useEffect(() => { localStorage.setItem("ib_gemini_model", geminiModel); }, [geminiModel]);
+
+  // Auto-dismiss banneru po 8 sekundách
+  useEffect(() => {
+    if (!lastOpenInfo.prevTimestamp || bannerDismissed) return;
+    const t = setTimeout(() => setBannerDismissed(true), 8000);
+    return () => clearTimeout(t);
+  }, [lastOpenInfo.prevTimestamp, bannerDismissed]);
+
+  // Snapshot aktuální hodnoty portfolia pro příští „Vítej zpět" banner
+  useEffect(() => {
+    if (!totalValue) return;
+    try { localStorage.setItem("ib_snapshot_prev_v1", JSON.stringify({ portfolioValue: totalValue, timestamp: Date.now() })); } catch(e) {}
+  }, [totalValue]);
 
   // ── analyzePortfolio – analýza celého portfolia přes Gemini, volatelná odkudkoli ─
   const analyzePortfolio = useCallback(async () => {
@@ -1849,9 +1916,11 @@ ${posLines}`;
           return (<>
         {/* Hero */}
         <div style={{ marginBottom: 28 }}>
-          <div style={{ fontSize: 13, color: T.muted, letterSpacing: "0.1em", marginBottom: 8, fontWeight: 500 }}>
-            {isFiltered ? cat.label.toUpperCase() + " · FILTROVÁNO" : "CELKOVÉ PORTFOLIO · 2018–2026"}
-          </div>
+          {!isMobile && (
+            <div style={{ fontSize: 13, color: T.muted, letterSpacing: "0.1em", marginBottom: 8, fontWeight: 500 }}>
+              {isFiltered ? cat.label.toUpperCase() + " · FILTROVÁNO" : "CELKOVÉ PORTFOLIO · 2018–2026"}
+            </div>
+          )}
           <div className="ib-hero-row" style={{ display: "flex", gap: 40, alignItems: "flex-end", flexWrap: "wrap" }}>
             <div>
               {/* Hodnota + sparkline vedle */}
@@ -1859,8 +1928,8 @@ ${posLines}`;
                 <div className="ib-hero-value" style={{ fontSize: 56, fontWeight: 800, color: isFiltered ? cat.color : T.text, letterSpacing: "-0.03em", lineHeight: 1 }}>{fmt(dispValue)}</div>
                 {sparkData && sparkData.length >= 2 && !isFiltered && (
                   <div className="ib-hero-spark" style={{ paddingBottom: 8 }}>
-                    <HeroSparkline data={sparkData} width={140} height={38} />
-                    <div style={{ fontSize: 10, color: T.subtle, marginTop: 2, textAlign: "center", letterSpacing: "0.06em", textTransform: "uppercase" }}>YTD vývoj</div>
+                    <HeroSparkline data={sparkData} width={isMobile ? 100 : 140} height={isMobile ? 30 : 38} />
+                    {!isMobile && <div style={{ fontSize: 10, color: T.subtle, marginTop: 2, textAlign: "center", letterSpacing: "0.06em", textTransform: "uppercase" }}>YTD vývoj</div>}
                   </div>
                 )}
               </div>
@@ -1875,22 +1944,33 @@ ${posLines}`;
                 )}
               </div>
             </div>
-            <div style={{ paddingBottom: 4 }}>
-              <div style={{ fontSize: 31, fontWeight: 700, color: T.green, letterSpacing: "-0.02em" }}>{dispGain >= 0 ? "+" : ""}{fmt(dispGain)}</div>
-              <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>nerealizovaný výnos celkem</div>
-            </div>
-            <div style={{ paddingBottom: 4 }}>
-              <div style={{ fontSize: 31, fontWeight: 700, color: T.amber, letterSpacing: "-0.02em" }}>{dispAvgAnn >= 0 ? "+" : ""}{dispAvgAnn.toFixed(2)} %</div>
-              <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>prům. roční výnos{isFiltered ? " · " + cat.label : " celkem"}</div>
-            </div>
-            {showNoCrypto && activeCat !== "crypto" && (
+            {/* Sekundární metriky — desktop vždy, mobil jen pokud heroExpanded */}
+            {(!isMobile || heroExpanded) && (<>
               <div style={{ paddingBottom: 4 }}>
-                <div style={{ fontSize: 31, fontWeight: 700, color: T.blue, letterSpacing: "-0.02em" }}>{dispAvgAnnNC >= 0 ? "+" : ""}{dispAvgAnnNC.toFixed(2)} %</div>
-                <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>prům. výnos bez crypto</div>
+                <div style={{ fontSize: isMobile ? 22 : 31, fontWeight: 700, color: T.green, letterSpacing: "-0.02em" }}>{dispGain >= 0 ? "+" : ""}{fmt(dispGain)}</div>
+                <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>nerealizovaný výnos celkem</div>
               </div>
-            )}
+              <div style={{ paddingBottom: 4 }}>
+                <div style={{ fontSize: isMobile ? 22 : 31, fontWeight: 700, color: T.amber, letterSpacing: "-0.02em" }}>{dispAvgAnn >= 0 ? "+" : ""}{dispAvgAnn.toFixed(2)} %</div>
+                <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>prům. roční výnos{isFiltered ? " · " + cat.label : " celkem"}</div>
+              </div>
+              {showNoCrypto && activeCat !== "crypto" && (
+                <div style={{ paddingBottom: 4 }}>
+                  <div style={{ fontSize: isMobile ? 22 : 31, fontWeight: 700, color: T.blue, letterSpacing: "-0.02em" }}>{dispAvgAnnNC >= 0 ? "+" : ""}{dispAvgAnnNC.toFixed(2)} %</div>
+                  <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>prům. výnos bez crypto</div>
+                </div>
+              )}
+            </>)}
           </div>
         </div>
+
+        {/* Mobilní toggle „více/méně detailů" */}
+        {isMobile && (
+          <button onClick={toggleHero}
+            style={{ marginTop: 4, marginBottom: 16, background: "rgba(255,255,255,0.04)", border: "1px solid " + T.border, color: T.muted, borderRadius: 8, padding: "8px 14px", fontSize: 12, fontWeight: 600, cursor: "pointer", display: "flex", alignItems: "center", gap: 6 }}>
+            {heroExpanded ? "▲ Skrýt detaily" : "▼ Zobrazit zisk, p.a. a další metriky"}
+          </button>
+        )}
 
         {/* 4+1 stat cards */}
         {(() => {
@@ -1975,6 +2055,37 @@ ${posLines}`;
 
           return (<>
             {/* ── Allocation drift alert ── */}
+            {/* ── „Vítej zpět" banner ── */}
+            {lastOpenInfo.prevTimestamp && !bannerDismissed && (() => {
+              const diffMs = Date.now() - lastOpenInfo.prevTimestamp;
+              const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+              const daysLabel = days === 1 ? "1 den" : days < 5 ? days + " dny" : days + " dní";
+              const valueChange = lastOpenInfo.prevValue && totalValue ? totalValue - lastOpenInfo.prevValue : null;
+              const pctChange = valueChange != null && lastOpenInfo.prevValue ? (valueChange / lastOpenInfo.prevValue) * 100 : null;
+              const positive = valueChange != null && valueChange >= 0;
+              const accentColor = valueChange == null ? T.blue : positive ? T.green : T.red;
+              return (
+                <div style={{ marginBottom: 20, padding: "14px 18px", background: accentColor + "0c", border: "1px solid " + accentColor + "30", borderRadius: 12, display: "flex", justifyContent: "space-between", alignItems: "center", gap: 12, flexWrap: "wrap" }}>
+                  <div style={{ flex: 1, minWidth: 200 }}>
+                    <div style={{ fontSize: 14, fontWeight: 700, color: accentColor, marginBottom: 3 }}>
+                      👋 Vítej zpět! Naposledy jsi tu byl před {daysLabel}.
+                    </div>
+                    {valueChange != null ? (
+                      <div style={{ fontSize: 13, color: T.muted, lineHeight: 1.5 }}>
+                        Portfolio za tu dobu{" "}
+                        <strong style={{ color: accentColor, fontFamily: "'DM Mono',monospace" }}>{positive ? "+" : ""}{fmt(valueChange)}</strong>
+                        {pctChange != null && <> (<strong style={{ color: accentColor, fontFamily: "'DM Mono',monospace" }}>{positive ? "+" : ""}{pctChange.toFixed(2)} %</strong>)</>}
+                      </div>
+                    ) : (
+                      <div style={{ fontSize: 13, color: T.muted }}>Mrkni na aktuální stav portfolia níže.</div>
+                    )}
+                  </div>
+                  <button onClick={() => setBannerDismissed(true)}
+                    style={{ background: "rgba(255,255,255,0.06)", border: "none", color: T.muted, borderRadius: 8, width: 32, height: 32, cursor: "pointer", fontSize: 18, flexShrink: 0, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+                </div>
+              );
+            })()}
+
             {(() => {
               const catMap = {};
               allRows.forEach(p => { catMap[p.category] = (catMap[p.category]||0) + p.valueCZK; });
@@ -4739,6 +4850,26 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
               </button>
             ))}
           </nav>
+          {/* Sticky mini-hero — zobrazí se po scrollu > 200px mimo Portfolio tab */}
+          {scrolled && activeTab !== "portfolio" && (
+            <div onClick={() => { setActiveTab("portfolio"); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+              title="Skočit na Portfolio"
+              style={{ display: "flex", alignItems: "center", gap: 8, background: "rgba(255,255,255,0.04)", border: "1px solid " + T.border, borderRadius: 8, padding: "5px 10px", cursor: "pointer", flexShrink: 0, minWidth: 0, maxWidth: isMobile ? 100 : 200 }}
+              onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.08)"}
+              onMouseLeave={e => e.currentTarget.style.background = "rgba(255,255,255,0.04)"}>
+              <span style={{ fontSize: isMobile ? 12 : 13, fontWeight: 700, color: T.text, fontFamily: "'DM Mono',monospace", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                {fmt(totalValue)}
+              </span>
+              {!isMobile && sparkDataGlobal && (
+                <HeroSparkline data={sparkDataGlobal} width={50} height={18} />
+              )}
+              {isMobile && sparkDataGlobal && (() => {
+                const trend = sparkDataGlobal[sparkDataGlobal.length - 1].v >= sparkDataGlobal[0].v;
+                return <span style={{ fontSize: 11, color: trend ? T.green : T.red }}>{trend ? "▲" : "▼"}</span>;
+              })()}
+            </div>
+          )}
+
           <div style={{ marginLeft: "auto", display: "flex", alignItems: "center", gap: 12 }}>
             <div className="ib-hdr-currency" style={{ gap: 2, background: "rgba(255,255,255,0.04)", borderRadius: 8, padding: 3 }}>
               {["CZK","EUR","USD"].map(cur => (
