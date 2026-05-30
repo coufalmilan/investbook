@@ -458,6 +458,20 @@ function timeAgoLabel(timestampMs) {
 
 // ── DAŇOVÝ ČASOVÝ TEST (ČR) ───────────────────────────────────────────────────
 // Vrátí: { status: "exempt"|"pending"|"crypto"|"fund", label, daysRemaining, ... }
+// Výpočet statistik per broker (použito v Portfoliu i Analýze)
+function calcBrokerStats(allRows) {
+  const stats = {};
+  for (const p of allRows) {
+    const b = p.broker || "Ostatní";
+    if (!stats[b]) stats[b] = { broker: b, value: 0, invested: 0, positions: 0, bestPos: null, bestPct: -Infinity };
+    const s = stats[b];
+    s.value += p.valueCZK; s.invested += p.investedCZK; s.positions++;
+    const pct = p.gainPctOrig || 0;
+    if (pct > s.bestPct) { s.bestPct = pct; s.bestPos = p; }
+  }
+  return Object.values(stats).map(s => ({ ...s, gain: s.value - s.invested, gainPct: s.invested > 0 ? ((s.value - s.invested) / s.invested) * 100 : 0 })).sort((a, b) => b.value - a.value);
+}
+
 function taxTimeTest(pos) {
   if (pos.category === "Crypto") return { status: "crypto", label: "Crypto — zvláštní pravidla" };
   if (pos.category === "Portfolio") return { status: "fund", label: "Penzijko — vlastní pravidla" };
@@ -599,10 +613,18 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.38";
+const APP_VERSION = "v4.39";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.39", date: "29. 5. 2026", changes: [
+    "✨ V Portfoliu vidíš novou 5. stat kartu s aktuální hodnotou Penzijka (fialová) — klik tě přepne na detail",
+    "✨ Pod tabulkou pozic jsou nové karty ‚🏦 Podle brokera' — hodnota, výnos % a top pozice per broker",
+    "✨ Klikem na broker kartu filtruješ tabulku — vidíš jen pozice u daného brokera (druhý klik filtr zruší)",
+    "✨ Nové tlačítko ‚✎' u každé pozice — otevírá přehledný modal s detailem a editací (větší tap target na mobilu)",
+    "✨ Search v tabulce Portfolia — hledá v názvu, tickeru i brokerech současně, × rychle smaže hledání",
+    "✨ Empty state s tlačítkem ‚Zrušit všechny filtry' při kombinaci filtrů bez výsledků",
+  ]},
   { version: "v4.38", date: "29. 5. 2026", changes: [
     "✨ Nová sekce ‚📋 Daňový pohled' v Analýze — vidíš, které pozice prošly českým časovým testem 3 roky a kolik bys zaplatil na dani",
     "✨ Drift alert v Portfoliu — žlutý banner upozorní, když je kategorie o víc než 5 % mimo cílovou alokaci",
@@ -1121,7 +1143,10 @@ function InvestBook() {
   });
   const [aiAnalysisLoading, setAiAnalysisLoading] = useState(false);
   const [showGeminiSettings, setShowGeminiSettings] = useState(false);
-  const [showSettings, setShowSettings] = useState(false);
+  const [showSettings,  setShowSettings]  = useState(false);
+  const [brokerFilter,  setBrokerFilter]  = useState(null);   // null = bez filtru, string = broker jméno
+  const [posSearch,     setPosSearch]     = useState("");      // fulltext search v tabulce pozic
+  const [editingPos,    setEditingPos]    = useState(null);    // { pos, draft } | null pro quick-edit modal
   const [geminiTestResult,   setGeminiTestResult]   = useState(null);
   const [geminiTesting,      setGeminiTesting]      = useState(false);
   const [discoveredModels,   setDiscoveredModels]   = useState([]);
@@ -1750,9 +1775,15 @@ ${posLines}`;
           const isFiltered = activeCat !== "vse";
 
           // Filtrované řádky – základ pro všechny výpočty
-          const filteredRows = cat.tblFilter
-            ? allRows.filter(p => cat.tblFilter.includes(p.category))
-            : allRows;
+          const filteredRows = allRows.filter(p => {
+            if (cat.tblFilter && !cat.tblFilter.includes(p.category)) return false;
+            if (brokerFilter && p.broker !== brokerFilter) return false;
+            if (posSearch.trim()) {
+              const q = posSearch.trim().toLowerCase();
+              if (!(p.name + " " + (p.ticker||"") + " " + p.broker).toLowerCase().includes(q)) return false;
+            }
+            return true;
+          });
 
           // Přepočítané hodnoty podle filtru
           const fValue    = filteredRows.reduce((s, p) => s + p.valueCZK, 0);
@@ -1861,16 +1892,24 @@ ${posLines}`;
           </div>
         </div>
 
-        {/* 4 stat cards */}
+        {/* 4+1 stat cards */}
         {(() => {
           const hodnotaMajetku = totalValue + zustatek;
           const cistyMajetek   = hodnotaMajetku - hypoteka;
+          // Aktuální hodnota Penzijka — poslední záznam prvního účtu
+          const pensionValue = (() => {
+            if (!pensionAccounts || pensionAccounts.length === 0) return 0;
+            const acc = pensionAccounts[0];
+            if (!acc || !acc.entries || acc.entries.length === 0) return 0;
+            const sorted = [...acc.entries].sort((a, b) => a.label.localeCompare(b.label));
+            return sorted[sorted.length - 1]?.amount || 0;
+          })();
           // YTD stat card — výnos za aktuální rok
           const ytdCardPct  = ytdGainPct != null ? ytdGainPct : null;
           const ytdCardAbs  = ytdGain    != null ? Math.round(ytdGain) : null;
           const ytdCardColor = ytdCardPct != null ? (ytdCardPct >= 0 ? T.green : T.red) : T.amber;
           return (
-            <div className="ib-grid4" style={{ display: "grid", gridTemplateColumns: "repeat(4,1fr)", gap: 12, marginBottom: 20 }}>
+            <div className="ib-grid4" style={{ display: "grid", gridTemplateColumns: "repeat(5,1fr)", gap: 12, marginBottom: 20 }}>
               <StatCard label="Investováno celkem"      value={fmt(dispInvested)}   color={T.muted}  accent={T.subtle} />
               <StatCard label={"Výnos " + NOW_YEAR + " (YTD)"}
                 value={ytdCardPct != null ? (ytdCardPct >= 0 ? "+" : "") + ytdCardPct.toFixed(2) + " %" : "—"}
@@ -1900,6 +1939,14 @@ ${posLines}`;
                   )}
                   <span style={{ fontSize:10, color:T.subtle, marginLeft:2 }}>✎</span>
                 </div>
+              </div>
+              {/* 5. karta: Penzijko */}
+              <div className="ib-statcard" onClick={() => setActiveTab("penzijko")}
+                style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 14, padding: "18px 20px", position: "relative", overflow: "hidden", cursor: "pointer" }}>
+                <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 2, background: "#a78bfa", borderRadius: "14px 14px 0 0" }} />
+                <div className="ib-statcard-lbl" style={{ fontSize: 14, color: T.muted, letterSpacing: "0.08em", fontWeight: 500, marginBottom: 10, textTransform: "uppercase" }}>Penzijko</div>
+                <div className="ib-statcard-val" style={{ fontSize: 22, fontWeight: 700, color: "#a78bfa", fontFamily: "'DM Mono',monospace" }}>{fmt(pensionValue)}</div>
+                <div className="ib-statcard-sub" style={{ marginTop: 6, fontSize: 12, color: T.muted }}>doplňkové spoření · detail →</div>
               </div>
             </div>
           );
@@ -2274,12 +2321,25 @@ ${posLines}`;
 
             {/* Tabulka */}
             <div style={{ background: T.card, border: "1px solid " + (activeCat !== "vse" ? cat.color + "40" : T.border), borderRadius: 16, padding: 20, marginBottom: 20, transition: "border-color 0.2s" }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-                <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, gap: 12, flexWrap: "wrap" }}>
+                <div style={{ flex: "1 1 200px" }}>
                   <div style={{ fontSize: 15, fontWeight: 700, color: T.text, marginBottom: 2 }}>Pozice portfolia
                     {activeCat !== "vse" && <span style={{ marginLeft: 8, fontSize: 13, color: cat.color, fontWeight: 700 }}>· {cat.label}</span>}
+                    {brokerFilter && <span style={{ marginLeft: 8, fontSize: 13, color: T.amber, fontWeight: 700 }}>· {brokerFilter}</span>}
                   </div>
-                  <div style={{ fontSize: 13, color: T.muted }}>{isMobile ? sortedRows.length + " pozic" : "Klikni na hlavičku pro seřazení · " + sortedRows.length + " pozic"}</div>
+                  <div style={{ fontSize: 13, color: T.muted }}>
+                    {isMobile ? sortedRows.length + " pozic" : "Klikni na hlavičku pro seřazení · " + sortedRows.length + " pozic"}
+                    {posSearch && <span> · hledáno: <strong style={{ color: T.text }}>{posSearch}</strong></span>}
+                  </div>
+                </div>
+                <div style={{ position: "relative", flex: "0 1 240px" }}>
+                  <input type="text" value={posSearch} onChange={e => setPosSearch(e.target.value)}
+                    placeholder="🔍 hledat ticker / název / broker…"
+                    style={{ width: "100%", background: T.bg, border: "1px solid " + T.border, borderRadius: 8, color: T.text, fontFamily: "'DM Sans',sans-serif", fontSize: 13, padding: "8px 12px", outline: "none" }} />
+                  {posSearch && (
+                    <button onClick={() => setPosSearch("")}
+                      style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "rgba(255,255,255,0.06)", border: "none", color: T.muted, borderRadius: 4, padding: "2px 6px", fontSize: 12, cursor: "pointer" }}>×</button>
+                  )}
                 </div>
               </div>
               {isMobile && (
@@ -2298,6 +2358,17 @@ ${posLines}`;
                       {c.label}{arrow(c.key)}
                     </button>
                   ))}
+                </div>
+              )}
+              {/* Empty state při prázdném filtru */}
+              {sortedRows.length === 0 && (posSearch || brokerFilter || activeCat !== "vse") && (
+                <div style={{ padding: "32px 20px", textAlign: "center", color: T.muted, fontSize: 13 }}>
+                  Žádné pozice neodpovídají filtru.
+                  <br />
+                  <button onClick={() => { setPosSearch(""); setBrokerFilter(null); setActiveCat("vse"); }}
+                    style={{ marginTop: 10, background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.3)", color: "#a5b4fc", borderRadius: 6, padding: "6px 14px", fontSize: 12, cursor: "pointer" }}>
+                    Zrušit všechny filtry
+                  </button>
                 </div>
               )}
               {isMobile ? (
@@ -2339,6 +2410,9 @@ ${posLines}`;
                             </div>
                           </div>
                           <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                            <button onClick={e => { e.stopPropagation(); setEditingPos({ pos: p, draft: null }); }}
+                              style={{ background: "rgba(255,255,255,0.05)", border: "none", color: T.subtle, cursor: "pointer", fontSize: 12, padding: "3px 7px", borderRadius: 4, fontWeight: 600 }}
+                              title="Detail / editace">✎</button>
                             {isManual(p) ? (
                               <button onClick={e => { e.stopPropagation(); deleteManual(p.id); }}
                                 style={{ background: "none", border: "none", color: T.subtle, cursor: "pointer", fontSize: 18, padding: "2px 4px", lineHeight: 1 }}
@@ -2480,7 +2554,10 @@ ${posLines}`;
                               : <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: gc, fontFamily: "'DM Mono',monospace", fontWeight: 700 }}>{hasGain ? (gainPct >= 0 ? "+" : "") + gainPct.toFixed(2) + "%" : "—"}</td>}
                             {(() => { const yrs = Math.max(1, NOW_YEAR - (p.start || NOW_YEAR)); const gp = p.gainPctOrig; const ratio = gp !== null && gp !== undefined ? gp / 100 + 1 : null; const cagr = (ratio !== null && ratio > 0) ? (Math.pow(ratio, 1 / yrs) - 1) * 100 : null; return <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 14, color: cagr !== null ? gc : T.muted, fontFamily: "'DM Mono',monospace" }}>{cagr !== null ? (cagr >= 0 ? "+" : "") + cagr.toFixed(2) + "%" : "—"}</td>; })()}
                             <td style={{ padding: "10px 12px", textAlign: "right", fontSize: 13, color: T.muted, fontFamily: "'DM Mono',monospace" }}>{share.toFixed(2)}%</td>
-                            <td style={{ padding: "10px 8px", textAlign: "center" }}>
+                            <td style={{ padding: "10px 8px", textAlign: "center", whiteSpace: "nowrap" }}>
+                              <button onClick={e => { e.stopPropagation(); setEditingPos({ pos: p, draft: null }); }}
+                                style={{ background: "rgba(255,255,255,0.05)", border: "none", color: T.subtle, cursor: "pointer", fontSize: 12, padding: "3px 8px", borderRadius: 4, fontWeight: 600, marginRight: 4 }}
+                                title="Detail / editace">✎</button>
                               {isManual(p) ? (
                                 <button onClick={e => { e.stopPropagation(); deleteManual(p.id); }}
                                   style={{ background: "none", border: "none", color: T.subtle, cursor: "pointer", fontSize: 18, padding: "2px 6px", borderRadius: 4 }}
@@ -2520,6 +2597,49 @@ ${posLines}`;
           </>);
           })()}
           </>);
+        })()}
+
+        {/* ── 🏦 BROKER KARTY ─────────────────────────────────────────────── */}
+        {(() => {
+          const bStats = calcBrokerStats(allRows);
+          if (bStats.length === 0) return null;
+          return (
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
+                <h3 style={{ fontSize: 15, fontWeight: 700, color: T.text }}>🏦 Podle brokera</h3>
+                <span style={{ fontSize: 12, color: T.subtle }}>klikni pro filtr v tabulce</span>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10 }}>
+                {bStats.map((s, i) => {
+                  const color = BROKER_COLORS[i % BROKER_COLORS.length];
+                  const gc = s.gainPct >= 0 ? T.green : T.red;
+                  const isActive = brokerFilter === s.broker;
+                  return (
+                    <div key={s.broker}
+                      onClick={() => setBrokerFilter(isActive ? null : s.broker)}
+                      style={{ background: T.card, border: (isActive ? "2px" : "1px") + " solid " + (isActive ? color : T.border), borderRadius: 12, padding: "14px 16px", cursor: "pointer", transition: "border-color 0.15s, transform 0.15s", position: "relative", overflow: "hidden" }}
+                      onMouseEnter={e => { e.currentTarget.style.borderColor = color; e.currentTarget.style.transform = "translateY(-1px)"; }}
+                      onMouseLeave={e => { e.currentTarget.style.borderColor = isActive ? color : T.border; e.currentTarget.style.transform = "translateY(0)"; }}>
+                      <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: 3, background: color }} />
+                      <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 2 }}>{s.broker}</div>
+                      <div style={{ fontSize: 11, color: T.muted, marginBottom: 10 }}>{s.positions} {s.positions < 5 ? "pozice" : "pozic"}</div>
+                      <div style={{ fontSize: 18, fontWeight: 800, color: T.text, fontFamily: "'DM Mono',monospace", marginBottom: 4 }}>{fmt(s.value)}</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: gc, fontFamily: "'DM Mono',monospace" }}>
+                        {s.gainPct >= 0 ? "+" : ""}{s.gainPct.toFixed(1)}%
+                        <span style={{ fontSize: 11, color: T.muted, marginLeft: 6, fontWeight: 400 }}>({s.gain >= 0 ? "+" : ""}{fmt(s.gain)})</span>
+                      </div>
+                      {s.bestPos && (
+                        <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.05)", fontSize: 11, color: T.muted, display: "flex", justifyContent: "space-between" }}>
+                          <span>top: <strong style={{ color: T.text }}>{s.bestPos.ticker || s.bestPos.name.split("(")[0].trim().slice(0, 8)}</strong></span>
+                          <span style={{ color: T.green, fontFamily: "'DM Mono',monospace" }}>+{s.bestPct.toFixed(0)}%</span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
         })()}
 
         {/* Projections přesunuty do tabAnalyza – pod Roční výkonnost */}
@@ -4444,6 +4564,7 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
 
           /* Gridy */
           .ib-grid4   { grid-template-columns: 1fr 1fr !important; gap: 8px !important; }
+          .ib-grid4 > div:nth-child(5) { grid-column: 1 / -1; }
           .ib-grid2   { grid-template-columns: 1fr !important; gap: 10px !important; }
           .ib-grid3   { grid-template-columns: 1fr !important; gap: 10px !important; }
           .ib-ai-grid { grid-template-columns: 1fr !important; gap: 10px !important; }
@@ -4668,6 +4789,77 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
         </main>
       </div>
 
+
+      {/* ── Quick-edit modal ────────────────────────────── */}
+      {editingPos && (
+        <div onClick={() => setEditingPos(null)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.6)", backdropFilter: "blur(4px)", zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 16, padding: 24, maxWidth: 480, width: "100%", maxHeight: "90vh", overflowY: "auto" }}>
+            {/* Hlavička */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 18 }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                <PositionLogo ticker={editingPos.pos.ticker} name={editingPos.pos.name} size={32} />
+                <div>
+                  <div style={{ fontSize: 17, fontWeight: 700, color: T.text }}>{editingPos.pos.name}</div>
+                  <div style={{ fontSize: 12, color: T.muted, marginTop: 2 }}>{editingPos.pos.broker} · {editingPos.pos.category} · od {editingPos.pos.start}</div>
+                </div>
+              </div>
+              <button onClick={() => setEditingPos(null)}
+                style={{ background: "rgba(255,255,255,0.06)", border: "none", color: T.muted, borderRadius: 8, width: 32, height: 32, cursor: "pointer", fontSize: 18, display: "flex", alignItems: "center", justifyContent: "center" }}>×</button>
+            </div>
+            {/* Detail panel */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 20 }}>
+              <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: 10, padding: "12px 14px" }}>
+                <div style={{ fontSize: 11, color: T.muted, marginBottom: 4 }}>Hodnota</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: T.text, fontFamily: "'DM Mono',monospace" }}>{fmt(editingPos.pos.valueCZK)}</div>
+              </div>
+              <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: 10, padding: "12px 14px" }}>
+                <div style={{ fontSize: 11, color: T.muted, marginBottom: 4 }}>Výnos</div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: (editingPos.pos.gainPctOrig || 0) >= 0 ? T.green : T.red, fontFamily: "'DM Mono',monospace" }}>
+                  {(editingPos.pos.gainPctOrig || 0) >= 0 ? "+" : ""}{(editingPos.pos.gainPctOrig || 0).toFixed(1)}%
+                </div>
+              </div>
+            </div>
+            {/* Edit pole — jen pro ČSOB */}
+            {editingPos.pos.broker === "ČSOB" && editingPos.pos.id < 100 ? (
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: T.muted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 12 }}>Upravit hodnoty</div>
+                <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+                  {[{ label: "Hodnota (Kč)", field: "value" }, { label: "Investováno (Kč)", field: "invested" }, { label: "Začátek (rok)", field: "start" }].map(f => (
+                    <div key={f.field}>
+                      <div style={{ fontSize: 12, color: T.subtle, marginBottom: 4 }}>{f.label}</div>
+                      <input type="number"
+                        value={editingPos.draft?.[f.field] ?? editingPos.pos[f.field] ?? ""}
+                        onChange={e => setEditingPos(prev => ({ ...prev, draft: { ...(prev.draft || {}), [f.field]: e.target.value } }))}
+                        style={{ width: "100%", background: T.bg, border: "1px solid " + T.border, borderRadius: 8, color: T.text, fontFamily: "'DM Mono',monospace", fontSize: 15, padding: "10px 12px", outline: "none" }} />
+                    </div>
+                  ))}
+                </div>
+                <div style={{ display: "flex", gap: 8, marginTop: 20 }}>
+                  <button onClick={() => { if (window.confirm("Opravdu smazat pozici " + editingPos.pos.name + "?")) { deleteManual(editingPos.pos.id); setEditingPos(null); } }}
+                    style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: T.red, borderRadius: 8, padding: "10px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                    🗑 Smazat
+                  </button>
+                  <div style={{ flex: 1 }} />
+                  <button onClick={() => setEditingPos(null)}
+                    style={{ background: "rgba(255,255,255,0.06)", border: "1px solid " + T.border, color: T.muted, borderRadius: 8, padding: "10px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                    Zrušit
+                  </button>
+                  <button onClick={() => { const d = editingPos.draft || {}; for (const [f, v] of Object.entries(d)) updateManual(editingPos.pos.id, f, v); setEditingPos(null); }}
+                    style={{ background: T.green, border: "none", color: "#000", borderRadius: 8, padding: "10px 20px", fontSize: 13, fontWeight: 700, cursor: "pointer" }}>
+                    💾 Uložit
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ padding: "16px 18px", background: "rgba(59,130,246,0.06)", border: "1px solid rgba(59,130,246,0.2)", borderRadius: 10, fontSize: 13, color: T.muted, lineHeight: 1.6 }}>
+                ℹ️ Tato pozice je importovaná z CSV. Hodnoty se aktualizují z Google Sheets cen. Pro úpravu importuj nové CSV v ⚙️ Nastavení.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* ── Settings drawer ─────────────────────────────── */}
       {showSettings && (
