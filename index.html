@@ -3077,15 +3077,17 @@ ${posLines}`;
           }));
           const colorFor = (g) => g >= 50 ? "#16a34a" : g >= 20 ? "#22c55e" : g >= 5 ? "#86efac" : g >= -5 ? "#475569" : g >= -20 ? "#f87171" : g >= -50 ? "#ef4444" : "#b91c1c";
           const CustomCell = (props) => {
-            const { x, y, width, height, name, gainPct } = props;
-            if (!width || !height || width < 20 || height < 16) return null;
+            const { x, y, width, height, name, gainPct, depth } = props;
+            // Recharts přidává kořenový uzel s depth=0 — přeskoč ho
+            if (depth === 0 || !width || !height || width < 20 || height < 16) return null;
+            const gp = gainPct != null ? gainPct : 0;
             const fs = Math.min(13, Math.max(9, Math.min(width, height) / 6));
             return (
               <g>
-                <rect x={x} y={y} width={width} height={height} fill={colorFor(gainPct)} stroke="#0f0f13" strokeWidth={1} rx={2} />
+                <rect x={x} y={y} width={width} height={height} fill={colorFor(gp)} stroke="#0f0f13" strokeWidth={1} rx={2} />
                 {width >= 50 && height >= 26 && (<>
                   <text x={x+width/2} y={y+height/2-3} textAnchor="middle" fill="#fff" fontFamily="'DM Sans',sans-serif" fontSize={fs} fontWeight={700}>{name}</text>
-                  <text x={x+width/2} y={y+height/2+fs} textAnchor="middle" fill="rgba(255,255,255,0.8)" fontFamily="'DM Mono',monospace" fontSize={fs-1}>{gainPct >= 0 ? "+" : ""}{gainPct.toFixed(0)}%</text>
+                  <text x={x+width/2} y={y+height/2+fs} textAnchor="middle" fill="rgba(255,255,255,0.8)" fontFamily="'DM Mono',monospace" fontSize={fs-1}>{gp >= 0 ? "+" : ""}{gp.toFixed(0)}%</text>
                 </>)}
               </g>
             );
