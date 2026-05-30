@@ -569,10 +569,17 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.36";
+const APP_VERSION = "v4.37";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.37", date: "29. 5. 2026", changes: [
+    "🤖 Analýza portfolia se spouští automaticky jednou denně — výsledek se ukládá, při dalším otevření se načte okamžitě z paměti",
+    "🤖 Hodnocení rizikovosti má daily cache — šetří API quota, načítá okamžitě bez volání Gemini",
+    "🤖 Vylepšený prompt pro hodnocení rizik — AI doporučuje konkrétní akce s horizontem (‚Snížit 30% / 6m' místo ‚Zvážit prodej')",
+    "♻️ AI tab reorganizován — Analýza a Hodnocení rizikovosti nahoře jako samostatné karty, Chat a Zprávy za rozbalovací ‚Pokročilé'",
+    "✨ U každé AI karty vidíš datum poslední aktualizace + tlačítko Aktualizovat pro vyžádání čerstvého výsledku",
+  ]},
   { version: "v4.36", date: "29. 5. 2026", changes: [
     "✨ V Portfoliu vedle hlavní hodnoty teď vidíš mini-křivku letošního vývoje (YTD sparkline)",
     "✨ Pod hodnotou je nový timestamp ‚⟳ načteno před X minutami' — vidíš, jak čerstvá jsou data",
@@ -1069,8 +1076,13 @@ function InvestBook() {
   ]);
   const [aiInput,            setAiInput]            = useState("");
   const [aiLoading,          setAiLoading]          = useState(false);
-  const [aiAnalysis,         setAiAnalysis]         = useState("");
-  const [aiAnalysisLoading,  setAiAnalysisLoading]  = useState(false);
+  const [aiAnalysis,        setAiAnalysis]        = useState(() => {
+    try { const c = JSON.parse(localStorage.getItem("ib_ai_analysis") || "null"); return c?.date === new Date().toISOString().slice(0,10) ? c.text : ""; } catch { return ""; }
+  });
+  const [aiAnalysisDate,    setAiAnalysisDate]    = useState(() => {
+    try { return JSON.parse(localStorage.getItem("ib_ai_analysis") || "null")?.date || null; } catch { return null; }
+  });
+  const [aiAnalysisLoading, setAiAnalysisLoading] = useState(false);
   const [showGeminiSettings, setShowGeminiSettings] = useState(false);
   const [showSettings, setShowSettings] = useState(false);
   const [geminiTestResult,   setGeminiTestResult]   = useState(null);
@@ -1081,7 +1093,12 @@ function InvestBook() {
   const [sheetId,            setSheetId]            = useState(() => localStorage.getItem("ib_sheet_id") || "1z83S5c7DRB3DY8GlVNFmKybM0Rn_PRQ0EUFRBxYO-xk");
   const aiBottomRef = useRef(null);
   const [riskLoading,   setRiskLoading]   = useState(false);
-  const [riskResult,    setRiskResult]    = useState("");
+  const [riskResult,     setRiskResult]     = useState(() => {
+    try { const c = JSON.parse(localStorage.getItem("ib_ai_risk") || "null"); return c?.date === new Date().toISOString().slice(0,10) ? c.text : ""; } catch { return ""; }
+  });
+  const [riskResultDate, setRiskResultDate] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("ib_ai_risk") || "null")?.date || null; } catch { return null; }
+  });
   const [riskSortCol,   setRiskSortCol]   = useState("risk");
   const [riskSortDir,   setRiskSortDir]   = useState("asc");
   const [expandedRiskRow, setExpandedRiskRow] = useState(null);
@@ -1111,7 +1128,10 @@ function InvestBook() {
   const [penSort, setPenSort] = useState("label");
   const [penDir,  setPenDir]  = useState("asc");
   // AI tab panel selector
-  const [aiPanel, setAiPanel] = useState("analysis");
+  const [aiPanel,         setAiPanel]         = useState("chat");
+  const [aiAdvancedOpen,  setAiAdvancedOpen]  = useState(() => {
+    try { return localStorage.getItem("ib_ai_advanced_open") === "1"; } catch { return false; }
+  });
   useEffect(() => { aiBottomRef.current?.scrollIntoView({ behavior: "smooth" }); }, [aiMessages]);
 
   // Manual positions (ČSOB + Portu)
@@ -1216,6 +1236,37 @@ function InvestBook() {
   React.useEffect(() => { localStorage.setItem("ib_fire_wd",  String(fireWithdrawal)); }, [fireWithdrawal]);
   React.useEffect(() => { localStorage.setItem("ib_gemini_model", geminiModel); }, [geminiModel]);
 
+  // ── analyzePortfolio – analýza celého portfolia přes Gemini, volatelná odkudkoli ─
+  const analyzePortfolio = useCallback(async () => {
+    if (!geminiKey && !workerUrl) return;
+    if (allRows.length === 0) return;
+    setAiAnalysisLoading(true);
+    setAiAnalysis("");
+    const totalVal  = allRows.reduce((s, p) => s + p.valueCZK, 0);
+    const totalInv  = allRows.reduce((s, p) => s + p.investedCZK, 0);
+    const totalGain = totalVal - totalInv;
+    const gainPct   = totalInv > 0 ? ((totalGain / totalInv) * 100).toFixed(2) : "0";
+    const portfolioCtx = `Moje portfolio k dnešnímu dni (hodnoty v CZK):
+Celková hodnota: ${fmtCZK(totalVal)}, Investováno: ${fmtCZK(totalInv)}, Zisk/ztráta: ${fmtCZK(totalGain)} (${gainPct}%)
+
+Pozice (seřazeno dle hodnoty):
+${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b.valueCZK-a.valueCZK).map(p => {
+  const konc = totalVal > 0 ? ((p.valueCZK/totalVal)*100).toFixed(1) : "0";
+  const g = p.gainPctOrig != null ? p.gainPctOrig.toFixed(1)+"%" : "?";
+  return `${p.name} | ${p.category} | ${fmtCZK(p.valueCZK)} | ${konc}% | ${g}`;
+}).join("\n")}`;
+    const userMsg = `Analyzuj mé portfolio:\n${portfolioCtx}\n\nProsím uveď:\n1. **Celkové hodnocení** – zdraví portfolia, diverzifikace\n2. **Nejsilnější pozice** (top 3 s zdůvodněním)\n3. **Nejslabší / riziková pozice** (top 3 s doporučením)\n4. **Konkrétní akce** – co přikoupit, co prodat, co držet\n5. **Strategie** na příštích 12 měsíců`;
+    try {
+      const txt = await callGemini(geminiKey, "Jsi zkušený portfolio manažer. Odpovídej v češtině, strukturovaně pomocí Markdown: ## pro hlavní sekce, - pro odrážky, **tučně** pro klíčové pojmy.", [{ role: "user", content: userMsg }], geminiModel, workerUrl);
+      setAiAnalysis(txt);
+      const today = new Date().toISOString().slice(0,10);
+      setAiAnalysisDate(today);
+      try { localStorage.setItem("ib_ai_analysis", JSON.stringify({ date: today, text: txt })); } catch(e) {}
+    } catch(e) {
+      setAiAnalysis(`❌ Chyba: ${e.message}`);
+    } finally { setAiAnalysisLoading(false); }
+  }, [geminiKey, workerUrl, geminiModel, allRows]);
+
   // ── assessRisk – vyhodnocení rizikovosti, volatelné odkudkoli ────────────
   const assessRisk = useCallback(async () => {
     if (!geminiKey && !workerUrl) return;
@@ -1231,7 +1282,7 @@ function InvestBook() {
       const cagr = ratio > 0 ? ((Math.pow(ratio, 1 / yrs) - 1) * 100).toFixed(1) : "?";
       return `${p.name} | kat: ${p.category} | hodnota: ${Math.round(p.valueCZK)} CZK | konc: ${konc}% | výnos: ${gp}% | CAGR: ${cagr}% | roky: ${yrs}`;
     }).join("\n");
-    const prompt = `Jsi zkušený portfolio analytik. Zhodnoť riziko každé pozice. Pro KAŽDOU pozici uveď PŘESNĚ JEDEN řádek v tomto formátu (8 polí oddělených |):
+    const prompt = `Jsi zkušený portfolio analytik s 15 lety praxe na evropském i US trhu. Zhodnoť riziko každé pozice. Pro KAŽDOU pozici uveď PŘESNĚ JEDEN řádek v tomto formátu (8 polí oddělených |):
 
 TICKER | Riziko | P/E | Volatilita | Hlavní faktor | Trend | Doporučení | Komentář
 
@@ -1241,29 +1292,55 @@ Kde:
 - Volatilita: Nízká / Střední / Vysoká
 - Hlavní faktor: nejdůležitější rizikový faktor (max 6 slov)
 - Trend: ↑ (rostoucí) / → (neutrální) / ↓ (klesající)
-- Doporučení: Držet / Přikoupit / Zvážit prodej
-- Komentář: 2–3 věty s konkrétním postřehem o pozici – zmiň klíčové riziko, aktuální situaci firmy/trhu a výhled. Buď upřímný, neboj se uvést i negativa. (cca 30–50 slov)
+- Doporučení: KONKRÉTNÍ akce s časovým horizontem. Použij jeden z těchto formátů:
+  * "Držet 12m" — udržet pozici nejméně 12 měsíců
+  * "Přikoupit DCA" — postupně přikupovat (dollar-cost averaging)
+  * "Přikoupit při poklesu" — čekat na korekci
+  * "Snížit 30% / 6m" — postupně prodat ~30% pozice během 6 měsíců
+  * "Prodat ASAP" — opustit pozici co nejdříve
+  * "Vyčkat" — žádná akce, sledovat
+- Komentář: 2–3 věty s konkrétním postřehem. Zmiň: 1) aktuální tržní situaci firmy/sektoru, 2) klíčové riziko v kontextu portfolia (koncentrace, korelace), 3) konkrétní důvod doporučení. (cca 40–60 slov)
 
-DŮLEŽITÉ: Odpovídej POUZE tabulkou, žádný úvod ani závěr. Každá pozice = 1 řádek.
+DŮLEŽITÉ:
+- Buď upřímný — neboj se uvést i negativa.
+- Pro pozice s koncentrací >10% portfolia buď zvlášť opatrný a explicitně to zmiň.
+- Pro pozice s velkou ztrátou (>30%) zvaž "Snížit" nebo "Prodat".
+- Odpovídej POUZE tabulkou, žádný úvod ani závěr. Každá pozice = 1 řádek.
 
 Pozice:
 ${posLines}`;
     try {
       const txt = await callGemini(geminiKey, "Jsi portfolio analytik. Odpovídej v češtině.", [{ role: "user", content: prompt }], geminiModel, workerUrl);
       setRiskResult(txt);
+      const today = new Date().toISOString().slice(0,10);
+      setRiskResultDate(today);
+      try { localStorage.setItem("ib_ai_risk", JSON.stringify({ date: today, text: txt })); } catch(e) {}
     } catch(e) {
       setRiskResult(`❌ Chyba: ${e.message}`);
     } finally { setRiskLoading(false); }
   }, [geminiKey, workerUrl, geminiModel, allRows]);
 
-  // Auto-spustit hodnocení rizikovosti při každém načtení stránky
+  // Auto-spustit analýzu portfolia jednou denně (cache check — volá Gemini jen pokud není dnešní cache)
+  const analysisAutoRunDone = useRef(false);
+  useEffect(() => {
+    if (analysisAutoRunDone.current) return;
+    if (!(geminiKey || workerUrl) || allRows.length === 0) return;
+    const today = new Date().toISOString().slice(0,10);
+    if (aiAnalysisDate === today && aiAnalysis) { analysisAutoRunDone.current = true; return; }
+    analysisAutoRunDone.current = true;
+    analyzePortfolio();
+  }, [geminiKey, workerUrl, allRows.length, aiAnalysisDate, aiAnalysis, analyzePortfolio]);
+
+  // Auto-spustit hodnocení rizikovosti (cache check — volá Gemini jen pokud není dnešní cache)
   const riskAutoRunDone = useRef(false);
   useEffect(() => {
-    if (!riskAutoRunDone.current && (geminiKey || workerUrl) && allRows.length > 0) {
-      riskAutoRunDone.current = true;
-      assessRisk();
-    }
-  }, [geminiKey, workerUrl, allRows.length, assessRisk]);
+    if (riskAutoRunDone.current) return;
+    if (!((geminiKey || workerUrl) && allRows.length > 0)) return;
+    riskAutoRunDone.current = true;
+    const today = new Date().toISOString().slice(0,10);
+    if (riskResultDate === today && riskResult) return;
+    assessRisk();
+  }, [geminiKey, workerUrl, allRows.length, riskResultDate, riskResult, assessRisk]);
 
   const ttStyle = {
     contentStyle: { background: T.card, border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, fontFamily: "'DM Mono',monospace", fontSize: 13, boxShadow: "0 8px 32px rgba(0,0,0,0.5)" },
@@ -3504,18 +3581,7 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
     };
 
     // Analyzovat celé portfolio
-    const analyzePortfolio = async () => {
-      if (!geminiKey && !workerUrl) return;
-      setAiAnalysisLoading(true);
-      setAiAnalysis("");
-      const userMsg = `Analyzuj mé portfolio:\n${portfolioCtx}\n\nProsím uveď:\n1. **Celkové hodnocení** – zdraví portfolia, diverzifikace\n2. **Nejsilnější pozice** (top 3 s zdůvodněním)\n3. **Nejslabší / riziková pozice** (top 3 s doporučením)\n4. **Konkrétní akce** – co přikoupit, co prodat, co držet\n5. **Strategie** na příštích 12 měsíců`;
-      try {
-        const txt = await callGemini(geminiKey, "Jsi zkušený portfolio manažer. Odpovídej v češtině, strukturovaně pomocí Markdown: ## pro hlavní sekce, - pro odrážky, **tučně** pro klíčové pojmy. Každou sekci začni na novém řádku.", [{ role: "user", content: userMsg }], geminiModel, workerUrl);
-        setAiAnalysis(txt);
-      } catch(e) {
-        setAiAnalysis(`❌ Chyba: ${e.message}`);
-      } finally { setAiAnalysisLoading(false); }
-    };
+    // analyzePortfolio je definována v InvestBook scope (useCallback) — tabAI ji vidí přes closure
 
     // Zjisti dostupné modely pro daný klíč přes ListModels API
     const discoverModels = async (key) => {
@@ -3606,87 +3672,37 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
           </div>
         ) : (<>
 
-          {/* ── Analýza + Zprávy – jedna karta s přepínačem ────────────── */}
+          {/* ── Analýza portfolia ────────────────────────────────────────── */}
           <div style={{ ...C, marginBottom: 16 }}>
-
-            {/* Tab přepínač */}
-            <div style={{ display: "flex", gap: 6, marginBottom: 18, borderBottom: "1px solid " + T.border, paddingBottom: 14 }}>
-              {[
-                { key: "analysis", icon: "📊", label: "Analýza portfolia" },
-                { key: "news",     icon: "📰", label: "Zprávy portfolia"  },
-              ].map(tab => (
-                <button key={tab.key} onClick={() => setAiPanel(tab.key)}
-                  style={{
-                    padding: "7px 18px", borderRadius: 8, border: "none", cursor: "pointer",
-                    fontSize: 13, fontWeight: 700, transition: "all 0.15s",
-                    background: aiPanel === tab.key ? "linear-gradient(135deg,#6366f1,#8b5cf6)" : "rgba(255,255,255,0.05)",
-                    color: aiPanel === tab.key ? "#fff" : T.muted,
-                    boxShadow: aiPanel === tab.key ? "0 2px 8px rgba(99,102,241,0.35)" : "none",
-                  }}>
-                  {tab.icon} {tab.label}
-                </button>
-              ))}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <div style={{ fontSize: 12, color: T.muted }}>
+                Gemini analyzuje všech <strong style={{ color: T.text }}>{allRows.length}</strong> pozic
+                {aiAnalysisDate && <span style={{ marginLeft: 8, color: T.subtle }}>· poslední z {new Date(aiAnalysisDate).toLocaleDateString("cs-CZ")}</span>}
+              </div>
+              <button onClick={analyzePortfolio} disabled={aiAnalysisLoading}
+                className="ib-tertiary-btn"
+                style={{ padding: "8px 18px", borderRadius: 8, border: "none",
+                  background: aiAnalysisLoading ? "rgba(99,102,241,0.3)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
+                  color: "#fff", cursor: aiAnalysisLoading ? "not-allowed" : "pointer",
+                  fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
+                {aiAnalysisLoading
+                  ? <><span style={{ animation: "pulse 1s infinite", display: "inline-block" }}>⏳</span> Analyzuji…</>
+                  : (aiAnalysis ? "🔄 Aktualizovat" : "🔍 Analyzovat portfolio")}
+              </button>
             </div>
-
-            {/* Panel: Analýza portfolia */}
-            {aiPanel === "analysis" && (<>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-                <div style={{ fontSize: 12, color: T.muted }}>Gemini analyzuje všech <strong style={{ color: T.text }}>{allRows.length}</strong> pozic</div>
-                <button onClick={analyzePortfolio} disabled={aiAnalysisLoading}
-                  className="ib-tertiary-btn"
-                  style={{ padding: "8px 18px", borderRadius: 8, border: "none",
-                    background: aiAnalysisLoading ? "rgba(99,102,241,0.3)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
-                    color: "#fff", cursor: aiAnalysisLoading ? "not-allowed" : "pointer",
-                    fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
-                  {aiAnalysisLoading
-                    ? <><span style={{ animation: "pulse 1s infinite", display: "inline-block" }}>⏳</span> Analyzuji…</>
-                    : "🔍 Analyzovat portfolio"}
-                </button>
+            {!aiAnalysis && !aiAnalysisLoading && (
+              <div style={{ color: T.subtle, fontSize: 13, textAlign: "center", padding: "32px 0" }}>
+                Klikni <strong style={{ color: T.text }}>Analyzovat portfolio</strong> — Gemini doporučí co koupit, prodat nebo držet.
               </div>
-              {!aiAnalysis && !aiAnalysisLoading && (
-                <div style={{ color: T.subtle, fontSize: 13, textAlign: "center", padding: "32px 0" }}>
-                  Klikni <strong style={{ color: T.text }}>Analyzovat portfolio</strong> — Gemini doporučí co koupit, prodat nebo držet.
-                </div>
-              )}
-              {aiAnalysisLoading && (
-                <div style={{ color: T.muted, fontSize: 13, padding: "28px 0", textAlign: "center" }}>
-                  <span style={{ animation: "pulse 1s infinite", display: "inline-block", marginRight: 8 }}>🤖</span>Gemini analyzuje tvoje portfolio…
-                </div>
-              )}
-              {aiAnalysis && (
-                <div style={{ fontSize: 15, lineHeight: 1.7 }} dangerouslySetInnerHTML={{ __html: renderMD(aiAnalysis) }} />
-              )}
-            </>)}
-
-            {/* Panel: Zprávy portfolia */}
-            {aiPanel === "news" && (<>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-                <div style={{ fontSize: 12, color: T.muted }}>
-                  {marketNewsDate ? <span>Načteno: <strong style={{ color: T.text }}>{marketNewsDate}</strong></span> : "Denní AI přehled novinek k tvým pozicím"}
-                </div>
-                <button onClick={loadMktNews} disabled={marketNewsLoading}
-                  className="ib-tertiary-btn"
-                  style={{ padding: "8px 18px", borderRadius: 8, border: "none",
-                    background: marketNewsLoading ? "rgba(99,102,241,0.3)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
-                    color: "#fff", cursor: marketNewsLoading ? "not-allowed" : "pointer",
-                    fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>
-                  {marketNewsLoading ? <><span style={{ animation: "pulse 1s infinite", display: "inline-block" }}>⏳</span> Načítám…</> : "📰 Načíst zprávy"}
-                </button>
+            )}
+            {aiAnalysisLoading && (
+              <div style={{ color: T.muted, fontSize: 13, padding: "28px 0", textAlign: "center" }}>
+                <span style={{ animation: "pulse 1s infinite", display: "inline-block", marginRight: 8 }}>🤖</span>Gemini analyzuje tvoje portfolio…
               </div>
-              {!marketNews && !marketNewsLoading && (
-                <div style={{ color: T.subtle, fontSize: 13, textAlign: "center", padding: "32px 0" }}>
-                  Klikni <strong style={{ color: T.text }}>Načíst zprávy</strong> — Gemini vygeneruje denní přehled novinek k tvým pozicím.
-                </div>
-              )}
-              {marketNewsLoading && (
-                <div style={{ color: T.muted, fontSize: 13, padding: "28px 0", textAlign: "center" }}>
-                  <span style={{ animation: "pulse 1s infinite", display: "inline-block", marginRight: 8 }}>🤖</span>Gemini generuje přehled zpráv…
-                </div>
-              )}
-              {marketNews && !marketNewsLoading && (
-                <div style={{ fontSize: 13 }} dangerouslySetInnerHTML={{ __html: renderMD(marketNews) }} />
-              )}
-            </>)}
+            )}
+            {aiAnalysis && (
+              <div style={{ fontSize: 15, lineHeight: 1.7 }} dangerouslySetInnerHTML={{ __html: renderMD(aiAnalysis) }} />
+            )}
           </div>
 
           {/* ── HODNOCENÍ RIZIKOVOSTI ───────────────────────────────────────────── */}
@@ -3751,6 +3767,7 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
                   <div style={{ fontSize: 15, fontWeight: 600, color: T.text }}>⚠️ Hodnocení rizikovosti titulů</div>
                   <div style={{ fontSize: 12, color: T.muted, marginTop: 3 }}>
                     AI hodnocení rizika každé pozice – koncentrace, výnos, CAGR, doporučení
+                    {riskResultDate && <span style={{ marginLeft: 8, color: T.subtle }}>· poslední z {new Date(riskResultDate).toLocaleDateString("cs-CZ")}</span>}
                   </div>
                 </div>
                 <button onClick={assessRisk} disabled={riskLoading || (!geminiKey && !workerUrl)}
@@ -3758,7 +3775,7 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
                   style={{ padding: "7px 16px", borderRadius: 8, border: "none", flexShrink: 0,
                     background: (riskLoading || (!geminiKey && !workerUrl)) ? "rgba(245,158,11,0.2)" : "linear-gradient(135deg,#f59e0b,#ef4444)",
                     color: "#fff", cursor: (riskLoading || (!geminiKey && !workerUrl)) ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 600, whiteSpace: "nowrap" }}>
-                  {riskLoading ? "⏳ Vyhodnocuji…" : "🔎 Vyhodnotit rizika"}
+                  {riskLoading ? "⏳ Vyhodnocuji…" : (riskResult ? "🔄 Aktualizovat" : "🔎 Vyhodnotit rizika")}
                 </button>
               </div>
 
@@ -3785,7 +3802,7 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
                           const rc   = getRiskColor(r.risk);
                           const vc   = getVolColor(r.vol);
                           const tc   = getTrendColor(r.trend);
-                          const recC = r.rec.toLowerCase().includes("přikoup") ? T.green : r.rec.toLowerCase().includes("prodej") ? T.red : "#fbbf24";
+                          const recLower = r.rec.toLowerCase(); const recC = recLower.includes("přikoup") ? T.green : (recLower.includes("prodat") || recLower.includes("prodej") || recLower.includes("snížit")) ? T.red : recLower.includes("vyčkat") ? T.subtle : "#fbbf24";
                           const peNum = parseFloat(r.pe);
                           const peColor = !isNaN(peNum) ? (peNum < 15 ? T.green : peNum < 30 ? "#fbbf24" : T.red) : T.muted;
                           const rowKey = r.name + "_" + i;
@@ -3844,7 +3861,7 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
                               const rc   = getRiskColor(r.risk);
                               const vc   = getVolColor(r.vol);
                               const tc   = getTrendColor(r.trend);
-                              const recC = r.rec.toLowerCase().includes("přikoup") ? T.green : r.rec.toLowerCase().includes("prodej") ? T.red : "#fbbf24";
+                              const recLower = r.rec.toLowerCase(); const recC = recLower.includes("přikoup") ? T.green : (recLower.includes("prodat") || recLower.includes("prodej") || recLower.includes("snížit")) ? T.red : recLower.includes("vyčkat") ? T.subtle : "#fbbf24";
                               const peNum = parseFloat(r.pe);
                               const peColor = !isNaN(peNum) ? (peNum < 15 ? T.green : peNum < 30 ? "#fbbf24" : T.red) : T.muted;
                               const rowKey = r.name + "_" + i;
@@ -3918,69 +3935,142 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
           );
         })()}
 
-          {/* ── AI Chat – plná šířka ────────────────────────────────────── */}
-          <div style={{ ...C, display: "flex", flexDirection: "column" }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: T.text, marginBottom: 14, paddingBottom: 12, borderBottom: "1px solid " + T.border }}>💬 AI Chat</div>
-
-            {/* Zprávy */}
-            <div style={{ minHeight: 120, maxHeight: 480, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10, marginBottom: 14, paddingRight: 4 }}>
-              {aiMessages.length === 0 && (
-                <div style={{ color: T.subtle, fontSize: 13, textAlign: "center", padding: "32px 0" }}>
-                  Zeptej se na cokoli o svém portfoliu…
+          {/* ── Pokročilé (Chat + Zprávy) ── */}
+          <div style={{ ...C, marginBottom: 16 }}>
+            <button onClick={() => {
+                const newState = !aiAdvancedOpen;
+                setAiAdvancedOpen(newState);
+                try { localStorage.setItem("ib_ai_advanced_open", newState ? "1" : "0"); } catch(e) {}
+              }}
+              style={{ background: "none", border: "none", padding: 0, width: "100%",
+                cursor: "pointer", textAlign: "left",
+                display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: T.text }}>
+                  {aiAdvancedOpen ? "▾" : "▸"} Pokročilé
                 </div>
-              )}
-              {aiMessages.map((m, i) => (
-                <div key={i} style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start", gap: 8 }}>
-                  {m.role === "assistant" && (
-                    <div style={{ width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg,#6366f1,#8b5cf6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0, marginTop: 2 }}>🤖</div>
-                  )}
-                  <div style={{
-                    maxWidth: "82%", padding: "10px 14px",
-                    borderRadius: m.role === "user" ? "12px 12px 4px 12px" : "4px 12px 12px 12px",
-                    background: m.role === "user" ? "rgba(99,102,241,0.18)" : T.bg,
-                    border: "1px solid " + (m.role === "user" ? "rgba(99,102,241,0.35)" : T.border),
-                    fontSize: 13, lineHeight: 1.65, color: T.text,
-                  }}>
-                    {m.role === "assistant"
-                      ? <><span dangerouslySetInnerHTML={{ __html: renderMD(m.content) }} />{m.typing && <span style={{ display: "inline-block", width: 6, height: 14, background: T.blue, borderRadius: 2, marginLeft: 3, animation: "pulse 0.7s infinite" }} />}</>
-                      : m.content}
+                <div style={{ fontSize: 12, color: T.muted, marginTop: 3 }}>
+                  AI Chat a denní zprávy k pozicím
+                </div>
+              </div>
+            </button>
+
+            {aiAdvancedOpen && (
+              <div style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid " + T.border }}>
+                {/* Sub-tab přepínač */}
+                <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
+                  {[
+                    { key: "chat", icon: "💬", label: "AI Chat" },
+                    { key: "news", icon: "📰", label: "Zprávy portfolia" },
+                  ].map(tab => (
+                    <button key={tab.key} onClick={() => setAiPanel(tab.key)}
+                      style={{ padding: "6px 14px", borderRadius: 8, border: "none", cursor: "pointer",
+                        fontSize: 13, fontWeight: 600,
+                        background: aiPanel === tab.key ? "rgba(99,102,241,0.18)" : "rgba(255,255,255,0.04)",
+                        color: aiPanel === tab.key ? "#a5b4fc" : T.muted }}>
+                      {tab.icon} {tab.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Panel: Chat */}
+                {aiPanel === "chat" && (
+                  <div style={{ display: "flex", flexDirection: "column" }}>
+                    {/* Zprávy chatu */}
+                    <div style={{ minHeight: 120, maxHeight: 480, overflowY: "auto", display: "flex", flexDirection: "column", gap: 10, marginBottom: 14, paddingRight: 4 }}>
+                      {aiMessages.length === 0 && (
+                        <div style={{ color: T.subtle, fontSize: 13, textAlign: "center", padding: "32px 0" }}>
+                          Zeptej se na cokoli o svém portfoliu…
+                        </div>
+                      )}
+                      {aiMessages.map((m, i) => (
+                        <div key={i} style={{ display: "flex", justifyContent: m.role === "user" ? "flex-end" : "flex-start", gap: 8 }}>
+                          {m.role === "assistant" && (
+                            <div style={{ width: 28, height: 28, borderRadius: "50%", background: "linear-gradient(135deg,#6366f1,#8b5cf6)", display: "flex", alignItems: "center", justifyContent: "center", fontSize: 13, flexShrink: 0, marginTop: 2 }}>🤖</div>
+                          )}
+                          <div style={{
+                            maxWidth: "82%", padding: "10px 14px",
+                            borderRadius: m.role === "user" ? "12px 12px 4px 12px" : "4px 12px 12px 12px",
+                            background: m.role === "user" ? "rgba(99,102,241,0.18)" : T.bg,
+                            border: "1px solid " + (m.role === "user" ? "rgba(99,102,241,0.35)" : T.border),
+                            fontSize: 13, lineHeight: 1.65, color: T.text,
+                          }}>
+                            {m.role === "assistant"
+                              ? <><span dangerouslySetInnerHTML={{ __html: renderMD(m.content) }} />{m.typing && <span style={{ display: "inline-block", width: 6, height: 14, background: T.blue, borderRadius: 2, marginLeft: 3, animation: "pulse 0.7s infinite" }} />}</>
+                              : m.content}
+                          </div>
+                        </div>
+                      ))}
+                      <div ref={aiBottomRef} />
+                    </div>
+
+                    {/* Návrhy (jen na začátku) */}
+                    {aiMessages.length === 0 && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
+                        {SUGGESTIONS.map(s => (
+                          <button key={s} onClick={() => setAiInput(s)}
+                            style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid " + T.border, background: "rgba(255,255,255,0.04)", color: T.muted, cursor: "pointer", fontSize: 12, fontFamily: "'DM Sans',sans-serif", transition: "all 0.1s" }}
+                            onMouseEnter={e => { e.currentTarget.style.background = "rgba(99,102,241,0.12)"; e.currentTarget.style.color = T.text; }}
+                            onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.04)"; e.currentTarget.style.color = T.muted; }}>
+                            {s}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Input */}
+                    <div style={{ display: "flex", gap: 8 }}>
+                      <input value={aiInput} onChange={e => setAiInput(e.target.value)}
+                        onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); } }}
+                        placeholder="Zeptej se na své portfolio…"
+                        disabled={aiLoading}
+                        className="ib-ai-input"
+                        style={{ ...inputBase, flex: 1 }}
+                      />
+                      <button onClick={sendChat} disabled={aiLoading || !aiInput.trim()}
+                        className="ib-ai-send-btn"
+                        style={{ padding: "9px 18px", borderRadius: 8, border: "none",
+                          background: aiLoading || !aiInput.trim() ? "rgba(99,102,241,0.25)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
+                          color: "#fff", cursor: aiLoading || !aiInput.trim() ? "not-allowed" : "pointer", fontSize: 16 }}>
+                        {aiLoading ? "⏳" : "➤"}
+                      </button>
+                    </div>
                   </div>
-                </div>
-              ))}
-              <div ref={aiBottomRef} />
-            </div>
+                )}
 
-            {/* Návrhy (jen na začátku) */}
-            {aiMessages.length === 0 && (
-              <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 12 }}>
-                {SUGGESTIONS.map(s => (
-                  <button key={s} onClick={() => setAiInput(s)}
-                    style={{ padding: "5px 12px", borderRadius: 6, border: "1px solid " + T.border, background: "rgba(255,255,255,0.04)", color: T.muted, cursor: "pointer", fontSize: 12, fontFamily: "'DM Sans',sans-serif", transition: "all 0.1s" }}
-                    onMouseEnter={e => { e.currentTarget.style.background = "rgba(99,102,241,0.12)"; e.currentTarget.style.color = T.text; }}
-                    onMouseLeave={e => { e.currentTarget.style.background = "rgba(255,255,255,0.04)"; e.currentTarget.style.color = T.muted; }}>
-                    {s}
-                  </button>
-                ))}
+                {/* Panel: Zprávy */}
+                {aiPanel === "news" && (
+                  <div>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+                      <div style={{ fontSize: 12, color: T.muted }}>
+                        {marketNewsDate ? <span>Načteno: <strong style={{ color: T.text }}>{marketNewsDate}</strong></span> : "Denní AI přehled novinek k tvým pozicím"}
+                      </div>
+                      <button onClick={loadMktNews} disabled={marketNewsLoading}
+                        className="ib-tertiary-btn"
+                        style={{ padding: "8px 18px", borderRadius: 8, border: "none",
+                          background: marketNewsLoading ? "rgba(99,102,241,0.3)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
+                          color: "#fff", cursor: marketNewsLoading ? "not-allowed" : "pointer",
+                          fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>
+                        {marketNewsLoading ? <><span style={{ animation: "pulse 1s infinite", display: "inline-block" }}>⏳</span> Načítám…</> : "📰 Načíst zprávy"}
+                      </button>
+                    </div>
+                    {!marketNews && !marketNewsLoading && (
+                      <div style={{ color: T.subtle, fontSize: 13, textAlign: "center", padding: "32px 0" }}>
+                        Klikni <strong style={{ color: T.text }}>Načíst zprávy</strong> — Gemini vygeneruje denní přehled novinek k tvým pozicím.
+                      </div>
+                    )}
+                    {marketNewsLoading && (
+                      <div style={{ color: T.muted, fontSize: 13, padding: "28px 0", textAlign: "center" }}>
+                        <span style={{ animation: "pulse 1s infinite", display: "inline-block", marginRight: 8 }}>🤖</span>Gemini generuje přehled zpráv…
+                      </div>
+                    )}
+                    {marketNews && !marketNewsLoading && (
+                      <div style={{ fontSize: 13 }} dangerouslySetInnerHTML={{ __html: renderMD(marketNews) }} />
+                    )}
+                  </div>
+                )}
               </div>
             )}
-
-            {/* Input */}
-            <div style={{ display: "flex", gap: 8 }}>
-              <input value={aiInput} onChange={e => setAiInput(e.target.value)}
-                onKeyDown={e => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); sendChat(); } }}
-                placeholder="Zeptej se na své portfolio…"
-                disabled={aiLoading}
-                className="ib-ai-input"
-                style={{ ...inputBase, flex: 1 }}
-              />
-              <button onClick={sendChat} disabled={aiLoading || !aiInput.trim()}
-                className="ib-ai-send-btn"
-                style={{ padding: "9px 18px", borderRadius: 8, border: "none",
-                  background: aiLoading || !aiInput.trim() ? "rgba(99,102,241,0.25)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
-                  color: "#fff", cursor: aiLoading || !aiInput.trim() ? "not-allowed" : "pointer", fontSize: 16 }}>
-                {aiLoading ? "⏳" : "➤"}
-              </button>
-            </div>
           </div>
         </>)}
       </div>
