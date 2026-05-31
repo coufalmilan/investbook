@@ -613,10 +613,18 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.40";
+const APP_VERSION = "v4.41";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.41", date: "29. 5. 2026", changes: [
+    "🎨 Print-friendly stylesheet — Cmd+P vytvoří čistou bílou verzi pro tisk nebo PDF bez navigace a tlačítek",
+    "✨ Loading skeletony — při prvním načtení vidíš pulsující placeholdery místo prázdných hodnot",
+    "🎨 Broker ikony — ČSOB, DEGIRO, eToro, Crypto a Portu mají barevné odznaky v tabulkách a kartách",
+    "♻️ Settings drawer fáze 2 — Hypotéka, Měsíční příkup, FIRE inputy, Cílová alokace, Defaultní měna a Defaultní období grafu jsou teď v ⚙️ Nastavení",
+    "✨ Export — tlačítko ‚📥 Export' v Portfoliu stáhne CSV nebo otevře tisk/PDF",
+    "⌨️ Klávesové zkratky — 1–5 přepíná taby, Cmd+K hledá, Esc zavírá vše, ? otevře nápovědu",
+  ]},
   { version: "v4.40", date: "29. 5. 2026", changes: [
     "📱 Compact hero na mobilu — sekundární metriky (zisk, p.a., bez crypto) schované za ‚▼ Zobrazit detaily', hlavní KPI vidíš ihned",
     "✨ Sticky mini-hero — při scrollu v Analýze/Plánu/AI se v hlavičce zobrazí kapsle s hodnotou portfolia + trend šipka",
@@ -1051,6 +1059,73 @@ function HeroSparkline({ data, width = 140, height = 38 }) {
   );
 }
 
+// ── EXPORT CSV ────────────────────────────────────────────────────────────────
+function exportCSV(rows) {
+  const headers = ["Název","Ticker","Broker","Kategorie","Hodnota CZK","Investováno CZK","Výnos CZK","Výnos %","Začátek"];
+  const esc = (v) => { if (v == null) return ""; const s = String(v); return (s.includes(",") || s.includes('"') || s.includes("\n")) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const lines = [headers.join(",")];
+  for (const p of rows) {
+    const gain = p.valueCZK - p.investedCZK;
+    const gainPct = p.investedCZK > 0 ? (gain / p.investedCZK) * 100 : 0;
+    lines.push([esc(p.name),esc(p.ticker||""),esc(p.broker),esc(p.category),Math.round(p.valueCZK),Math.round(p.investedCZK),Math.round(gain),gainPct.toFixed(2),p.start||""].join(","));
+  }
+  const blob = new Blob(["﻿" + lines.join("\n")], { type: "text/csv;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url; link.download = "investbook-portfolio-" + new Date().toISOString().slice(0,10) + ".csv";
+  link.click(); URL.revokeObjectURL(url);
+}
+
+// ── BROKER BADGE ──────────────────────────────────────────────────────────────
+function BrokerBadge({ broker, size = 18 }) {
+  const BROKER_MAP = {
+    "ČSOB":   { color: "#0066B3", short: "ČS" },
+    "DEGIRO": { color: "#FF8000", short: "DE" },
+    "eToro":  { color: "#13C39E", short: "eT" },
+    "Crypto": { color: "#F7931A", short: "₿"  },
+    "Portu":  { color: "#7C3AED", short: "Po" },
+  };
+  const cfg = BROKER_MAP[broker] || { color: "#6b7280", short: broker?.[0]?.toUpperCase() || "?" };
+  return (
+    <span title={broker} style={{ display: "inline-flex", alignItems: "center", justifyContent: "center", width: size, height: size, borderRadius: 4, background: cfg.color, color: "#fff", fontSize: size <= 18 ? 9 : 10, fontWeight: 800, flexShrink: 0, fontFamily: "'DM Sans',sans-serif", letterSpacing: "-0.02em", verticalAlign: "middle" }}>
+      {cfg.short}
+    </span>
+  );
+}
+
+// ── SKELETON KOMPONENTY ───────────────────────────────────────────────────────
+function Skel({ width = "100%", className = "ib-skel-line" }) {
+  return <div className={"ib-skel " + className} style={{ width }} />;
+}
+function SkelHero() {
+  return (
+    <div style={{ marginBottom: 28 }}>
+      <Skel width={180} className="ib-skel-line" />
+      <div style={{ marginTop: 14 }}><Skel width={280} className="ib-skel-big" /></div>
+      <div style={{ marginTop: 12, display: "flex", gap: 12 }}>
+        <Skel width={120} className="ib-skel-line" />
+        <Skel width={100} className="ib-skel-line" />
+      </div>
+    </div>
+  );
+}
+function SkelStatCards({ count = 5 }) {
+  return (
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(" + count + ",1fr)", gap: 12, marginBottom: 20 }}>
+      {Array.from({ length: count }).map((_, i) => (
+        <div key={i} className="ib-skel ib-skel-card" style={{ background: "rgba(255,255,255,0.04)" }} />
+      ))}
+    </div>
+  );
+}
+function SkelRows({ count = 6 }) {
+  return (
+    <div style={{ marginTop: 16 }}>
+      {Array.from({ length: count }).map((_, i) => <div key={i} className="ib-skel ib-skel-row" />)}
+    </div>
+  );
+}
+
 function StatCard({ label, value, sub, color, accent, subTitle }) {
   return (
     <div className="ib-statcard" style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 14, padding: "18px 20px", position: "relative", overflow: "hidden" }}>
@@ -1072,13 +1147,13 @@ function StatCard({ label, value, sub, color, accent, subTitle }) {
 function InvestBook() {
   const [activeTab, setActiveTab] = useState("portfolio");
   const [showChangelog, setShowChangelog] = useState(false);
-  const [period, setPeriod] = useState("YTD");
+  const [period, setPeriod] = useState(() => { try { return localStorage.getItem("ib_default_period") || "YTD"; } catch { return "YTD"; } });
   const [posChart,   setPosChart]   = useState(null);  // { pos, points, currency, loading, error }
   const [posPeriod,  setPosPeriod]  = useState("2R");  // pro portfolio chart v záložce Pozice
   const [tblSort, setTblSort] = useState("value");
   const [tblDir, setTblDir] = useState("desc");
   const [activeCat, setActiveCat] = useState("vse");
-  const [dispCurrency, setDispCurrency] = useState("CZK");
+  const [dispCurrency, setDispCurrency] = useState(() => { try { return localStorage.getItem("ib_default_currency") || "CZK"; } catch { return "CZK"; } });
   const [isMobile, setIsMobile] = useState(() => typeof window !== "undefined" && window.innerWidth <= 768);
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth <= 768);
@@ -1186,8 +1261,10 @@ function InvestBook() {
   });
   const [aiAnalysisLoading, setAiAnalysisLoading] = useState(false);
   const [showGeminiSettings, setShowGeminiSettings] = useState(false);
-  const [showSettings,  setShowSettings]  = useState(false);
-  const [brokerFilter,  setBrokerFilter]  = useState(null);   // null = bez filtru, string = broker jméno
+  const [showSettings,   setShowSettings]   = useState(false);
+  const [brokerFilter,   setBrokerFilter]   = useState(null);
+  const [exportMenuOpen, setExportMenuOpen] = useState(false);
+  const [showHelp,       setShowHelp]       = useState(false);
   const [posSearch,     setPosSearch]     = useState("");      // fulltext search v tabulce pozic
   const [editingPos,    setEditingPos]    = useState(null);    // { pos, draft } | null pro quick-edit modal
   const [geminiTestResult,   setGeminiTestResult]   = useState(null);
@@ -1364,6 +1441,36 @@ function InvestBook() {
     if (!totalValue) return;
     try { localStorage.setItem("ib_snapshot_prev_v1", JSON.stringify({ portfolioValue: totalValue, timestamp: Date.now() })); } catch(e) {}
   }, [totalValue]);
+
+  // Globální klávesové zkratky (desktop)
+  useEffect(() => {
+    const handler = (e) => {
+      const tag = (e.target?.tagName || "").toLowerCase();
+      if (tag === "input" || tag === "textarea" || tag === "select") {
+        if (e.key === "Escape") e.target.blur();
+        return;
+      }
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setActiveTab("portfolio");
+        setTimeout(() => { const inp = document.querySelector('input[placeholder*="hledat"]'); if (inp) inp.focus(); }, 50);
+        return;
+      }
+      if (e.key >= "1" && e.key <= "5" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+        const tabs = ["portfolio","analyza","plan","penzijko","ai"];
+        const idx = parseInt(e.key) - 1;
+        if (tabs[idx]) { e.preventDefault(); setActiveTab(tabs[idx]); }
+        return;
+      }
+      if (e.key === "?") { e.preventDefault(); setShowHelp(o => !o); return; }
+      if (e.key === "Escape") {
+        setShowSettings(false); setShowChangelog(false); setShowHelp(false);
+        setEditingPos(null); setExportMenuOpen(false);
+      }
+    };
+    window.addEventListener("keydown", handler);
+    return () => window.removeEventListener("keydown", handler);
+  }, []);
 
   // ── analyzePortfolio – analýza celého portfolia přes Gemini, volatelná odkudkoli ─
   const analyzePortfolio = useCallback(async () => {
@@ -1913,6 +2020,12 @@ ${posLines}`;
             });
           })();
 
+          // Skeleton při prvním načtení (žádná data + status loading)
+          const showSkeleton = allRows.length === 0 && gsStatus === "loading";
+          if (showSkeleton) return (
+            <><SkelHero /><SkelStatCards count={5} /><SkelRows count={6} /></>
+          );
+
           return (<>
         {/* Hero */}
         <div style={{ marginBottom: 28 }}>
@@ -2452,6 +2565,30 @@ ${posLines}`;
                       style={{ position: "absolute", right: 8, top: "50%", transform: "translateY(-50%)", background: "rgba(255,255,255,0.06)", border: "none", color: T.muted, borderRadius: 4, padding: "2px 6px", fontSize: 12, cursor: "pointer" }}>×</button>
                   )}
                 </div>
+                {/* Export dropdown */}
+                <div style={{ position: "relative" }}>
+                  <button onClick={() => setExportMenuOpen(o => !o)}
+                    style={{ background: "rgba(255,255,255,0.04)", border: "1px solid " + T.border, color: T.muted, borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", whiteSpace: "nowrap" }}>
+                    📥 Export
+                  </button>
+                  {exportMenuOpen && (
+                    <div onClick={() => setExportMenuOpen(false)}
+                      style={{ position: "absolute", right: 0, top: "calc(100% + 4px)", background: T.card, border: "1px solid " + T.border, borderRadius: 8, padding: 4, minWidth: 200, zIndex: 50, boxShadow: "0 8px 32px rgba(0,0,0,0.4)" }}>
+                      <button onClick={() => { exportCSV(sortedRows); setExportMenuOpen(false); }}
+                        style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", color: T.text, padding: "8px 12px", fontSize: 13, cursor: "pointer", borderRadius: 4 }}
+                        onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.06)"}
+                        onMouseLeave={e => e.currentTarget.style.background = "none"}>
+                        📊 Exportovat tabulku jako CSV
+                      </button>
+                      <button onClick={() => { window.print(); setExportMenuOpen(false); }}
+                        style={{ display: "block", width: "100%", textAlign: "left", background: "none", border: "none", color: T.text, padding: "8px 12px", fontSize: 13, cursor: "pointer", borderRadius: 4 }}
+                        onMouseEnter={e => e.currentTarget.style.background = "rgba(255,255,255,0.06)"}
+                        onMouseLeave={e => e.currentTarget.style.background = "none"}>
+                        📄 Vytisknout / Uložit jako PDF
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
               {isMobile && (
                 /* Mobile: sort bar */
@@ -2732,7 +2869,9 @@ ${posLines}`;
                       onMouseEnter={e => { e.currentTarget.style.borderColor = color; e.currentTarget.style.transform = "translateY(-1px)"; }}
                       onMouseLeave={e => { e.currentTarget.style.borderColor = isActive ? color : T.border; e.currentTarget.style.transform = "translateY(0)"; }}>
                       <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: 3, background: color }} />
-                      <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 2 }}>{s.broker}</div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 2, display: "flex", alignItems: "center", gap: 6 }}>
+                        <BrokerBadge broker={s.broker} size={20} />{s.broker}
+                      </div>
                       <div style={{ fontSize: 11, color: T.muted, marginBottom: 10 }}>{s.positions} {s.positions < 5 ? "pozice" : "pozic"}</div>
                       <div style={{ fontSize: 18, fontWeight: 800, color: T.text, fontFamily: "'DM Mono',monospace", marginBottom: 4 }}>{fmt(s.value)}</div>
                       <div style={{ fontSize: 13, fontWeight: 700, color: gc, fontFamily: "'DM Mono',monospace" }}>
@@ -3485,7 +3624,9 @@ ${posLines}`;
                       const gc = r.gainPct >= 0 ? T.green : T.red;
                       return (
                         <tr key={r.broker} style={{ borderBottom: "1px solid rgba(255,255,255,0.03)", background: i%2===0?"rgba(255,255,255,0.01)":"transparent" }}>
-                          <td style={{ padding: "9px 10px", fontSize: 14, color: T.text, fontWeight: 700 }}>{r.broker}</td>
+                          <td style={{ padding: "9px 10px", fontSize: 14, color: T.text, fontWeight: 700 }}>
+                            <div style={{ display: "flex", alignItems: "center", gap: 7 }}><BrokerBadge broker={r.broker} size={20} />{r.broker}</div>
+                          </td>
                           <td style={{ padding: "9px 10px", textAlign: "right", fontSize: 13, color: T.muted, fontFamily: "'DM Mono',monospace" }}>{r.positions}</td>
                           <td style={{ padding: "9px 10px", textAlign: "right", fontSize: 13, color: T.text, fontFamily: "'DM Mono',monospace", fontWeight: 600 }}>{fmt(r.value)}</td>
                           <td style={{ padding: "9px 10px", textAlign: "right", fontSize: 13, color: T.muted, fontFamily: "'DM Mono',monospace" }}>{fmt(r.invested)}</td>
@@ -4825,6 +4966,29 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
           .ib-nav     { display: flex !important; }
           .ib-main    { padding: 28px 32px; }
         }
+
+        @media print {
+          html, body { background: white !important; color: black !important; }
+          header.ib-header, .ib-tab-bar, button, .ib-tertiary-btn, .ib-cat-pills, .ib-period-row { display: none !important; }
+          .ib-statcard, .ib-card { background: white !important; border: 1px solid #ddd !important; box-shadow: none !important; page-break-inside: avoid; }
+          * { color: black !important; text-shadow: none !important; animation: none !important; transition: none !important; }
+          table { border-collapse: collapse !important; width: 100% !important; }
+          th, td { border: 1px solid #ccc !important; padding: 6px 10px !important; background: white !important; }
+          thead { background: #f5f5f5 !important; }
+          main, .ib-main { padding: 0 !important; max-width: 100% !important; }
+          h1, h2, h3 { page-break-after: avoid; }
+        }
+
+        @keyframes ib-skeleton-pulse {
+          0%, 100% { opacity: 0.6; }
+          50% { opacity: 0.3; }
+        }
+        .ib-skel { background: rgba(255,255,255,0.08); border-radius: 4px; animation: ib-skeleton-pulse 1.4s ease-in-out infinite; display: inline-block; }
+        .ib-skel-line { height: 14px; }
+        .ib-skel-heading { height: 28px; }
+        .ib-skel-big { height: 52px; }
+        .ib-skel-row { height: 44px; margin-bottom: 6px; border-radius: 8px; }
+        .ib-skel-card { height: 110px; border-radius: 12px; }
       `}</style>
 
       <div style={{ minHeight: "100vh", background: T.bg, color: T.text, fontFamily: "'DM Sans', system-ui, sans-serif", overflowX: "hidden", width: "100%" }}>
@@ -5132,6 +5296,121 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
             }} style={{ padding: "9px 18px", borderRadius: 8, border: "none", background: "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "#fff", cursor: "pointer", fontSize: 13, fontWeight: 700, width: "100%", marginTop: 8 }}>
               💾 Uložit nastavení
             </button>
+
+            {/* ── Finance ── */}
+            <div style={{ marginTop: 28, paddingTop: 18, borderTop: "1px solid " + T.border }}>
+              <h3 style={{ fontSize: 13, fontWeight: 700, color: T.muted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 12 }}>Finance</h3>
+              {[
+                { label: "🏠 Hypotéka (Kč)", val: hypoteka, setter: setHypoteka },
+                { label: "💰 Měsíční příkup (Kč)", val: monthlyContrib, setter: setMonthlyContrib },
+              ].map(f => (
+                <div key={f.label} style={{ marginBottom: 16 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: T.muted, marginBottom: 6 }}>{f.label}</div>
+                  <input type="number" value={f.val} onChange={e => f.setter(Number(e.target.value) || 0)}
+                    style={{ background: "#0f0f13", border: "1px solid " + T.border, borderRadius: 8, color: T.text, fontFamily: "'DM Mono',monospace", fontSize: 13, padding: "10px 12px", width: "100%", outline: "none" }} />
+                </div>
+              ))}
+            </div>
+
+            {/* ── FIRE kalkulačka ── */}
+            <div style={{ marginTop: 16, paddingTop: 18, borderTop: "1px solid " + T.border }}>
+              <h3 style={{ fontSize: 13, fontWeight: 700, color: T.muted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 12 }}>FIRE kalkulačka</h3>
+              {[
+                { label: "🔥 Měsíční výdaje (Kč)", val: fireExpenses, setter: setFireExpenses, step: "1" },
+                { label: "📈 Očekávaný výnos (% p.a.)", val: fireReturnPct, setter: setFireReturnPct, step: "0.1" },
+                { label: "📉 Míra výběru (%)", val: fireWithdrawal, setter: setFireWithdrawal, step: "0.1" },
+              ].map(f => (
+                <div key={f.label} style={{ marginBottom: 14 }}>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: T.muted, marginBottom: 6 }}>{f.label}</div>
+                  <input type="number" step={f.step} value={f.val} onChange={e => f.setter(Number(e.target.value) || 0)}
+                    style={{ background: "#0f0f13", border: "1px solid " + T.border, borderRadius: 8, color: T.text, fontFamily: "'DM Mono',monospace", fontSize: 13, padding: "10px 12px", width: "100%", outline: "none" }} />
+                </div>
+              ))}
+            </div>
+
+            {/* ── Cílová alokace ── */}
+            <div style={{ marginTop: 16, paddingTop: 18, borderTop: "1px solid " + T.border }}>
+              <h3 style={{ fontSize: 13, fontWeight: 700, color: T.muted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 8 }}>Cílová alokace per kategorie</h3>
+              <div style={{ fontSize: 12, color: T.subtle, marginBottom: 12 }}>Součet by měl být 100 %. Drift se zobrazí v Portfoliu.</div>
+              {CATEGORIES.map(cat => (
+                <div key={cat} style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10 }}>
+                  <div style={{ width: 12, height: 12, borderRadius: 3, background: CAT_COLOR[cat] || T.muted, flexShrink: 0 }} />
+                  <span style={{ fontSize: 13, color: T.text, fontWeight: 600, flex: 1 }}>{cat}</span>
+                  <input type="number" min="0" max="100" step="1" value={targetAlloc[cat] || ""} placeholder="0"
+                    onChange={e => setTargetAlloc(prev => ({ ...prev, [cat]: Number(e.target.value) || 0 }))}
+                    style={{ width: 70, background: "#0f0f13", border: "1px solid " + T.border, borderRadius: 8, color: T.text, fontFamily: "'DM Mono',monospace", fontSize: 13, padding: "6px 10px", outline: "none", textAlign: "right" }} />
+                  <span style={{ fontSize: 13, color: T.muted }}>%</span>
+                </div>
+              ))}
+              <div style={{ fontSize: 12, fontFamily: "'DM Mono',monospace", color: Object.values(targetAlloc).reduce((s,v) => s+(v||0), 0) === 100 ? T.green : T.amber, marginTop: 8, textAlign: "right" }}>
+                Součet: {Object.values(targetAlloc).reduce((s,v) => s+(v||0), 0)} %
+              </div>
+            </div>
+
+            {/* ── Preference ── */}
+            <div style={{ marginTop: 16, paddingTop: 18, borderTop: "1px solid " + T.border }}>
+              <h3 style={{ fontSize: 13, fontWeight: 700, color: T.muted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 12 }}>Preference</h3>
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: T.muted, marginBottom: 6 }}>💱 Defaultní měna</div>
+                <div style={{ display: "flex", gap: 6 }}>
+                  {["CZK","EUR","USD"].map(c => (
+                    <button key={c} onClick={() => { setDispCurrency(c); try { localStorage.setItem("ib_default_currency", c); } catch(e) {} }}
+                      style={{ padding: "8px 16px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 13, fontWeight: 700, fontFamily: "'DM Mono',monospace", background: dispCurrency === c ? T.blue : "rgba(255,255,255,0.04)", color: dispCurrency === c ? "#fff" : T.muted }}>
+                      {c}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: T.muted, marginBottom: 6 }}>📊 Defaultní období grafu</div>
+                <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+                  {["1M","YTD","1R","2R","3R","MAX"].map(p => (
+                    <button key={p} onClick={() => { setPeriod(p); try { localStorage.setItem("ib_default_period", p); } catch(e) {} }}
+                      style={{ padding: "7px 12px", borderRadius: 8, border: "none", cursor: "pointer", fontSize: 12, fontWeight: 700, fontFamily: "'DM Mono',monospace", background: period === p ? T.green : "rgba(255,255,255,0.04)", color: period === p ? "#000" : T.muted }}>
+                      {p}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ marginTop: 16, fontSize: 12, color: T.subtle }}>
+                Klávesové zkratky: stiskni <kbd style={{ background: "rgba(255,255,255,0.08)", color: T.text, fontFamily: "'DM Mono',monospace", fontSize: 11, padding: "1px 6px", borderRadius: 4, border: "1px solid " + T.border }}>?</kbd> pro nápovědu
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Help overlay (klávesové zkratky) ─────────────── */}
+      {showHelp && (
+        <div onClick={() => setShowHelp(false)}
+          style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", backdropFilter: "blur(4px)", zIndex: 2000, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+          <div onClick={e => e.stopPropagation()}
+            style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 16, padding: 28, maxWidth: 420, width: "100%" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18 }}>
+              <h2 style={{ fontSize: 18, fontWeight: 700, color: T.text }}>⌨️ Klávesové zkratky</h2>
+              <button onClick={() => setShowHelp(false)} style={{ background: "rgba(255,255,255,0.06)", border: "none", color: T.muted, borderRadius: 8, width: 32, height: 32, cursor: "pointer", fontSize: 18 }}>×</button>
+            </div>
+            <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+              {[
+                { keys: ["1"], label: "Portfolio" },
+                { keys: ["2"], label: "Analýza" },
+                { keys: ["3"], label: "Plán" },
+                { keys: ["4"], label: "Penzijko" },
+                { keys: ["5"], label: "AI" },
+                { keys: ["⌘","K"], label: "Hledat v Portfoliu" },
+                { keys: ["Esc"], label: "Zavřít modal / drawer" },
+                { keys: ["?"], label: "Tato nápověda" },
+              ].map(item => (
+                <div key={item.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <span style={{ fontSize: 14, color: T.muted }}>{item.label}</span>
+                  <div style={{ display: "flex", gap: 4 }}>
+                    {item.keys.map(k => (
+                      <kbd key={k} style={{ background: "rgba(255,255,255,0.08)", color: T.text, fontFamily: "'DM Mono',monospace", fontSize: 12, fontWeight: 700, padding: "3px 9px", borderRadius: 5, border: "1px solid " + T.border }}>{k}</kbd>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         </div>
       )}
