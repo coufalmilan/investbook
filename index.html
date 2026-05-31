@@ -1367,20 +1367,11 @@ function InvestBook() {
     try { const raw = localStorage.getItem("ib_what_if_alloc"); return raw ? JSON.parse(raw) : null; } catch { return null; }
   });
   const whatIfActive = whatIfAlloc !== null;
-  const resetWhatIf = useCallback(() => {
+  const resetWhatIf = () => {
     setWhatIfAlloc(null);
     try { localStorage.removeItem("ib_what_if_alloc"); } catch(e) {}
-  }, []);
-  const initWhatIfFromCurrent = useCallback(() => {
-    const catGroups = {};
-    allRows.forEach(p => { catGroups[p.category] = (catGroups[p.category] || 0) + p.valueCZK; });
-    const init = {};
-    for (const k of Object.keys(catGroups)) {
-      init[k] = totalValue > 0 ? Math.round((catGroups[k] / totalValue) * 100) : 0;
-    }
-    setWhatIfAlloc(init);
-    try { localStorage.setItem("ib_what_if_alloc", JSON.stringify(init)); } catch(e) {}
-  }, [allRows, totalValue]);
+  };
+  // initWhatIfFromCurrent je definována níže (po allRows + totalValue)
   useEffect(() => {
     try {
       if (whatIfAlloc) localStorage.setItem("ib_what_if_alloc", JSON.stringify(whatIfAlloc));
@@ -1492,6 +1483,18 @@ function InvestBook() {
     const withLive = lastLabel === todayLabel ? ytd : [...ytd, { d: todayLabel, v: totalValue }];
     return withLive.length >= 2 ? withLive : null;
   }, [totalValue]);
+
+  // initWhatIfFromCurrent — definovaná zde, po allRows + totalValue
+  const initWhatIfFromCurrent = () => {
+    const catGroups = {};
+    allRows.forEach(p => { catGroups[p.category] = (catGroups[p.category] || 0) + p.valueCZK; });
+    const init = {};
+    for (const k of Object.keys(catGroups)) {
+      init[k] = totalValue > 0 ? Math.round((catGroups[k] / totalValue) * 100) : 0;
+    }
+    setWhatIfAlloc(init);
+    try { localStorage.setItem("ib_what_if_alloc", JSON.stringify(init)); } catch(e) {}
+  };
 
   // ── Performance metrics (computed from PORTFOLIO_HISTORY) ────────────────
   const maxDrawdown = React.useMemo(() => {
