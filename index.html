@@ -472,6 +472,29 @@ function calcBrokerStats(allRows) {
   return Object.values(stats).map(s => ({ ...s, gain: s.value - s.invested, gainPct: s.invested > 0 ? ((s.value - s.invested) / s.invested) * 100 : 0 })).sort((a, b) => b.value - a.value);
 }
 
+// ── CO KDYŽ SIMULÁTOR — HELPER ───────────────────────────────────────────────
+function calcWhatIfMetrics(allRows, whatIfAlloc, totalValue) {
+  if (!whatIfAlloc) return null;
+  const currentAlloc = {};
+  for (const p of allRows) currentAlloc[p.category] = (currentAlloc[p.category] || 0) + p.valueCZK;
+  const currentPct = {};
+  for (const k of Object.keys(currentAlloc)) currentPct[k] = totalValue > 0 ? (currentAlloc[k] / totalValue) * 100 : 0;
+  let totalSum = 0;
+  for (const k of Object.keys(whatIfAlloc)) totalSum += whatIfAlloc[k] || 0;
+  const actions = [];
+  for (const k of Object.keys(whatIfAlloc)) {
+    const targetPct = whatIfAlloc[k] || 0;
+    const targetValue = (targetPct / 100) * totalValue;
+    const currentValue = currentAlloc[k] || 0;
+    const diff = targetValue - currentValue;
+    actions.push({ category: k, currentPct: currentPct[k] || 0, targetPct, currentValue, targetValue: Math.round(targetValue), diffValue: Math.round(diff), action: diff > 100 ? "buy" : diff < -100 ? "sell" : "hold" });
+  }
+  const RISK_SCORES = { "Crypto": 9, "Akcie": 6, "ETF": 3, "Fond": 3, "Portfolio": 4, "Jiné": 5 };
+  let weightedRisk = 0;
+  for (const k of Object.keys(whatIfAlloc)) weightedRisk += (whatIfAlloc[k] / 100) * (RISK_SCORES[k] || 5);
+  return { actions: actions.sort((a, b) => Math.abs(b.diffValue) - Math.abs(a.diffValue)), totalSum, isValid: Math.abs(totalSum - 100) < 0.5, weightedRisk };
+}
+
 // ── MĚSÍČNÍ REPORT HELPERS ────────────────────────────────────────────────────
 function currentMonthKey() {
   const d = new Date();
@@ -636,10 +659,16 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.43";
+const APP_VERSION = "v4.44";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.44", date: "29. 5. 2026", changes: [
+    "🎲 Nová sekce ‚Co když' v Plánu — simulátor alokace přes slidery per kategorie",
+    "✨ Real-time výpočet rebalancing akcí: kolik dokoupit nebo prodat u každé kategorie",
+    "✨ Porovnání rizikového skóre aktuální vs hypotetické portfolio",
+    "✨ Tlačítko ‚Uložit jako cíl' přenese simulaci do Cílové alokace, simulace přežije refresh",
+  ]},
   { version: "v4.43", date: "29. 5. 2026", changes: [
     "🤖 Nová karta ‚📅 Měsíční report' v AI tabu — Gemini sepíše sumarizaci měsíce ve 4 sekcích: Shrnutí, Top 3 pohyby, Doporučení, Riziko",
     "✨ Tlačítko ‚📄 PDF' u reportu — uloží report jako PDF přes tiskový dialog",
@@ -1333,6 +1362,31 @@ function InvestBook() {
   const [brokerFilter,   setBrokerFilter]   = useState(null);
   const [exportMenuOpen,      setExportMenuOpen]      = useState(false);
   const [showHelp,            setShowHelp]            = useState(false);
+  // „Co když" simulátor alokace
+  const [whatIfAlloc, setWhatIfAlloc] = useState(() => {
+    try { const raw = localStorage.getItem("ib_what_if_alloc"); return raw ? JSON.parse(raw) : null; } catch { return null; }
+  });
+  const whatIfActive = whatIfAlloc !== null;
+  const resetWhatIf = useCallback(() => {
+    setWhatIfAlloc(null);
+    try { localStorage.removeItem("ib_what_if_alloc"); } catch(e) {}
+  }, []);
+  const initWhatIfFromCurrent = useCallback(() => {
+    const catGroups = {};
+    allRows.forEach(p => { catGroups[p.category] = (catGroups[p.category] || 0) + p.valueCZK; });
+    const init = {};
+    for (const k of Object.keys(catGroups)) {
+      init[k] = totalValue > 0 ? Math.round((catGroups[k] / totalValue) * 100) : 0;
+    }
+    setWhatIfAlloc(init);
+    try { localStorage.setItem("ib_what_if_alloc", JSON.stringify(init)); } catch(e) {}
+  }, [allRows, totalValue]);
+  useEffect(() => {
+    try {
+      if (whatIfAlloc) localStorage.setItem("ib_what_if_alloc", JSON.stringify(whatIfAlloc));
+    } catch(e) {}
+  }, [whatIfAlloc]);
+
   const [showNativeCurrency,  setShowNativeCurrency]  = useState(() => {
     try { return localStorage.getItem("ib_show_native_currency") !== "0"; } catch { return true; }
   });
@@ -4091,6 +4145,100 @@ ${posLines}`;
             </div>
           );
         })()}
+
+      {/* ── 🎲 CO KDYŽ — Simulátor alokace ─────────────────────────────────── */}
+      {(() => {
+        const metrics = whatIfAlloc ? calcWhatIfMetrics(allRows, whatIfAlloc, totalValue) : null;
+        const RISK_SCORES = { "Crypto": 9, "Akcie": 6, "ETF": 3, "Fond": 3, "Portfolio": 4, "Jiné": 5 };
+        let currentRisk = 0;
+        if (totalValue > 0) for (const p of allRows) currentRisk += (p.valueCZK / totalValue) * (RISK_SCORES[p.category] || 5);
+        return (
+          <div style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 16, padding: 22, marginBottom: 16 }}>
+            <SectionTitle title="🎲 Co když — simulátor alokace" sub="Hypoteticky uprav % per kategorie a uvidíš dopady rebalancingu" />
+            {!whatIfActive && (
+              <div style={{ textAlign: "center", padding: "32px 0" }}>
+                <div style={{ fontSize: 36, marginBottom: 12 }}>🎲</div>
+                <div style={{ fontSize: 14, color: T.muted, marginBottom: 16 }}>
+                  Začni s aktuální alokací a uprav procentuální zastoupení kategorií.<br/>Aplikace spočítá, kolik bys musel prodat nebo dokoupit.
+                </div>
+                <button onClick={initWhatIfFromCurrent}
+                  style={{ background: "linear-gradient(135deg,#6366f1,#8b5cf6)", border: "none", color: "#fff", borderRadius: 10, padding: "10px 24px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
+                  🎲 Zahájit simulaci
+                </button>
+              </div>
+            )}
+            {whatIfActive && whatIfAlloc && metrics && (
+              <>
+                <div style={{ marginBottom: 20 }}>
+                  {Object.keys(whatIfAlloc).map(k => (
+                    <div key={k} style={{ marginBottom: 14 }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
+                        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                          <div style={{ width: 10, height: 10, borderRadius: 2, background: CAT_COLOR[k] || T.muted }} />
+                          <span style={{ fontSize: 13, color: T.text, fontWeight: 600 }}>{k}</span>
+                        </div>
+                        <span style={{ fontSize: 14, color: CAT_COLOR[k] || T.text, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{whatIfAlloc[k]} %</span>
+                      </div>
+                      <input type="range" min="0" max="100" step="1"
+                        value={whatIfAlloc[k] || 0}
+                        onChange={e => setWhatIfAlloc(prev => ({ ...prev, [k]: Number(e.target.value) }))}
+                        style={{ width: "100%", height: 6, borderRadius: 3, background: "rgba(255,255,255,0.08)", accentColor: CAT_COLOR[k] || T.blue, cursor: "pointer" }} />
+                    </div>
+                  ))}
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderTop: "1px solid " + T.border, marginTop: 8 }}>
+                    <span style={{ fontSize: 13, color: T.muted }}>Celkem:</span>
+                    <span style={{ fontSize: 16, fontWeight: 700, fontFamily: "'DM Mono',monospace", color: metrics.isValid ? T.green : T.amber }}>
+                      {metrics.totalSum.toFixed(0)} %{!metrics.isValid && <span style={{ fontSize: 11, marginLeft: 6 }}>⚠ musí být 100 %</span>}
+                    </span>
+                  </div>
+                </div>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 18 }}>
+                  <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: 10, padding: "12px 14px" }}>
+                    <div style={{ fontSize: 11, color: T.muted, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>Aktuální risk skóre</div>
+                    <div style={{ fontSize: 22, fontWeight: 800, color: T.text, fontFamily: "'DM Mono',monospace" }}>{currentRisk.toFixed(1)} / 10</div>
+                  </div>
+                  <div style={{ background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 10, padding: "12px 14px" }}>
+                    <div style={{ fontSize: 11, color: "#a5b4fc", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>Hypotetické risk skóre</div>
+                    <div style={{ fontSize: 22, fontWeight: 800, color: metrics.weightedRisk > currentRisk ? T.red : T.green, fontFamily: "'DM Mono',monospace" }}>
+                      {metrics.weightedRisk.toFixed(1)} / 10
+                      <span style={{ fontSize: 12, marginLeft: 6, fontWeight: 600 }}>({metrics.weightedRisk - currentRisk >= 0 ? "+" : ""}{(metrics.weightedRisk - currentRisk).toFixed(1)})</span>
+                    </div>
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 700, color: T.muted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 10 }}>Doporučené akce</div>
+                  {metrics.actions.filter(a => a.action !== "hold").map(a => (
+                    <div key={a.category} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", marginBottom: 6, borderRadius: 8, background: a.action === "buy" ? "rgba(34,197,94,0.06)" : "rgba(239,68,68,0.06)", border: "1px solid " + (a.action === "buy" ? "rgba(34,197,94,0.2)" : "rgba(239,68,68,0.2)") }}>
+                      <div>
+                        <span style={{ fontSize: 14, fontWeight: 700, color: a.action === "buy" ? T.green : T.red }}>{a.action === "buy" ? "Dokoupit" : "Prodat"}</span>
+                        <span style={{ fontSize: 13, color: T.text, marginLeft: 8 }}>{a.category}</span>
+                      </div>
+                      <div style={{ fontSize: 14, fontWeight: 700, fontFamily: "'DM Mono',monospace", color: a.action === "buy" ? T.green : T.red }}>
+                        {a.action === "buy" ? "+" : ""}{fmt(a.diffValue)}
+                      </div>
+                    </div>
+                  ))}
+                  {metrics.actions.filter(a => a.action !== "hold").length === 0 && (
+                    <div style={{ fontSize: 13, color: T.muted, padding: "12px 0", textAlign: "center" }}>Žádné rebalancing akce — alokace je již na cíli.</div>
+                  )}
+                </div>
+                <div style={{ display: "flex", gap: 8, marginTop: 16, paddingTop: 16, borderTop: "1px solid " + T.border }}>
+                  <button onClick={resetWhatIf}
+                    style={{ background: "rgba(255,255,255,0.06)", border: "1px solid " + T.border, color: T.muted, borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
+                    ↺ Reset
+                  </button>
+                  <div style={{ flex: 1 }} />
+                  <button onClick={() => setTargetAlloc(whatIfAlloc)} disabled={!metrics.isValid}
+                    style={{ background: metrics.isValid ? T.green : "rgba(34,197,94,0.3)", border: "none", color: metrics.isValid ? "#000" : "#666", borderRadius: 8, padding: "8px 20px", fontSize: 13, fontWeight: 700, cursor: metrics.isValid ? "pointer" : "not-allowed" }}
+                    title="Aplikovat jako Cílovou alokaci v sekci výše">
+                    ✓ Uložit jako cíl
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
+        );
+      })()}
 
       </div>
     );
