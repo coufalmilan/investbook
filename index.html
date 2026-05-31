@@ -659,10 +659,16 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.44";
+const APP_VERSION = "v4.45";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.45", date: "29. 5. 2026", changes: [
+    "🔗 Nová sekce ‚Skrytá koncentrace' v Analýze — skutečná diverzifikace podle expozic (US tech, EU defense, Crypto BTC, …), ne formálních kategorií",
+    "✨ Bar chart s top expozicemi + varování pokud top 3 > 70 % portfolia",
+    "✨ Drill-down: klik na expozici rozbalí seznam pozic, které k ní přispívají (včetně váhovaných jako TSLA = 70 % US tech)",
+    "🔧 Mapování ticker → expozice jako manuální dataset TICKER_EXPOSURES — lze rozšiřovat",
+  ]},
   { version: "v4.44", date: "29. 5. 2026", changes: [
     "🎲 Nová sekce ‚Co když' v Plánu — simulátor alokace přes slidery per kategorie",
     "✨ Real-time výpočet rebalancing akcí: kolik dokoupit nebo prodat u každé kategorie",
@@ -985,6 +991,71 @@ const investedCZK = (pos) => {
 };
 
 // ─── CSV PARSER ──────────────────────────────────────────────────────────────
+// ─── EXPOZICE MAPPING (Skrytá koncentrace) ────────────────────────────────────
+// Pokud přidáš novou pozici a chceš ji mít přesně klasifikovanou,
+// přidej řádek do TICKER_EXPOSURES s tickerem (uppercase) a vahami expozic.
+// Příklad: "AVGO": { "US tech": 0.8, "Semi": 0.2 }
+// Součet vah na ticker by měl být 1.0 (max).
+// Pokud neuvedeš, použije se fallback podle category + currency.
+const TICKER_EXPOSURES = {
+  "SXR8.DE":  { "US large cap": 1.0 },
+  "CSPX.L":   { "US large cap": 1.0 },
+  "NVDA":     { "US tech": 1.0 },
+  "META":     { "US tech": 1.0 },
+  "MSFT":     { "US tech": 1.0 },
+  "GOOG":     { "US tech": 1.0 },
+  "GOOGL":    { "US tech": 1.0 },
+  "AMZN":     { "US tech": 1.0 },
+  "AAPL":     { "US tech": 1.0 },
+  "TSLA":     { "US tech": 0.7, "Auto/EV": 0.3 },
+  "TSM":      { "US tech": 0.6, "Semi": 0.4 },
+  "LRCX":     { "US tech": 0.7, "Semi": 0.3 },
+  "ABBV":     { "Healthcare": 1.0 },
+  "RHM.DE":   { "EU defense": 1.0 },
+  "DFND.PA":  { "EU defense": 0.7, "EU aerospace": 0.3 },
+  "BA-.L":    { "EU aerospace": 1.0 },
+  "CSG.AS":   { "EU consumer": 1.0 },
+  "BTC-USD":  { "Crypto BTC": 1.0 },
+  "ETH-USD":  { "Crypto ETH": 1.0 },
+  "XRP-USD":  { "Crypto altcoin": 1.0 },
+  "LTC-USD":  { "Crypto altcoin": 1.0 },
+  "ETC-USD":  { "Crypto altcoin": 1.0 },
+  "SOL-USD":  { "Crypto altcoin": 1.0 },
+  "DOGE-USD": { "Crypto meme": 1.0 },
+  "BNB-USD":  { "Crypto altcoin": 1.0 },
+};
+function fallbackExposure(pos) {
+  if (pos.category === "Crypto") return { "Crypto ostatní": 1.0 };
+  if (pos.category === "Fond" && pos.name?.includes("Amerika")) return { "US large cap": 1.0 };
+  if (pos.category === "Fond") return { "ČSOB fondy": 1.0 };
+  if (pos.category === "Portfolio") return { "Penzijní": 1.0 };
+  if (pos.currency === "EUR") return { "Evropa ostatní": 1.0 };
+  if (pos.currency === "USD") return { "US ostatní": 1.0 };
+  return { "Ostatní": 1.0 };
+}
+function getExposures(pos) {
+  if (pos.ticker && TICKER_EXPOSURES[pos.ticker.toUpperCase()]) return TICKER_EXPOSURES[pos.ticker.toUpperCase()];
+  return fallbackExposure(pos);
+}
+function calcExposureBreakdown(allRows, totalValue) {
+  const breakdown = {};
+  for (const p of allRows) {
+    const expos = getExposures(p);
+    for (const [exp, weight] of Object.entries(expos)) {
+      breakdown[exp] = (breakdown[exp] || 0) + p.valueCZK * weight;
+    }
+  }
+  return Object.entries(breakdown)
+    .map(([name, value]) => ({ name, value: Math.round(value), pct: totalValue > 0 ? (value / totalValue) * 100 : 0 }))
+    .sort((a, b) => b.value - a.value);
+}
+function getPositionsForExposure(allRows, exposureName) {
+  return allRows
+    .map(p => { const expos = getExposures(p); const w = expos[exposureName]; return w ? { pos: p, weight: w, contribution: p.valueCZK * w } : null; })
+    .filter(Boolean)
+    .sort((a, b) => b.contribution - a.contribution);
+}
+
 // ─── KNOWN STOCK SPLITS ───────────────────────────────────────────────────────
 // Přidej sem každý split: ticker = symbol v CSV, date = datum splitu (YYYY-MM-DD), ratio = počet nových za 1 starou
 const STOCK_SPLITS = [
@@ -1362,6 +1433,7 @@ function InvestBook() {
   const [brokerFilter,   setBrokerFilter]   = useState(null);
   const [exportMenuOpen,      setExportMenuOpen]      = useState(false);
   const [showHelp,            setShowHelp]            = useState(false);
+  const [expandedExp,         setExpandedExp]         = useState(null);
   // „Co když" simulátor alokace
   const [whatIfAlloc, setWhatIfAlloc] = useState(() => {
     try { const raw = localStorage.getItem("ib_what_if_alloc"); return raw ? JSON.parse(raw) : null; } catch { return null; }
@@ -3783,6 +3855,73 @@ ${posLines}`;
                     <div style={{ width: 11, height: 11, background: c, borderRadius: 2 }} /><span>{l}</span>
                   </div>
                 ))}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* ── 🔗 SKRYTÁ KONCENTRACE (expozice breakdown) ─────────────────────── */}
+        {(() => {
+          const exposures = calcExposureBreakdown(allRows, totalValue);
+          if (!exposures.length) return null;
+          const EXP_COLORS = ["#6366f1","#22c55e","#f59e0b","#ec4899","#06b6d4","#a78bfa","#84cc16","#fb923c","#94a3b8"];
+          const top3pct = exposures.slice(0, 3).reduce((s, e) => s + e.pct, 0);
+          const isHighlyConcentrated = top3pct > 70;
+          // expandedExp state je definován na úrovni InvestBook (mimo IIFE)
+          return (
+            <div style={{ ...C, marginBottom: 16 }}>
+              <SectionTitle title="🔗 Skrytá koncentrace" sub="Skutečná diverzifikace portfolia podle expozic, ne podle kategorií" />
+              {isHighlyConcentrated && (
+                <div style={{ marginBottom: 16, padding: "10px 14px", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)", borderRadius: 8 }}>
+                  <div style={{ fontSize: 13, color: T.amber, fontWeight: 600 }}>⚠️ Vysoká koncentrace</div>
+                  <div style={{ fontSize: 12, color: T.muted, marginTop: 4, lineHeight: 1.5 }}>
+                    Top 3 expozice = <strong style={{ color: T.text }}>{top3pct.toFixed(1)} %</strong> portfolia.
+                    Tvoje portfolio vypadá diverzifikované formálně (kategorie, brokeři), ale fundamentálně je koncentrované na pár tržních segmentů.
+                  </div>
+                </div>
+              )}
+              <div style={{ marginBottom: 16 }}>
+                {exposures.map((exp, i) => {
+                  const color = EXP_COLORS[i % EXP_COLORS.length];
+                  const isExpanded = expandedExp === exp.name;
+                  const positionsForExp = isExpanded ? getPositionsForExposure(allRows, exp.name) : [];
+                  return (
+                    <div key={exp.name} style={{ marginBottom: 10 }}>
+                      <div onClick={() => setExpandedExp(isExpanded ? null : exp.name)} style={{ cursor: "pointer" }}>
+                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+                          <span style={{ fontSize: 13, color: T.text, fontWeight: 600 }}>
+                            {exp.name}
+                            <span style={{ marginLeft: 8, color: T.subtle, fontSize: 11 }}>{isExpanded ? "▲" : "▼"}</span>
+                          </span>
+                          <div style={{ display: "flex", gap: 10, alignItems: "baseline" }}>
+                            <span style={{ fontSize: 12, color: T.muted, fontFamily: "'DM Mono',monospace" }}>{fmt(exp.value)}</span>
+                            <span style={{ fontSize: 14, color: T.text, fontWeight: 700, fontFamily: "'DM Mono',monospace", minWidth: 50, textAlign: "right" }}>{exp.pct.toFixed(1)} %</span>
+                          </div>
+                        </div>
+                        <div style={{ height: 8, background: "rgba(255,255,255,0.06)", borderRadius: 4, overflow: "hidden" }}>
+                          <div style={{ height: "100%", width: Math.min(100, exp.pct) + "%", background: color, borderRadius: 4, transition: "width 0.4s ease" }} />
+                        </div>
+                      </div>
+                      {isExpanded && (
+                        <div style={{ marginTop: 8, paddingLeft: 12, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.05)" }}>
+                          {positionsForExp.map(({ pos, weight, contribution }) => (
+                            <div key={pos.id} style={{ display: "flex", alignItems: "center", gap: 8, padding: "4px 0", fontSize: 12 }}>
+                              <PositionLogo ticker={pos.ticker} name={pos.name} size={16} />
+                              <span style={{ flex: 1, color: T.text }}>{pos.ticker || pos.name.split("(")[0].trim()}</span>
+                              {weight < 1 && <span style={{ color: T.subtle, fontFamily: "'DM Mono',monospace" }}>{(weight * 100).toFixed(0)}%</span>}
+                              <span style={{ color: T.muted, fontFamily: "'DM Mono',monospace", minWidth: 90, textAlign: "right" }}>{fmt(contribution)}</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ fontSize: 12, color: T.muted, lineHeight: 1.6, padding: "10px 14px", background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 8 }}>
+                ℹ️ Mapování ticker → expozice je <strong style={{ color: T.text }}>manuální dataset</strong> v aplikaci.
+                Některé pozice jsou plně přiřazené k jedné expozici (NVDA = US tech), jiné mají rozdělení (TSLA: 70% US tech + 30% Auto/EV).
+                Fallback pro neznámé tickery: podle kategorie a měny.
               </div>
             </div>
           );
