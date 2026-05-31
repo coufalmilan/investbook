@@ -472,6 +472,29 @@ function calcBrokerStats(allRows) {
   return Object.values(stats).map(s => ({ ...s, gain: s.value - s.invested, gainPct: s.invested > 0 ? ((s.value - s.invested) / s.invested) * 100 : 0 })).sort((a, b) => b.value - a.value);
 }
 
+// ── MĚSÍČNÍ REPORT HELPERS ────────────────────────────────────────────────────
+function currentMonthKey() {
+  const d = new Date();
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+}
+function prevMonthKey() {
+  const d = new Date(); d.setMonth(d.getMonth() - 1);
+  return d.getFullYear() + "-" + String(d.getMonth() + 1).padStart(2, "0");
+}
+function calcMonthlyMetrics(allRows, totalValue) {
+  const history = PORTFOLIO_HISTORY;
+  if (!history || history.length < 2) return null;
+  const lastMonth = history[history.length - 1];
+  const monthChange = totalValue - lastMonth.v;
+  const monthChangePct = lastMonth.v > 0 ? (monthChange / lastMonth.v) * 100 : 0;
+  const targetDate = new Date(lastMonth.d + "-01");
+  targetDate.setFullYear(targetDate.getFullYear() - 1);
+  const targetKey = targetDate.getFullYear() + "-" + String(targetDate.getMonth() + 1).padStart(2, "0");
+  const yoyPoint = history.find(p => p.d === targetKey) || history[0];
+  const yoyChangePct = yoyPoint.v > 0 ? ((totalValue - yoyPoint.v) / yoyPoint.v) * 100 : 0;
+  return { monthChange: Math.round(monthChange), monthChangePct, yoyChangePct, monthLabel: lastMonth.d, yoyLabel: yoyPoint.d };
+}
+
 function taxTimeTest(pos) {
   if (pos.category === "Crypto") return { status: "crypto", label: "Crypto — zvláštní pravidla" };
   if (pos.category === "Portfolio") return { status: "fund", label: "Penzijko — vlastní pravidla" };
@@ -613,10 +636,16 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.42";
+const APP_VERSION = "v4.43";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.43", date: "29. 5. 2026", changes: [
+    "🤖 Nová karta ‚📅 Měsíční report' v AI tabu — Gemini sepíše sumarizaci měsíce ve 4 sekcích: Shrnutí, Top 3 pohyby, Doporučení, Riziko",
+    "✨ Tlačítko ‚📄 PDF' u reportu — uloží report jako PDF přes tiskový dialog",
+    "🔧 Auto-spuštění reportu v prvních 7 dnech nového měsíce (pokud máš Gemini klíč)",
+    "💾 Report se cachuje per měsíc — během měsíce nevolá Gemini opakovaně",
+  ]},
   { version: "v4.42", date: "29. 5. 2026", changes: [
     "✨ Multi-currency view — u USD/EUR/GBP pozic vidíš v tabulce vedle CZK hodnoty i původní měnu menším šedým písmem",
     "✨ Funguje v desktop tabulce, mobilních kartách i quick-edit modalu",
@@ -1290,6 +1319,15 @@ function InvestBook() {
     try { return JSON.parse(localStorage.getItem("ib_ai_analysis") || "null")?.date || null; } catch { return null; }
   });
   const [aiAnalysisLoading, setAiAnalysisLoading] = useState(false);
+
+  // Měsíční AI report
+  const [monthlyReport,        setMonthlyReport]        = useState(() => {
+    try { const c = JSON.parse(localStorage.getItem("ib_monthly_report") || "null"); return c?.month === currentMonthKey() ? c.text : ""; } catch { return ""; }
+  });
+  const [monthlyReportMonth,   setMonthlyReportMonth]   = useState(() => {
+    try { return JSON.parse(localStorage.getItem("ib_monthly_report") || "null")?.month || null; } catch { return null; }
+  });
+  const [monthlyReportLoading, setMonthlyReportLoading] = useState(false);
   const [showGeminiSettings, setShowGeminiSettings] = useState(false);
   const [showSettings,   setShowSettings]   = useState(false);
   const [brokerFilter,   setBrokerFilter]   = useState(null);
@@ -1542,6 +1580,61 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
   }, [geminiKey, workerUrl, geminiModel, allRows]);
 
   // ── assessRisk – vyhodnocení rizikovosti, volatelné odkudkoli ────────────
+  const generateMonthlyReport = useCallback(async () => {
+    if (!geminiKey && !workerUrl) return;
+    if (allRows.length === 0) return;
+    setMonthlyReportLoading(true);
+    setMonthlyReport("");
+    const metrics = calcMonthlyMetrics(allRows, totalValue);
+    if (!metrics) {
+      setMonthlyReport("❌ Nedostatek historických dat pro měsíční report.");
+      setMonthlyReportLoading(false);
+      return;
+    }
+    const totalInv = allRows.reduce((s, p) => s + p.investedCZK, 0);
+    const totalGain = totalValue - totalInv;
+    const gainPct = totalInv > 0 ? ((totalGain / totalInv) * 100).toFixed(2) : "0";
+    const monthName = new Date(metrics.monthLabel + "-01").toLocaleDateString("cs-CZ", { month: "long", year: "numeric" });
+    const topPositions = allRows.slice().sort((a, b) => b.valueCZK - a.valueCZK).slice(0, 5)
+      .map(p => `${p.name} | ${p.category} | ${fmtCZK(p.valueCZK)} | výnos ${p.gainPctOrig?.toFixed(1) || "?"}%`).join("\n");
+    const userMsg = `Vygeneruj měsíční report mého investičního portfolia za měsíc ${monthName}.
+
+KONTEXT:
+- Celková hodnota portfolia: ${fmtCZK(totalValue)}
+- Měsíční změna: ${metrics.monthChange >= 0 ? "+" : ""}${fmtCZK(metrics.monthChange)} (${metrics.monthChangePct >= 0 ? "+" : ""}${metrics.monthChangePct.toFixed(2)}%)
+- Roční změna (YoY): ${metrics.yoyChangePct >= 0 ? "+" : ""}${metrics.yoyChangePct.toFixed(2)}%
+- Celkový zisk: ${fmtCZK(totalGain)} (${gainPct}%)
+- Počet pozic: ${allRows.length}
+
+TOP 5 POZIC:
+${topPositions}
+
+VYGENERUJ STRUKTUROVANÝ REPORT v markdown formátu:
+
+## Shrnutí měsíce
+2-3 věty: jak se portfoliu dařilo, co je hlavní pohyb, kontext makra.
+
+## Top 3 pohyby
+3 nejvýznamnější pohyby pozic (růst/pokles) s důvodem.
+
+## Doporučení pro další měsíc
+2-3 konkrétní akce: co přikoupit, co prodat, co sledovat (konkrétní tickery).
+
+## Riziko & varování
+1 hlavní rizikový faktor pro portfolio v aktuální situaci.
+
+Buď upřímný, používej konkrétní čísla, neboj se uvést i negativa.`;
+    try {
+      const txt = await callGemini(geminiKey, "Jsi zkušený portfolio analytik s 15 lety praxe. Odpovídej v češtině, strukturovaně markdown.", [{ role: "user", content: userMsg }], geminiModel, workerUrl);
+      setMonthlyReport(txt);
+      const monthKey = currentMonthKey();
+      setMonthlyReportMonth(monthKey);
+      try { localStorage.setItem("ib_monthly_report", JSON.stringify({ month: monthKey, text: txt, generated: Date.now() })); } catch(e) {}
+    } catch(e) {
+      setMonthlyReport(`❌ Chyba: ${e.message}`);
+    } finally { setMonthlyReportLoading(false); }
+  }, [geminiKey, workerUrl, geminiModel, allRows, totalValue]);
+
   const assessRisk = useCallback(async () => {
     if (!geminiKey && !workerUrl) return;
     setRiskLoading(true);
@@ -1615,6 +1708,22 @@ ${posLines}`;
     if (riskResultDate === today && riskResult) return;
     assessRisk();
   }, [geminiKey, workerUrl, allRows.length, riskResultDate, riskResult, assessRisk]);
+
+  // Auto-spustit měsíční report v prvních 7 dnech nového měsíce
+  const monthlyReportAutoRunDone = useRef(false);
+  useEffect(() => {
+    if (monthlyReportAutoRunDone.current) return;
+    if (!(geminiKey || workerUrl) || allRows.length === 0) return;
+    const currentMonth = currentMonthKey();
+    if (monthlyReportMonth === currentMonth && monthlyReport) {
+      monthlyReportAutoRunDone.current = true;
+      return;
+    }
+    if (new Date().getDate() <= 7) {
+      monthlyReportAutoRunDone.current = true;
+      generateMonthlyReport();
+    }
+  }, [geminiKey, workerUrl, allRows.length, monthlyReportMonth, monthlyReport, generateMonthlyReport]);
 
   const ttStyle = {
     contentStyle: { background: T.card, border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, fontFamily: "'DM Mono',monospace", fontSize: 13, boxShadow: "0 8px 32px rgba(0,0,0,0.5)" },
@@ -4661,6 +4770,51 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
           );
         })()}
 
+          {/* ── 📅 Měsíční report ── */}
+          <div style={{ ...C, marginBottom: 16 }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: T.text }}>📅 Měsíční report</div>
+                <div style={{ fontSize: 12, color: T.muted, marginTop: 3 }}>
+                  AI sumarizace měsíce: pohyby, doporučení, rizika
+                  {monthlyReportMonth && (
+                    <span style={{ marginLeft: 8, color: T.subtle }}>
+                      · za {new Date(monthlyReportMonth + "-01").toLocaleDateString("cs-CZ", { month: "long", year: "numeric" })}
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 8 }}>
+                {monthlyReport && (
+                  <button onClick={() => window.print()} className="ib-tertiary-btn"
+                    style={{ background: "rgba(255,255,255,0.06)", border: "1px solid " + T.border, color: T.muted, borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+                    title="Vytisknout / Uložit jako PDF">
+                    📄 PDF
+                  </button>
+                )}
+                <button onClick={generateMonthlyReport} disabled={monthlyReportLoading} className="ib-tertiary-btn"
+                  style={{ padding: "8px 18px", borderRadius: 8, border: "none", background: monthlyReportLoading ? "rgba(99,102,241,0.3)" : "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "#fff", cursor: monthlyReportLoading ? "not-allowed" : "pointer", fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>
+                  {monthlyReportLoading
+                    ? <><span style={{ animation: "pulse 1s infinite", display: "inline-block" }}>⏳</span> Generuji…</>
+                    : (monthlyReport ? "🔄 Aktualizovat" : "📅 Vygenerovat report")}
+                </button>
+              </div>
+            </div>
+            {!monthlyReport && !monthlyReportLoading && (
+              <div style={{ color: T.subtle, fontSize: 13, textAlign: "center", padding: "32px 0" }}>
+                Klikni <strong style={{ color: T.text }}>Vygenerovat report</strong> — Gemini sepíše sumarizaci posledního měsíce.
+              </div>
+            )}
+            {monthlyReportLoading && (
+              <div style={{ color: T.muted, fontSize: 13, padding: "28px 0", textAlign: "center" }}>
+                <span style={{ animation: "pulse 1s infinite", display: "inline-block", marginRight: 8 }}>🤖</span>Gemini generuje měsíční report…
+              </div>
+            )}
+            {monthlyReport && !monthlyReportLoading && (
+              <div className="ib-monthly-report" style={{ fontSize: 14, lineHeight: 1.7 }} dangerouslySetInnerHTML={{ __html: renderMD(monthlyReport) }} />
+            )}
+          </div>
+
           {/* ── Pokročilé (Chat + Zprávy) ── */}
           <div style={{ ...C, marginBottom: 16 }}>
             <button onClick={() => {
@@ -5025,6 +5179,15 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
           thead { background: #f5f5f5 !important; }
           main, .ib-main { padding: 0 !important; max-width: 100% !important; }
           h1, h2, h3 { page-break-after: avoid; }
+
+          /* Měsíční report: nadpis + obsah */
+          .ib-monthly-report::before {
+            content: "InvestBook · Měsíční report";
+            display: block; font-size: 20pt; font-weight: 700;
+            margin-bottom: 12pt; border-bottom: 2px solid #333; padding-bottom: 8pt;
+          }
+          .ib-monthly-report h2 { margin-top: 12pt; font-size: 14pt; }
+          .ib-monthly-report p, .ib-monthly-report li { font-size: 11pt; line-height: 1.5; }
         }
 
         @keyframes ib-skeleton-pulse {
