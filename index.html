@@ -548,9 +548,9 @@ function calcHypotheticalTax(allRows) {
 
 // ─── ČSOB POSITIONS (manual only) ────────────────────────────────────────────
 const INITIAL_CSOB = [
-  { id: 1, name: "ČSOB Akciový",         broker: "ČSOB", invested: 60079,  value: 70859,  currency: "CZK", fx: null, start: 2021, annReturn: 4.85,  category: "Fond" },
-  { id: 2, name: "ČSOB Akciový Amerika", broker: "ČSOB", invested: 415564, value: 493162, currency: "CZK", fx: null, start: 2021, annReturn: 4.85,  category: "Fond" },
-  { id: 3, name: "ČSOB Premium VOZ",     broker: "ČSOB", invested: 11673,  value: 12102,  currency: "CZK", fx: null, start: 2025, annReturn: null,  category: "Fond" },
+  { id: 1, name: "ČSOB Akciový",         ticker: "ČSOB-A",  broker: "ČSOB", invested: 60079,  value: 70859,  currency: "CZK", fx: null, start: 2021, annReturn: 4.85,  category: "Fond" },
+  { id: 2, name: "ČSOB Akciový Amerika", ticker: "ČSOB-AM", broker: "ČSOB", invested: 415564, value: 493162, currency: "CZK", fx: null, start: 2021, annReturn: 4.85,  category: "Fond" },
+  { id: 3, name: "ČSOB Premium VOZ",     ticker: "ČSOB-VOZ",broker: "ČSOB", invested: 11673,  value: 12102,  currency: "CZK", fx: null, start: 2025, annReturn: null,  category: "Fond" },
 ];
 // Ensure all manual rows have invested = value - (gain if stored), for backward compat
 // gain is derived: value - invested, so no extra field needed — updateManual handles it
@@ -659,10 +659,20 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.46";
+const APP_VERSION = "v4.47";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.47", date: "1. 6. 2026", changes: [
+    "🎨 Graf vývoje portfolia: čára se automaticky zbarví červeně, pokud je výnos za zvolené období záporný",
+    "🎨 Mapa portfolia (treemap): popisky přepnuty na černé — lepší čitelnost na světlých buňkách",
+    "🎨 ČSOB fondy mají zkratky ČSOB-A / ČSOB-AM / ČSOB-VOZ — zobrazeny v treemapě i v portfoliu v závorce u názvu",
+    "🗑️ Odstraněna sekce ‚Analýza trhu' (Tržní indexy a ETF) z Analýzy — pro přehlednost",
+    "📱 Predikce portfolia: rok-po-roku karty přeuspořádány do 3×2 mřížky místo horizontálního scrollu",
+    "🎯 Cílová alokace: odstraněny koláčové grafy, tabulka opravena pro mobil (slider místo čísel, schován Rebalancing sloupec)",
+    "🎲 Sekce ‚Co když' přesunuta těsně pod Cílovou alokaci (tematicky blízko sebe)",
+    "💾 Penzijko záznamy se teď průběžně zálohuji do localStorage — data přežijí refresh i aktualizaci aplikace",
+  ]},
   { version: "v4.46", date: "1. 6. 2026", changes: [
     "📱 Tabulky ‚Výkonnost podle brokera', ‚Daňový pohled' a ‚Srovnání s indexy' v Analýze mají na mobilu kartový layout — nic už nekouká mimo obrazovku",
     "📱 Tabulky ‚Roční výkonnost portfolia' a ‚Mezizáznamové přírůstky' (Penzijko) skrývají na mobilu sloupec absolutní hodnoty přírůstku",
@@ -1400,7 +1410,14 @@ function InvestBook() {
       ],
     },
   ];
-  const [pensionAccounts, setPensionAccounts] = useState(PENSION_INIT);
+  const [pensionAccounts, setPensionAccounts] = useState(() => {
+    // Načti zálohu z localStorage — použij ji dokud nepřijdou data z Google Sheets
+    try {
+      const raw = localStorage.getItem("ib_pension_accounts");
+      if (raw) { const parsed = JSON.parse(raw); if (parsed && parsed.length) return parsed; }
+    } catch(e) {}
+    return PENSION_INIT;
+  });
 
   // ── TIMESTAMP NAČTENÍ DAT ────────────────────────────────────────────────────
   const [gsLoadedAt, setGsLoadedAt] = useState(() => {
@@ -1636,6 +1653,10 @@ function InvestBook() {
 
   // ── localStorage persist for dividends + targetAlloc + FIRE ─────────────
   React.useEffect(() => { localStorage.setItem("ib_target_alloc", JSON.stringify(targetAlloc)); }, [targetAlloc]);
+  // Záloha penzijních záznamů — zachrání data při refreshi i přepsání souboru
+  React.useEffect(() => {
+    try { localStorage.setItem("ib_pension_accounts", JSON.stringify(pensionAccounts)); } catch(e) {}
+  }, [pensionAccounts]);
   React.useEffect(() => { localStorage.setItem("ib_fire_exp", String(fireExpenses)); }, [fireExpenses]);
   React.useEffect(() => { localStorage.setItem("ib_fire_ret", String(fireReturnPct)); }, [fireReturnPct]);
   React.useEffect(() => { localStorage.setItem("ib_fire_wd",  String(fireWithdrawal)); }, [fireWithdrawal]);
@@ -2754,13 +2775,17 @@ ${posLines}`;
                   const chartStep = dispCurrency === 'CZK' ? 50000 : dispCurrency === 'EUR' ? 2500 : 2000;
                   const fmtN = v => new Intl.NumberFormat(dcfg.locale, { style: 'currency', currency: dcfg.cur, maximumFractionDigits: 0 }).format(v);
                   const sym = dcfg.symbol;
+                  // Barva čáry: červená pokud je výnos za vybrané období záporný
+                  const _startV = histData.length >= 2 ? (histData[0][cat.chartKey] ?? histData[0].v) : null;
+                  const _endV   = histData.length >= 2 ? (histData[histData.length-1][cat.chartKey] ?? histData[histData.length-1].v) : null;
+                  const chartColor = (_startV != null && _endV != null && _endV < _startV) ? T.red : cat.color;
                   return (
                     <ResponsiveContainer width="100%" height={220}>
                       <AreaChart data={histDataDisplay} margin={{ left: 4, right: 4, top: 4, bottom: 0 }}>
                         <defs>
                           <linearGradient id="gChart" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="0%" stopColor={cat.color} stopOpacity={0.25} />
-                            <stop offset="100%" stopColor={cat.color} stopOpacity={0} />
+                            <stop offset="0%" stopColor={chartColor} stopOpacity={0.25} />
+                            <stop offset="100%" stopColor={chartColor} stopOpacity={0} />
                           </linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
@@ -2770,20 +2795,20 @@ ${posLines}`;
                           domain={[ dMin => Math.floor(dMin * 0.95 / chartStep) * chartStep, dMax => Math.ceil(dMax * 1.05 / chartStep) * chartStep ]}
                           tickFormatter={v => { const s = window.innerWidth<=480 ? "" : " "+sym; return v >= 1000000 ? (v/1000000).toFixed(1)+"M"+s : v >= 1000 ? Math.round(v/1000)+"k"+s : Math.round(v)+s; }} />
                         <Tooltip {...ttStyle} wrapperStyle={{ maxWidth: 220, zIndex: 10 }} formatter={(v) => [fmtN(v), cat.label]} labelFormatter={d => d} />
-                        <Area type="monotone" dataKey={cat.chartKey} stroke={cat.color} strokeWidth={2.5} fill="url(#gChart)"
+                        <Area type="monotone" dataKey={cat.chartKey} stroke={chartColor} strokeWidth={2.5} fill="url(#gChart)"
                           dot={(props) => {
                             const { cx, cy, payload } = props;
                             if (!payload.isLive) return null;
                             // Pulzující živý bod na aktuálním měsíci
                             return (
                               <g key="live-dot">
-                                <circle cx={cx} cy={cy} r={7} fill={cat.color} opacity={0.25}/>
-                                <circle cx={cx} cy={cy} r={4} fill={cat.color} opacity={0.6}/>
-                                <circle cx={cx} cy={cy} r={2.5} fill={cat.color}/>
+                                <circle cx={cx} cy={cy} r={7} fill={chartColor} opacity={0.25}/>
+                                <circle cx={cx} cy={cy} r={4} fill={chartColor} opacity={0.6}/>
+                                <circle cx={cx} cy={cy} r={2.5} fill={chartColor}/>
                               </g>
                             );
                           }}
-                          activeDot={{ r: 4, fill: cat.color, strokeWidth: 0 }} />
+                          activeDot={{ r: 4, fill: chartColor, strokeWidth: 0 }} />
                         {benchmarkMode && (
                           <Area type="monotone" dataKey="bv" stroke="#fbbf24" strokeWidth={1.5} strokeDasharray="5 3"
                             fill="none" dot={false} activeDot={{ r: 3, fill: "#fbbf24", strokeWidth: 0 }} />
@@ -2923,7 +2948,7 @@ ${posLines}`;
                           <div style={{ display: "flex", alignItems: "center", gap: 8 }} onClick={() => loadPosChart(p)}>
                             <PositionLogo ticker={p.ticker} name={p.name} size={28} />
                             <div>
-                              <span style={{ fontSize: 15, color: T.text, fontWeight: 600 }}>{p.name.split("(")[0].trim()}</span>
+                              <span style={{ fontSize: 15, color: T.text, fontWeight: 600 }}>{p.name.split("(")[0].trim()}{p.broker === "ČSOB" && p.ticker ? <span style={{ fontSize: 12, color: T.muted, fontWeight: 400 }}> ({p.ticker})</span> : ""}</span>
                               {p.shares != null && p.shares > 0 && (() => {
                     const rate2 = (isFinite(p.fx) && p.fx > 0) ? p.fx : (p.currency === "EUR" ? DEGIRO_FX : p.currency === "GBP" ? GBP_FX : ETORO_FX);
                     const avgNat2 = p.invested > 0 ? p.invested / p.shares : null;
@@ -3062,7 +3087,7 @@ ${posLines}`;
                               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
                                 <PositionLogo ticker={p.ticker} name={p.name} size={26} />
                                 <div>
-                                  <span style={{ fontSize: 15, color: T.text, fontWeight: 600 }}>{p.name.split("(")[0].trim()}</span>
+                                  <span style={{ fontSize: 15, color: T.text, fontWeight: 600 }}>{p.name.split("(")[0].trim()}{p.broker === "ČSOB" && p.ticker ? <span style={{ fontSize: 12, color: T.muted, fontWeight: 400 }}> ({p.ticker})</span> : ""}</span>
                                   {p.shares != null && p.shares > 0 && (() => {
                     const rate2 = (isFinite(p.fx) && p.fx > 0) ? p.fx : (p.currency === "EUR" ? DEGIRO_FX : p.currency === "GBP" ? GBP_FX : ETORO_FX);
                     const avgNat2 = p.invested > 0 ? p.invested / p.shares : null;
@@ -3436,20 +3461,15 @@ ${posLines}`;
                   </AreaChart>
                 </ResponsiveContainer>
               </div>
-              {/* Rok-po-roku tabulka */}
-              <div style={{ overflowX:"auto", WebkitOverflowScrolling:"touch", marginTop:12 }}>
-                <div className="ib-scroll-row" style={{ display:"flex", gap:6, paddingBottom:4 }}>
-                  {projData.filter((_,i)=>i>0).map((pt,idx) => {
-                    const prev = idx===0 ? projData[0] : projData.filter((_,i)=>i>0)[idx-1];
-                    return (
-                      <div key={pt.rok} style={{ textAlign:"center", minWidth:86, padding:"6px 8px", background:"rgba(255,255,255,0.03)", borderRadius:8, flexShrink:0 }}>
-                        <div style={{ fontSize:12, color:T.muted, marginBottom:3 }}>{pt.rok}</div>
-                        <div style={{ fontSize:12, color:T.green, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>{fmt(pt.avg)}</div>
-                        <div style={{ fontSize:11, color:T.blue, fontFamily:"'DM Mono',monospace" }}>{fmt(pt.r10)}</div>
-                      </div>
-                    );
-                  })}
-                </div>
+              {/* Rok-po-roku tabulka — 3×2 grid */}
+              <div style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:6, marginTop:12 }}>
+                {projData.filter((_,i)=>i>0).map(pt => (
+                  <div key={pt.rok} style={{ textAlign:"center", padding:"8px 6px", background:"rgba(255,255,255,0.03)", borderRadius:8 }}>
+                    <div style={{ fontSize:12, color:T.muted, marginBottom:3 }}>{pt.rok}</div>
+                    <div style={{ fontSize:12, color:T.green, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>{fmt(pt.avg)}</div>
+                    <div style={{ fontSize:11, color:T.blue, fontFamily:"'DM Mono',monospace" }}>{fmt(pt.r10)}</div>
+                  </div>
+                ))}
               </div>
             </div>
           );
@@ -3474,43 +3494,11 @@ ${posLines}`;
           return (
             <div style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 16, padding: 22, marginBottom: 16 }}>
               <SectionTitle title="🎯 Cílová alokace & rebalancing" sub={"Součet: " + totalTarget.toFixed(0) + "% · zbývá: " + Math.max(0,100-totalTarget).toFixed(0) + "% " + (totalTarget>100 ? "⚠ překročeno 100%" : totalTarget===100 ? "✓ OK" : "")} />
-              {/* Koláče: aktuální vs cílová alokace */}
-              <div className="ib-grid2" style={{ display:"grid", gridTemplateColumns:"1fr 1fr", gap:16, marginBottom:16, marginTop:12 }}>
-                {[
-                  { title:"Aktuální alokace", data: catKeys.map(k=>({name:k,value:catGroups[k]||0})), getColor: k=>CAT_COLOR[k]||T.blue, fmtTip: v=>fmt(v) },
-                  { title:"Cílová alokace",   data: catKeys.filter(k=>targetAlloc[k]>0).map(k=>({name:k,value:targetAlloc[k]||0})), getColor: k=>CAT_COLOR[k]||T.blue, fmtTip: v=>v+"%" },
-                ].map(cfg => (
-                  <div key={cfg.title}>
-                    <div style={{ fontSize:13, fontWeight:600, color:T.muted, marginBottom:6, textAlign:"center" }}>{cfg.title}</div>
-                    {cfg.data.length > 0 ? (
-                      <>
-                        <ResponsiveContainer width="100%" height={120}>
-                          <PieChart>
-                            <Pie data={cfg.data} dataKey="value" cx="50%" cy="50%" innerRadius={30} outerRadius={50} paddingAngle={2}>
-                              {cfg.data.map(d => <Cell key={d.name} fill={cfg.getColor(d.name)} />)}
-                            </Pie>
-                            <Tooltip formatter={(v,n)=>[cfg.fmtTip(v),n]} contentStyle={{ background:T.card, border:"1px solid rgba(255,255,255,0.1)", borderRadius:8, fontSize:12 }} />
-                          </PieChart>
-                        </ResponsiveContainer>
-                        <div style={{ display:"flex", flexWrap:"wrap", gap:"4px 12px", justifyContent:"center", marginTop:4 }}>
-                          {cfg.data.map(d => (
-                            <span key={d.name} style={{ fontSize:11, color:T.muted }}>
-                              <span style={{ color:cfg.getColor(d.name) }}>■</span> {d.name} {cfg.fmtTip(d.value)}
-                            </span>
-                          ))}
-                        </div>
-                      </>
-                    ) : (
-                      <div style={{ fontSize:12, color:T.subtle, textAlign:"center", padding:"30px 0" }}>Nastav cíle v tabulce níže</div>
-                    )}
-                  </div>
-                ))}
-              </div>
-              <div style={{ overflowX:"auto", WebkitOverflowScrolling:"touch" }}>
-                <table style={{ width:"100%", borderCollapse:"collapse", minWidth:320 }}>
+              <div style={{ overflowX:"auto", WebkitOverflowScrolling:"touch", marginTop:8 }}>
+                <table style={{ width:"100%", borderCollapse:"collapse" }}>
                   <thead>
                     <tr style={{ borderBottom:"1px solid "+T.border }}>
-                      {["Kategorie","Aktuální","Cíl %","Odchylka","Rebalancing"].map(h => (
+                      {["Kategorie","Aktuální","Cíl %","Odchylka"].concat(isMobile ? [] : ["Rebalancing"]).map(h => (
                         <th key={h} style={{ padding:"6px 10px", textAlign: h==="Kategorie"?"left":"right", fontSize:11, color:T.subtle, fontWeight:600, textTransform:"uppercase", letterSpacing:"0.07em", whiteSpace:"nowrap" }}>{h}</th>
                       ))}
                     </tr>
@@ -3523,27 +3511,46 @@ ${posLines}`;
                           <td style={{ padding:"9px 10px", fontSize:13, color:CAT_COLOR[row.k]||T.text, fontWeight:600 }}>{row.k}</td>
                           <td style={{ padding:"9px 10px", textAlign:"right" }}>
                             <div style={{ fontSize:13, color:T.text, fontFamily:"'DM Mono',monospace", fontWeight:600 }}>{row.curPct.toFixed(1)}%</div>
-                            <div style={{ fontSize:11, color:T.muted }}>{fmt(row.curVal)}</div>
+                            {!isMobile && <div style={{ fontSize:11, color:T.muted }}>{fmt(row.curVal)}</div>}
                             <div style={{ height:3, background:"rgba(255,255,255,0.06)", borderRadius:2, marginTop:4 }}>
                               <div style={{ height:"100%", width:Math.min(100,row.curPct)+"%", background:CAT_COLOR[row.k]||T.blue, borderRadius:2 }}/>
                             </div>
                           </td>
                           <td style={{ padding:"9px 10px", textAlign:"right" }}>
-                            <input type="number" min="0" max="100" step="1" value={targetAlloc[row.k]||""}
-                              placeholder="0"
-                              onChange={e => {
-                                const newVal = Number(e.target.value)||0;
-                                const others = catKeys.filter(x=>x!==row.k).reduce((s,x)=>s+(targetAlloc[x]||0),0);
-                                const capped = Math.max(0, Math.min(newVal, 100-others));
-                                setTargetAlloc(prev => ({...prev, [row.k]: capped}));
-                              }}
-                              style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.12)", borderRadius:6, color:T.blue, fontFamily:"'DM Mono',monospace", fontSize:14, fontWeight:700, padding:"3px 8px", width:58, textAlign:"right", outline:"none" }}/>
-                            <span style={{ fontSize:12, color:T.muted, marginLeft:3 }}>%</span>
+                            {isMobile ? (
+                              /* Mobil: slider */
+                              <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:4 }}>
+                                <span style={{ fontSize:13, color:T.blue, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>{targetAlloc[row.k]||0}%</span>
+                                <input type="range" min="0" max="100" step="1"
+                                  value={targetAlloc[row.k]||0}
+                                  onChange={e => {
+                                    const newVal = Number(e.target.value)||0;
+                                    const others = catKeys.filter(x=>x!==row.k).reduce((s,x)=>s+(targetAlloc[x]||0),0);
+                                    const capped = Math.max(0, Math.min(newVal, 100-others));
+                                    setTargetAlloc(prev => ({...prev, [row.k]: capped}));
+                                  }}
+                                  style={{ width:100, height:6, borderRadius:3, background:"rgba(255,255,255,0.08)", accentColor:CAT_COLOR[row.k]||T.blue, cursor:"pointer" }} />
+                              </div>
+                            ) : (
+                              /* Desktop: číslo */
+                              <>
+                                <input type="number" min="0" max="100" step="1" value={targetAlloc[row.k]||""}
+                                  placeholder="0"
+                                  onChange={e => {
+                                    const newVal = Number(e.target.value)||0;
+                                    const others = catKeys.filter(x=>x!==row.k).reduce((s,x)=>s+(targetAlloc[x]||0),0);
+                                    const capped = Math.max(0, Math.min(newVal, 100-others));
+                                    setTargetAlloc(prev => ({...prev, [row.k]: capped}));
+                                  }}
+                                  style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.12)", borderRadius:6, color:T.blue, fontFamily:"'DM Mono',monospace", fontSize:14, fontWeight:700, padding:"3px 8px", width:58, textAlign:"right", outline:"none" }}/>
+                                <span style={{ fontSize:12, color:T.muted, marginLeft:3 }}>%</span>
+                              </>
+                            )}
                           </td>
                           <td style={{ padding:"9px 10px", textAlign:"right", fontSize:13, color:row.tgtPct===0?T.subtle:gc, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>
                             {row.tgtPct > 0 ? (row.diff >= 0 ? "+" : "") + row.diff.toFixed(1)+"%" : "—"}
                           </td>
-                          <td style={{ padding:"9px 10px", textAlign:"right" }}>
+                          {!isMobile && <td style={{ padding:"9px 10px", textAlign:"right" }}>
                             {row.tgtPct > 0 ? (
                               <div>
                                 <span style={{ fontSize:13, fontWeight:700, color: row.needed>0?T.green:row.needed<0?T.red:T.muted, fontFamily:"'DM Mono',monospace" }}>
@@ -3552,94 +3559,13 @@ ${posLines}`;
                                 <div style={{ fontSize:11, color:T.muted }}>{row.needed > 0 ? "dokoupit" : row.needed < 0 ? "prodat" : "ok"}</div>
                               </div>
                             ) : <span style={{ fontSize:12, color:T.subtle }}>—</span>}
-                          </td>
+                          </td>}
                         </tr>
                       );
                     })}
                   </tbody>
                 </table>
               </div>
-            </div>
-          );
-        })()}
-
-        {/* ── FIRE KALKULAČKA ────────────────────────────────────────────────── */}
-        {(() => {
-          const fireNum   = fireExpenses > 0 ? Math.round(fireExpenses * 12 / (fireWithdrawal / 100)) : 0;
-          const progress  = fireNum > 0 ? Math.min(100, totalValue / fireNum * 100) : 0;
-          const remaining = Math.max(0, fireNum - totalValue);
-          const annualGrowth = totalValue * (fireReturnPct / 100);
-          const annContrib   = monthlyContrib * 12;
-          // Kolik let do FI (iterativní výpočet)
-          let fireYears = null;
-          if (fireNum > 0 && totalValue < fireNum) {
-            let v = totalValue;
-            for (let y = 1; y <= 80; y++) {
-              v = v * (1 + fireReturnPct/100) + annContrib;
-              if (v >= fireNum) { fireYears = y; break; }
-            }
-          } else if (totalValue >= fireNum && fireNum > 0) {
-            fireYears = 0;
-          }
-          // Vizualizace: path to FI (milníky každých 5 let)
-          const milestones = [0.25, 0.5, 0.75, 1.0];
-          return (
-            <div style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 16, padding: 22, marginBottom: 16 }}>
-              <SectionTitle title="🔥 FIRE kalkulačka" sub="Financial Independence, Retire Early — pravidlo 4% (bezpečná míra výběru)" />
-              {/* Inputs */}
-              <div className="ib-grid2" style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12, marginBottom:20 }}>
-                {[
-                  { label:"Měs. výdaje (Kč)", val:fireExpenses, setter:setFireExpenses, key:"exp" },
-                  { label:"Očekávaný výnos (% p.a.)", val:fireReturnPct, setter:setFireReturnPct, key:"ret", step:"0.1" },
-                  { label:"Míra výběru (%)", val:fireWithdrawal, setter:setFireWithdrawal, key:"wd", step:"0.1" },
-                ].map(inp => (
-                  <div key={inp.key} style={{ background:"rgba(255,255,255,0.03)", border:"1px solid "+T.border, borderRadius:10, padding:"12px 14px" }}>
-                    <div style={{ fontSize:11, color:T.muted, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:6 }}>{inp.label}</div>
-                    <input type="number" value={inp.val} step={inp.step||"1000"} min="0"
-                      onChange={e => inp.setter(Number(e.target.value)||0)}
-                      style={{ background:"transparent", border:"none", color:"#a78bfa", fontFamily:"'DM Mono',monospace", fontSize:18, fontWeight:800, width:"100%", outline:"none" }}/>
-                  </div>
-                ))}
-              </div>
-              {/* FIRE number */}
-              {fireNum > 0 && (
-                <div>
-                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-end", marginBottom:12 }}>
-                    <div>
-                      <div style={{ fontSize:12, color:T.muted, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:4 }}>FIRE číslo (cílová hodnota portfolia)</div>
-                      <div style={{ fontSize:30, fontWeight:800, color:"#a78bfa", fontFamily:"'DM Mono',monospace" }}>{fmt(fireNum)}</div>
-                    </div>
-                    <div style={{ textAlign:"right" }}>
-                      <div style={{ fontSize:12, color:T.muted, marginBottom:2 }}>
-                        {fireYears === 0 ? "🎉 Finančně nezávislý!" : fireYears ? "Za přibližně" : "Nedosažitelné při 0 příkupu"}
-                      </div>
-                      {fireYears != null && fireYears > 0 && <div style={{ fontSize:24, fontWeight:800, color:T.green, fontFamily:"'DM Mono',monospace" }}>{fireYears} let</div>}
-                    </div>
-                  </div>
-                  {/* Progress bar */}
-                  <div style={{ marginBottom:16 }}>
-                    <div style={{ display:"flex", justifyContent:"space-between", fontSize:12, color:T.muted, marginBottom:6 }}>
-                      <span>Aktuální portfolio {fmt(totalValue)} · {progress.toFixed(1)}%</span>
-                      <span>Zbývá {fmt(remaining)}</span>
-                    </div>
-                    <div style={{ height:14, background:"rgba(167,139,250,0.1)", borderRadius:7, overflow:"hidden" }}>
-                      <div style={{ height:"100%", width:progress+"%", background:"linear-gradient(90deg,#7c3aed,#a78bfa)", borderRadius:7, transition:"width 0.4s ease" }}/>
-                    </div>
-                    {/* Milníky */}
-                    <div style={{ display:"flex", justifyContent:"space-between", marginTop:4 }}>
-                      {milestones.map(m => (
-                        <div key={m} style={{ fontSize:10, color: progress >= m*100 ? "#a78bfa" : T.subtle, fontWeight:600 }}>
-                          {(m*100).toFixed(0)}%
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                  <div style={{ fontSize:12, color:T.muted, lineHeight:1.6 }}>
-                    Při výnosech {fireReturnPct}% p.a. a příkupu {fmt(monthlyContrib)}/měs · pasivní příjem {fmt(Math.round(fireNum * (fireWithdrawal/100) / 12))}/měs při {fireWithdrawal}% výběru
-                  </div>
-                </div>
-              )}
-              {!fireNum && <div style={{ fontSize:13, color:T.muted, padding:"12px 0" }}>Zadej měsíční výdaje pro výpočet FIRE čísla.</div>}
             </div>
           );
         })()}
@@ -3733,6 +3659,87 @@ ${posLines}`;
                   </div>
                 </>
               )}
+            </div>
+          );
+        })()}
+
+        {/* ── FIRE KALKULAČKA ────────────────────────────────────────────────── */}
+        {(() => {
+          const fireNum   = fireExpenses > 0 ? Math.round(fireExpenses * 12 / (fireWithdrawal / 100)) : 0;
+          const progress  = fireNum > 0 ? Math.min(100, totalValue / fireNum * 100) : 0;
+          const remaining = Math.max(0, fireNum - totalValue);
+          const annualGrowth = totalValue * (fireReturnPct / 100);
+          const annContrib   = monthlyContrib * 12;
+          // Kolik let do FI (iterativní výpočet)
+          let fireYears = null;
+          if (fireNum > 0 && totalValue < fireNum) {
+            let v = totalValue;
+            for (let y = 1; y <= 80; y++) {
+              v = v * (1 + fireReturnPct/100) + annContrib;
+              if (v >= fireNum) { fireYears = y; break; }
+            }
+          } else if (totalValue >= fireNum && fireNum > 0) {
+            fireYears = 0;
+          }
+          // Vizualizace: path to FI (milníky každých 5 let)
+          const milestones = [0.25, 0.5, 0.75, 1.0];
+          return (
+            <div style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 16, padding: 22, marginBottom: 16 }}>
+              <SectionTitle title="🔥 FIRE kalkulačka" sub="Financial Independence, Retire Early — pravidlo 4% (bezpečná míra výběru)" />
+              {/* Inputs */}
+              <div className="ib-grid2" style={{ display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:12, marginBottom:20 }}>
+                {[
+                  { label:"Měs. výdaje (Kč)", val:fireExpenses, setter:setFireExpenses, key:"exp" },
+                  { label:"Očekávaný výnos (% p.a.)", val:fireReturnPct, setter:setFireReturnPct, key:"ret", step:"0.1" },
+                  { label:"Míra výběru (%)", val:fireWithdrawal, setter:setFireWithdrawal, key:"wd", step:"0.1" },
+                ].map(inp => (
+                  <div key={inp.key} style={{ background:"rgba(255,255,255,0.03)", border:"1px solid "+T.border, borderRadius:10, padding:"12px 14px" }}>
+                    <div style={{ fontSize:11, color:T.muted, textTransform:"uppercase", letterSpacing:"0.07em", marginBottom:6 }}>{inp.label}</div>
+                    <input type="number" value={inp.val} step={inp.step||"1000"} min="0"
+                      onChange={e => inp.setter(Number(e.target.value)||0)}
+                      style={{ background:"transparent", border:"none", color:"#a78bfa", fontFamily:"'DM Mono',monospace", fontSize:18, fontWeight:800, width:"100%", outline:"none" }}/>
+                  </div>
+                ))}
+              </div>
+              {/* FIRE number */}
+              {fireNum > 0 && (
+                <div>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-end", marginBottom:12 }}>
+                    <div>
+                      <div style={{ fontSize:12, color:T.muted, textTransform:"uppercase", letterSpacing:"0.06em", marginBottom:4 }}>FIRE číslo (cílová hodnota portfolia)</div>
+                      <div style={{ fontSize:30, fontWeight:800, color:"#a78bfa", fontFamily:"'DM Mono',monospace" }}>{fmt(fireNum)}</div>
+                    </div>
+                    <div style={{ textAlign:"right" }}>
+                      <div style={{ fontSize:12, color:T.muted, marginBottom:2 }}>
+                        {fireYears === 0 ? "🎉 Finančně nezávislý!" : fireYears ? "Za přibližně" : "Nedosažitelné při 0 příkupu"}
+                      </div>
+                      {fireYears != null && fireYears > 0 && <div style={{ fontSize:24, fontWeight:800, color:T.green, fontFamily:"'DM Mono',monospace" }}>{fireYears} let</div>}
+                    </div>
+                  </div>
+                  {/* Progress bar */}
+                  <div style={{ marginBottom:16 }}>
+                    <div style={{ display:"flex", justifyContent:"space-between", fontSize:12, color:T.muted, marginBottom:6 }}>
+                      <span>Aktuální portfolio {fmt(totalValue)} · {progress.toFixed(1)}%</span>
+                      <span>Zbývá {fmt(remaining)}</span>
+                    </div>
+                    <div style={{ height:14, background:"rgba(167,139,250,0.1)", borderRadius:7, overflow:"hidden" }}>
+                      <div style={{ height:"100%", width:progress+"%", background:"linear-gradient(90deg,#7c3aed,#a78bfa)", borderRadius:7, transition:"width 0.4s ease" }}/>
+                    </div>
+                    {/* Milníky */}
+                    <div style={{ display:"flex", justifyContent:"space-between", marginTop:4 }}>
+                      {milestones.map(m => (
+                        <div key={m} style={{ fontSize:10, color: progress >= m*100 ? "#a78bfa" : T.subtle, fontWeight:600 }}>
+                          {(m*100).toFixed(0)}%
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{ fontSize:12, color:T.muted, lineHeight:1.6 }}>
+                    Při výnosech {fireReturnPct}% p.a. a příkupu {fmt(monthlyContrib)}/měs · pasivní příjem {fmt(Math.round(fireNum * (fireWithdrawal/100) / 12))}/měs při {fireWithdrawal}% výběru
+                  </div>
+                </div>
+              )}
+              {!fireNum && <div style={{ fontSize:13, color:T.muted, padding:"12px 0" }}>Zadej měsíční výdaje pro výpočet FIRE čísla.</div>}
             </div>
           );
         })()}
@@ -3851,10 +3858,10 @@ ${posLines}`;
                 <rect x={x} y={y} width={width} height={height} fill={colorFor(gp)} stroke="#0f0f13" strokeWidth={1} rx={2} />
                 {fontSize > 0 && (<>
                   <text x={x+width/2} y={y+height/2-(showPct ? 4 : -fontSize/3)} textAnchor="middle"
-                    fill="#fff" fontFamily="'DM Sans',sans-serif" fontSize={fontSize} fontWeight={700}
+                    fill="#000" fontFamily="'DM Sans',sans-serif" fontSize={fontSize} fontWeight={700}
                     style={{ pointerEvents: "none" }}>{label}</text>
                   {showPct && <text x={x+width/2} y={y+height/2+fontSize-2} textAnchor="middle"
-                    fill="rgba(255,255,255,0.85)" fontFamily="'DM Mono',monospace" fontSize={fontSize-2}
+                    fill="rgba(0,0,0,0.7)" fontFamily="'DM Mono',monospace" fontSize={fontSize-2}
                     style={{ pointerEvents: "none" }}>{gp >= 0 ? "+" : ""}{gp.toFixed(0)}%</text>}
                 </>)}
               </g>
@@ -4368,50 +4375,6 @@ ${posLines}`;
             </div>
           );
         })()}
-
-        {/* ── ANALÝZA TRHU ─────────────────────────────────────────────────── */}
-        <div style={{ marginTop: 36, marginBottom: 24 }}>
-          <h1 style={{ fontSize: 27, fontWeight: 800, color: T.text, letterSpacing: "-0.02em" }}>Analýza trhu</h1>
-          <div style={{ fontSize: 14, color: T.muted, marginTop: 4 }}>Přehled klíčových trhů a zprávy k vašemu portfoliu</div>
-        </div>
-
-        {/* Tržní indexy */}
-        <div style={{ ...C, marginBottom: 16 }}>
-          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16 }}>
-            <SectionTitle title="Tržní indexy a ETF" sub="Data ze Stooq (Cloudflare Worker)" />
-            <button onClick={fetchMktData} disabled={marketLoading}
-              style={{ padding: "6px 14px", borderRadius: 8, border: "1px solid " + T.border, background: "transparent", color: marketLoading ? T.muted : T.blue, cursor: marketLoading ? "not-allowed" : "pointer", fontSize: 13, flexShrink: 0 }}>
-              {marketLoading ? "⏳" : "🔄"} Aktualizovat
-            </button>
-          </div>
-          <div className="ib-mkt-grid" style={{ display: "grid", gridTemplateColumns: "repeat(7, 1fr)", gap: 10 }}>
-            {MKT_SYMS.map(({ sym, label, grp }) => {
-              const d = marketData[sym];
-              const gc = d ? (d.pct >= 0 ? T.green : T.red) : T.border;
-              return (
-                <div className="ib-mkt-card" key={sym} style={{ background: T.surface, border: "1px solid " + T.border, borderRadius: 10, padding: "12px 14px", borderLeft: "3px solid " + gc }}>
-                  <div style={{ fontSize: 12, color: T.muted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 4 }}>{label}</div>
-                  {d ? (
-                    <React.Fragment>
-                      <div style={{ fontSize: 16, fontWeight: 700, color: T.text, fontFamily: "'DM Mono',monospace" }}>
-                        {d.price?.toLocaleString("cs-CZ", { maximumFractionDigits: 2 })}
-                      </div>
-                      <div style={{ fontSize: 12, color: gc, fontFamily: "'DM Mono',monospace", marginTop: 2 }}>
-                        {d.pct >= 0 ? "+" : ""}{d.pct?.toFixed(2)}%
-                        <span style={{ color: T.muted, marginLeft: 4, fontSize: 13 }}>({d.change >= 0 ? "+" : ""}{d.change?.toFixed(2)})</span>
-                      </div>
-                    </React.Fragment>
-                  ) : (
-                    <div style={{ fontSize: 13, color: T.muted, marginTop: 4 }}>{marketLoading ? "…" : "N/A"}</div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-          {Object.keys(marketData).length === 0 && !marketLoading && (
-            <div style={{ color: T.muted, fontSize: 12, marginTop: 12, textAlign: "center" }}>Data nejsou dostupná – zkuste Aktualizovat nebo zkontrolujte připojení.</div>
-          )}
-        </div>
 
         {/* ── 📋 DAŇOVÝ POHLED — Časový test ČR ──────────────────────────────── */}
         {(() => {
