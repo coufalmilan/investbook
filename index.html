@@ -659,10 +659,15 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.47";
+const APP_VERSION = "v4.48";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.48", date: "1. 6. 2026", changes: [
+    "🎨 Treemap: ČSOB fondy zobrazují zkratky ČSOB-AM / ČSOB-A / ČSOB-VOZ i bez dat ze Sheets (záloha name mappingem)",
+    "🎨 Treemap: text v buňkách tenčí (fontWeight 500→400) — lépe čitelné na barevném pozadí",
+    "🎲 Co když — slider řádky přepracovány do stejného kompaktního stylu jako Cílová alokace (tabulkový layout s Akt. % a Cíl % vedle slideru)",
+  ]},
   { version: "v4.47", date: "1. 6. 2026", changes: [
     "🎨 Graf vývoje portfolia: čára se automaticky zbarví červeně, pokud je výnos za zvolené období záporný",
     "🎨 Mapa portfolia (treemap): popisky přepnuty na černé — lepší čitelnost na světlých buňkách",
@@ -3593,26 +3598,34 @@ ${posLines}`;
               )}
               {whatIfActive && whatIfAlloc && metrics && (
                 <>
-                  <div style={{ marginBottom: 20 }}>
-                    {Object.keys(whatIfAlloc).map(k => (
-                      <div key={k} style={{ marginBottom: 14 }}>
-                        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 6 }}>
-                          <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                            <div style={{ width: 10, height: 10, borderRadius: 2, background: CAT_COLOR[k] || T.muted }} />
-                            <span style={{ fontSize: 13, color: T.text, fontWeight: 600 }}>{k}</span>
+                  {/* Slider řádky — stejný kompaktní styl jako Cílová alokace */}
+                  <div style={{ marginBottom: 16, marginTop: 8 }}>
+                    {/* Záhlaví sloupců */}
+                    <div style={{ display:"grid", gridTemplateColumns:"minmax(60px,auto) 52px 1fr 44px", gap:8, padding:"4px 0 6px", borderBottom:"1px solid "+T.border, marginBottom:4 }}>
+                      {["Kategorie","Akt. %","Hypotetické","Cíl %"].map(h => (
+                        <div key={h} style={{ fontSize:11, color:T.subtle, fontWeight:600, textTransform:"uppercase", letterSpacing:"0.07em", textAlign: h==="Kategorie"?"left":"right" }}>{h}</div>
+                      ))}
+                    </div>
+                    {Object.keys(whatIfAlloc).map(k => {
+                      const curPct = totalValue > 0 ? ((allRows.filter(p=>p.category===k).reduce((s,p)=>s+p.valueCZK,0)) / totalValue * 100) : 0;
+                      return (
+                        <div key={k} style={{ display:"grid", gridTemplateColumns:"minmax(60px,auto) 52px 1fr 44px", gap:8, alignItems:"center", padding:"6px 0", borderBottom:"1px solid rgba(255,255,255,0.03)" }}>
+                          <span style={{ fontSize:13, color:CAT_COLOR[k]||T.text, fontWeight:600 }}>{k}</span>
+                          <span style={{ fontSize:13, color:T.muted, fontFamily:"'DM Mono',monospace", textAlign:"right" }}>{curPct.toFixed(1)}%</span>
+                          <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
+                            <input type="range" min="0" max="100" step="1"
+                              value={whatIfAlloc[k] || 0}
+                              onChange={e => setWhatIfAlloc(prev => ({ ...prev, [k]: Number(e.target.value) }))}
+                              style={{ width:"100%", height:6, borderRadius:3, background:"rgba(255,255,255,0.08)", accentColor:CAT_COLOR[k]||T.blue, cursor:"pointer" }} />
                           </div>
-                          <span style={{ fontSize: 14, color: CAT_COLOR[k] || T.text, fontWeight: 700, fontFamily: "'DM Mono',monospace" }}>{whatIfAlloc[k]} %</span>
+                          <span style={{ fontSize:13, color:CAT_COLOR[k]||T.text, fontFamily:"'DM Mono',monospace", fontWeight:700, textAlign:"right" }}>{whatIfAlloc[k]}%</span>
                         </div>
-                        <input type="range" min="0" max="100" step="1"
-                          value={whatIfAlloc[k] || 0}
-                          onChange={e => setWhatIfAlloc(prev => ({ ...prev, [k]: Number(e.target.value) }))}
-                          style={{ width: "100%", height: 6, borderRadius: 3, background: "rgba(255,255,255,0.08)", accentColor: CAT_COLOR[k] || T.blue, cursor: "pointer" }} />
-                      </div>
-                    ))}
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderTop: "1px solid " + T.border, marginTop: 8 }}>
-                      <span style={{ fontSize: 13, color: T.muted }}>Celkem:</span>
-                      <span style={{ fontSize: 16, fontWeight: 700, fontFamily: "'DM Mono',monospace", color: metrics.isValid ? T.green : T.amber }}>
-                        {metrics.totalSum.toFixed(0)} %{!metrics.isValid && <span style={{ fontSize: 11, marginLeft: 6 }}>⚠ musí být 100 %</span>}
+                      );
+                    })}
+                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 0", borderTop:"1px solid "+T.border, marginTop:4 }}>
+                      <span style={{ fontSize:12, color:T.muted }}>Celkem:</span>
+                      <span style={{ fontSize:14, fontWeight:700, fontFamily:"'DM Mono',monospace", color: metrics.isValid ? T.green : T.amber }}>
+                        {metrics.totalSum.toFixed(0)} %{!metrics.isValid && <span style={{ fontSize:11, marginLeft:6 }}>⚠ musí být 100 %</span>}
                       </span>
                     </div>
                   </div>
@@ -3833,11 +3846,17 @@ ${posLines}`;
 
         {/* ── 🗺️ MAPA PORTFOLIA (Treemap) ───────────────────────────────────── */}
         {(() => {
-          const data = allRows.slice().sort((a, b) => b.valueCZK - a.valueCZK).map(p => ({
-            name: p.ticker || p.name.split("(")[0].trim(),
-            size: p.valueCZK,
-            gainPct: p.gainPctOrig || 0,
-          }));
+          // Záloha zkratek pro ČSOB fondy (i když ticker chybí po načtení z Sheets)
+          const CSOB_ABBREV = {
+            "ČSOB Akciový": "ČSOB-A",
+            "ČSOB Akciový Amerika": "ČSOB-AM",
+            "ČSOB Premium VOZ": "ČSOB-VOZ",
+          };
+          const data = allRows.slice().sort((a, b) => b.valueCZK - a.valueCZK).map(p => {
+            const baseName = p.name.split("(")[0].trim();
+            const displayName = p.ticker || CSOB_ABBREV[baseName] || baseName;
+            return { name: displayName, size: p.valueCZK, gainPct: p.gainPctOrig || 0 };
+          });
           const colorFor = (g) => g >= 50 ? "#16a34a" : g >= 20 ? "#22c55e" : g >= 5 ? "#86efac" : g >= -5 ? "#475569" : g >= -20 ? "#f87171" : g >= -50 ? "#ef4444" : "#b91c1c";
           const CustomCell = (props) => {
             const { x, y, width, height, name, gainPct, depth } = props;
@@ -3858,10 +3877,10 @@ ${posLines}`;
                 <rect x={x} y={y} width={width} height={height} fill={colorFor(gp)} stroke="#0f0f13" strokeWidth={1} rx={2} />
                 {fontSize > 0 && (<>
                   <text x={x+width/2} y={y+height/2-(showPct ? 4 : -fontSize/3)} textAnchor="middle"
-                    fill="#000" fontFamily="'DM Sans',sans-serif" fontSize={fontSize} fontWeight={700}
+                    fill="#000" fontFamily="'DM Sans',sans-serif" fontSize={fontSize} fontWeight={500}
                     style={{ pointerEvents: "none" }}>{label}</text>
                   {showPct && <text x={x+width/2} y={y+height/2+fontSize-2} textAnchor="middle"
-                    fill="rgba(0,0,0,0.7)" fontFamily="'DM Mono',monospace" fontSize={fontSize-2}
+                    fill="rgba(0,0,0,0.6)" fontFamily="'DM Mono',monospace" fontSize={fontSize-2} fontWeight={400}
                     style={{ pointerEvents: "none" }}>{gp >= 0 ? "+" : ""}{gp.toFixed(0)}%</text>}
                 </>)}
               </g>
