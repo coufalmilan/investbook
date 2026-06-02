@@ -759,10 +759,13 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.49";
+const APP_VERSION = "v4.50";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.50", date: "2. 6. 2026", changes: [
+    "🐛 Oprava: po importu CSV se nyní automaticky načtou aktuální ceny ze Sheets — pozice ukazují správné hodnoty a výnos místo ‚+0 Kč'",
+  ]},
   { version: "v4.49", date: "2. 6. 2026", changes: [
     "🤖 Sjednocený AI Report — místo dvou karet (Analýza + Hodnocení rizikovosti) je teď jeden přehledný ‚AI Report portfolia'",
     "✨ Report má 6 sekcí: Celkové hodnocení, Akce na měsíc, Rizikové hodnocení (interaktivní tabulka), Top 3 výnos, Bottom 3 výnos, Strategie 12m",
@@ -6112,8 +6115,30 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
                         };
                       });
                       setImportedRows(newPos);
-                      setGsMsg("✓ CSV načteno — " + newPos.length + " pozic. Ulož do Sheets.");
-                      setTimeout(() => setGsMsg(""), 5000);
+                      setGsMsg("✓ CSV načteno — " + newPos.length + " pozic. Načítám ceny…");
+                      // Po importu CSV okamžitě načíst aktuální ceny ze Sheets a aplikovat je
+                      withAuthPromise(loadFromSheets).then(data => {
+                        if (data && data.prices) {
+                          setImportedRows(prev => prev.map(p => {
+                            if (p.priceCZK && p.priceCZK > 0) return p;
+                            const t = p.ticker || "";
+                            const tClean = t.replace(/[*]/g, "");
+                            const tBase  = tClean.replace(/-(USD|EUR|GBP|L)$/i, "");
+                            const candidates = [t, tClean, tBase, t.toUpperCase(), tClean.toUpperCase(), tBase.toUpperCase(),
+                                               tBase + "-USD", tBase + "-EUR"];
+                            let priceCZK = null;
+                            for (const c of candidates) { if (data.prices[c] > 0) { priceCZK = data.prices[c]; break; } }
+                            return priceCZK ? { ...p, priceCZK } : p;
+                          }));
+                          setGsMsg("✓ CSV načteno — " + newPos.length + " pozic · ceny aktualizovány. Ulož do Sheets.");
+                        } else {
+                          setGsMsg("✓ CSV načteno — " + newPos.length + " pozic. Ulož do Sheets.");
+                        }
+                        setTimeout(() => setGsMsg(""), 5000);
+                      }).catch(() => {
+                        setGsMsg("✓ CSV načteno — " + newPos.length + " pozic. Ulož do Sheets.");
+                        setTimeout(() => setGsMsg(""), 5000);
+                      });
                     } catch(err) { setGsMsg("✗ Chyba při čtení CSV: " + err.message); }
                   };
                   reader.readAsText(file, 'utf-8');
