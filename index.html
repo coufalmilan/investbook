@@ -773,10 +773,13 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.54";
+const APP_VERSION = "v4.55";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.55", date: "2. 6. 2026", changes: [
+    "🐛 ‚vč. hotovosti' v kartě Hodnota majetku má teď ikonku ⚙️ pro otevření Nastavení",
+  ]},
   { version: "v4.54", date: "2. 6. 2026", changes: [
     "⚙️ Hypotéka v kartě Čistý majetek je nyní read-only s ikonou ⚙️ pro otevření Nastavení",
     "↕️ Analýza: tabulka ‚Výkonnost podle brokera' má klikatelné záhlaví — řazení dle Brokera, Hodnoty, Výnosu %, Pozic a Top/Nejhorší",
@@ -2702,7 +2705,8 @@ ${posLines}`;
                 color={ytdCardColor} accent={ytdCardColor}
                 sub={ytdCardAbs != null ? (ytdCardAbs >= 0 ? "+" : "") + fmt(ytdCardAbs) : "data chybí"}
                 subTitle={dispCurrency !== "CZK" ? "FX-korektní: baseline přepočten leden. kurzem" : "vč. pohybu kurzu USD→CZK"} />
-              <StatCard label={isFiltered ? "Hodnota " + cat.label : "Hodnota majetku"} value={isFiltered ? fmt(fValue) : fmt(hodnotaMajetku)} color={T.text} accent={T.blue} sub={!isFiltered && zustatek > 0 ? "vč. hotovosti " + fmt(zustatek) : null} />
+              <StatCard label={isFiltered ? "Hodnota " + cat.label : "Hodnota majetku"} value={isFiltered ? fmt(fValue) : fmt(hodnotaMajetku)} color={T.text} accent={T.blue}
+                sub={!isFiltered && zustatek > 0 ? <span style={{ display:"flex", alignItems:"center", gap:5 }}>vč. hotovosti {fmt(zustatek)} <button onClick={() => setShowSettings(true)} title="Upravit v Nastavení" style={{ background:"none", border:"none", cursor:"pointer", fontSize:12, color:T.subtle, padding:0, lineHeight:1 }}>⚙️</button></span> : null} />
               {/* Čistý majetek – s editovatelnou hypotékou přímo v kartě */}
               <div className="ib-statcard" style={{ background:T.card, border:"1px solid "+T.border, borderRadius:14, padding:"18px 20px", position:"relative", overflow:"hidden" }}>
                 <div style={{ position:"absolute", top:0, left:0, right:0, height:2, background:T.amber, borderRadius:"14px 14px 0 0" }}/>
