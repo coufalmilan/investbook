@@ -400,8 +400,33 @@ function renderMD(text) {
   return html;
 }
 
-
-
+// ── parseFullReport — rozdělí markdown na části + risk tabulku ───────────────
+function parseFullReport(markdown) {
+  if (!markdown) return { before: "", tableRows: [], after: "" };
+  const startMarker = "<!-- RISK_TABLE_START -->";
+  const endMarker   = "<!-- RISK_TABLE_END -->";
+  const startIdx = markdown.indexOf(startMarker);
+  const endIdx   = markdown.indexOf(endMarker);
+  if (startIdx === -1 || endIdx === -1 || startIdx >= endIdx) {
+    return { before: markdown, tableRows: [], after: "" };
+  }
+  const before    = markdown.slice(0, startIdx);
+  const tableText = markdown.slice(startIdx + startMarker.length, endIdx);
+  const after     = markdown.slice(endIdx + endMarker.length);
+  const lines = tableText.split("\n").map(l => l.trim()).filter(l => l.startsWith("|") && l.endsWith("|"));
+  if (lines.length < 2) {
+    return { before: markdown.replace(startMarker,"").replace(endMarker,""), tableRows: [], after: "" };
+  }
+  const headerCells = lines[0].split("|").map(c => c.trim()).filter(Boolean);
+  const dataLines   = lines.slice(2); // přeskočit header + separator
+  const tableRows   = dataLines.map(line => {
+    const cells = line.split("|").map(c => c.trim()).filter((_, i, arr) => i > 0 && i < arr.length - 1);
+    const row = {};
+    headerCells.forEach((h, i) => { row[h] = cells[i] || ""; });
+    return row;
+  }).filter(r => Object.values(r).some(v => v));
+  return { before, tableRows, after, headers: headerCells };
+}
 
 // ─── PORTFOLIO HISTORY ────────────────────────────────────────────────────────
 // v = celkem, fond = Fondy+ETF, akcie = Akcie, crypto = Crypto
@@ -606,6 +631,81 @@ function PositionLogo({ ticker, name, size = 22 }) {
     />
   );
 }
+// ── RiskTable — interaktivní tabulka z parseFullReport ──────────────────────
+function RiskTable({ rows, headers, allRows }) {
+  const [expandedIdx, setExpandedIdx] = React.useState(null);
+  if (!rows || rows.length === 0) return null;
+  const T2 = window._T || {};
+  const green  = "#22c55e", red = "#ef4444", amber = "#fbbf24", muted = "#64748b", subtle = "#475569", text = "#e2e8f0", border = "rgba(255,255,255,0.08)", card = "#1a1a2e";
+  const riskColor = (r) => { const v = (r||"").toLowerCase(); return v.includes("nízk") ? green : v.includes("vysok") ? red : amber; };
+  const recColor  = (r) => { const v = (r||"").toLowerCase(); if (v.includes("přikoup")) return green; if (v.includes("prodat")||v.includes("snížit")) return red; if (v.includes("vyčkat")) return subtle; return amber; };
+  const trendColor= (t) => (t||"").includes("↑") ? green : (t||"").includes("↓") ? red : muted;
+  const findPos   = (ticker) => (allRows||[]).find(p => (p.ticker||p.name.split("(")[0].trim()).toUpperCase() === (ticker||"").toUpperCase());
+  const gridCols  = "minmax(80px,1.2fr) 72px 52px 44px minmax(110px,1.3fr) minmax(110px,1.3fr) 28px";
+  return (
+    <div className="ib-risk-table" style={{ marginTop: 16, marginBottom: 16, background: "rgba(255,255,255,0.02)", border: "1px solid " + border, borderRadius: 12, overflow: "hidden" }}>
+      <div style={{ overflowX: "auto", WebkitOverflowScrolling: "touch" }}>
+        <div style={{ fontSize: 12, color: muted, padding: "10px 14px", borderBottom: "1px solid " + border }}>
+          Klikni na řádek pro detail · {rows.length} pozic
+        </div>
+        {/* Záhlaví */}
+        <div className="ib-risk-table-row" style={{ display:"grid", gridTemplateColumns: gridCols, gap:8, padding:"8px 14px", borderBottom:"1px solid "+border, fontSize:11, fontWeight:600, color:subtle, textTransform:"uppercase", letterSpacing:"0.06em" }}>
+          <div>Ticker</div>
+          <div>Riziko</div>
+          <div className="ib-risk-pe" style={{ textAlign:"right" }}>P/E</div>
+          <div style={{ textAlign:"center" }}>Trend</div>
+          <div className="ib-risk-rec">Doporučení</div>
+          <div className="ib-risk-factor">Hlavní faktor</div>
+          <div></div>
+        </div>
+        {/* Řádky */}
+        {rows.map((row, i) => {
+          const isExp = expandedIdx === i;
+          const pos   = findPos(row["Ticker"]);
+          const rc    = riskColor(row["Riziko"]);
+          const recC  = recColor(row["Doporučení"]);
+          const tc    = trendColor(row["Trend"]);
+          return (
+            <React.Fragment key={i}>
+              <div className="ib-risk-table-row" onClick={() => setExpandedIdx(isExp ? null : i)}
+                style={{ display:"grid", gridTemplateColumns: gridCols, gap:8, padding:"10px 14px", cursor:"pointer",
+                  background: isExp ? "rgba(99,102,241,0.06)" : (i%2===0 ? "rgba(255,255,255,0.01)" : "transparent"),
+                  borderBottom: isExp ? "none" : "1px solid rgba(255,255,255,0.03)", alignItems:"center", transition:"background 0.1s" }}>
+                <div style={{ display:"flex", alignItems:"center", gap:6, minWidth:0 }}>
+                  {pos && <PositionLogo ticker={pos.ticker} name={pos.name} size={20} />}
+                  <span style={{ fontSize:13, fontWeight:700, color:text, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }}>{row["Ticker"]}</span>
+                </div>
+                <div>
+                  <span style={{ fontSize:11, fontWeight:700, color:rc, background:rc+"18", border:"1px solid "+rc+"40", borderRadius:4, padding:"2px 7px", whiteSpace:"nowrap" }}>{row["Riziko"]}</span>
+                </div>
+                <div className="ib-risk-pe" style={{ fontSize:12, color:muted, fontFamily:"'DM Mono',monospace", textAlign:"right" }}>{row["P/E"]}</div>
+                <div style={{ fontSize:16, color:tc, textAlign:"center", fontWeight:700 }}>{row["Trend"]}</div>
+                <div className="ib-risk-rec">
+                  <span style={{ fontSize:11, fontWeight:700, color:recC, background:recC+"18", border:"1px solid "+recC+"40", borderRadius:4, padding:"2px 7px", whiteSpace:"nowrap", overflow:"hidden", textOverflow:"ellipsis", display:"inline-block", maxWidth:"100%" }}>{row["Doporučení"]}</span>
+                </div>
+                <div className="ib-risk-factor" style={{ fontSize:12, color:muted, overflow:"hidden", textOverflow:"ellipsis", whiteSpace:"nowrap" }} title={row["Hlavní faktor"]}>{row["Hlavní faktor"]}</div>
+                <div style={{ fontSize:13, color:subtle, textAlign:"center" }}>{isExp ? "▴" : "▾"}</div>
+              </div>
+              {isExp && (
+                <div style={{ padding:"12px 16px 14px", background:"rgba(99,102,241,0.04)", borderBottom:"1px solid rgba(255,255,255,0.03)" }}>
+                  <div style={{ display:"flex", flexWrap:"wrap", gap:8, marginBottom:10 }}>
+                    <span style={{ fontSize:12, fontWeight:700, color:rc, background:rc+"18", border:"1px solid "+rc+"40", borderRadius:5, padding:"2px 10px" }}>{row["Riziko"]}</span>
+                    <span style={{ fontSize:12, fontWeight:700, color:recC, background:recC+"18", border:"1px solid "+recC+"40", borderRadius:5, padding:"2px 10px" }}>{row["Doporučení"]}</span>
+                    {row["P/E"] && row["P/E"] !== "N/A" && <span style={{ fontSize:12, color:muted, fontFamily:"'DM Mono',monospace" }}>P/E {row["P/E"]}</span>}
+                    {row["Hlavní faktor"] && <span style={{ fontSize:12, color:muted }}>⚑ {row["Hlavní faktor"]}</span>}
+                  </div>
+                  <div style={{ fontSize:11, color:subtle, textTransform:"uppercase", letterSpacing:"0.07em", fontWeight:700, marginBottom:5 }}>Komentář</div>
+                  <div style={{ fontSize:13, color:text, lineHeight:1.65 }}>{row["Komentář"] || "—"}</div>
+                </div>
+              )}
+            </React.Fragment>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
 const ETORO_FX  = 20.57; // USD→CZK (aktuální kurz; leden 2026 byl ~23.50)
 const GBP_FX = 25.80; // GBP→CZK approximate
 const JAN_2026_USDCZK = 23.50; // USD/CZK kurz přibližně k 1.1.2026 (pro YTD porovnání)
@@ -659,10 +759,18 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.48";
+const APP_VERSION = "v4.49";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.49", date: "2. 6. 2026", changes: [
+    "🤖 Sjednocený AI Report — místo dvou karet (Analýza + Hodnocení rizikovosti) je teď jeden přehledný ‚AI Report portfolia'",
+    "✨ Report má 6 sekcí: Celkové hodnocení, Akce na měsíc, Rizikové hodnocení (interaktivní tabulka), Top 3 výnos, Bottom 3 výnos, Strategie 12m",
+    "✨ Risk tabulka je klikací — klik na řádek rozbalí detailní komentář k pozici (fialový highlight)",
+    "📱 Na mobilu risk tabulka skrývá P/E a Hlavní faktor — obojí viditelné v expanded view",
+    "♻️ Měsíční report a Pokročilé (Chat) zůstávají beze změny",
+    "🗑️ Vyčištění starých AI cache klíčů (ib_ai_analysis, ib_ai_risk) při načtení",
+  ]},
   { version: "v4.48", date: "1. 6. 2026", changes: [
     "🎨 Treemap: ČSOB fondy zobrazují zkratky ČSOB-AM / ČSOB-A / ČSOB-VOZ i bez dat ze Sheets (záloha name mappingem)",
     "🎨 Treemap: text v buňkách tenčí (fontWeight 500→400) — lépe čitelné na barevném pozadí",
@@ -1449,6 +1557,15 @@ function InvestBook() {
   });
   const [aiAnalysisLoading, setAiAnalysisLoading] = useState(false);
 
+  // ── Sjednocený AI Report (Vlna 8) ────────────────────────────────────────
+  const [fullReport, setFullReport] = useState(() => {
+    try { const c = JSON.parse(localStorage.getItem("ib_ai_full_report") || "null"); return c?.date === new Date().toISOString().slice(0,10) ? c.text : ""; } catch { return ""; }
+  });
+  const [fullReportDate, setFullReportDate] = useState(() => {
+    try { return JSON.parse(localStorage.getItem("ib_ai_full_report") || "null")?.date || null; } catch { return null; }
+  });
+  const [fullReportLoading, setFullReportLoading] = useState(false);
+
   // Měsíční AI report
   const [monthlyReport,        setMonthlyReport]        = useState(() => {
     try { const c = JSON.parse(localStorage.getItem("ib_monthly_report") || "null"); return c?.month === currentMonthKey() ? c.text : ""; } catch { return ""; }
@@ -1741,7 +1858,91 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
     } finally { setAiAnalysisLoading(false); }
   }, [geminiKey, workerUrl, geminiModel, allRows]);
 
-  // ── assessRisk – vyhodnocení rizikovosti, volatelné odkudkoli ────────────
+  // ── generateFullReport — sjednocený AI Report (Vlna 8) ──────────────────
+  const generateFullReport = useCallback(async () => {
+    if (!geminiKey && !workerUrl) return;
+    if (allRows.length === 0) return;
+    setFullReportLoading(true);
+    setFullReport("");
+    const totalVal = allRows.reduce((s, p) => s + p.valueCZK, 0);
+    const totalInv = allRows.reduce((s, p) => s + p.investedCZK, 0);
+    const totalGain = totalVal - totalInv;
+    const gainPct = totalInv > 0 ? ((totalGain / totalInv) * 100).toFixed(2) : "0";
+    const sorted = allRows.slice().sort((a, b) => b.valueCZK - a.valueCZK);
+    const posLines = sorted.map(p => {
+      const konc = totalVal > 0 ? ((p.valueCZK / totalVal) * 100).toFixed(1) : "0";
+      const yrs  = Math.max(1, NOW_YEAR - (p.start || NOW_YEAR));
+      const gp   = p.gainPctOrig != null ? p.gainPctOrig.toFixed(1) : "?";
+      return `${p.ticker || p.name.split("(")[0].trim()} | kat: ${p.category} | hodnota: ${Math.round(p.valueCZK)} CZK | konc: ${konc}% | výnos: ${gp}% | roky: ${yrs}`;
+    }).join("\n");
+    const prompt = `Jsi zkušený portfolio analytik s 15 lety praxe. Vygeneruj přehledný report mého investičního portfolia v ČEŠTINĚ a v MARKDOWN formátu.
+
+KONTEXT:
+- Celková hodnota: ${fmtCZK(totalVal)}
+- Investováno: ${fmtCZK(totalInv)}
+- Zisk: ${fmtCZK(totalGain)} (${gainPct}%)
+- Počet pozic: ${allRows.length}
+
+POZICE:
+${posLines}
+
+VYGENERUJ REPORT V TOMTO PŘESNÉM FORMÁTU:
+
+## 📊 Celkové hodnocení
+[2-3 věty: diverzifikace, silné/slabé stránky, kontext aktuálního trhu]
+
+## 🎯 Akce na příští měsíc
+[3-5 očíslovaných konkrétních akcí, každá s tučným tickerem/akcí a důvodem]
+
+## ⚠️ Rizikové hodnocení per pozice
+
+<!-- RISK_TABLE_START -->
+| Ticker | Riziko | P/E | Trend | Doporučení | Hlavní faktor | Komentář |
+|---|---|---|---|---|---|---|
+| TICKER1 | Nízké/Střední/Vysoké | 28.5 nebo N/A | ↑/→/↓ | Držet 12m / Přikoupit DCA / Snížit 30%/6m / Prodat ASAP / Vyčkat | max 6 slov | 2 věty s konkrétním komentářem |
+<!-- RISK_TABLE_END -->
+
+DŮLEŽITÉ pro tabulku:
+- Každá pozice na samostatném řádku
+- VŽDY 7 sloupců oddělených |
+- Riziko: Nízké/Střední/Vysoké
+- P/E: číslo (28.5) pro akcie, N/A pro ETF/Crypto/Fond
+- Trend: ↑ rostoucí, → neutrální, ↓ klesající
+- Doporučení: konkrétní akce s časovým horizontem
+- Hlavní faktor: max 6 slov
+- Komentář: 2 věty, max 40 slov, konkrétní, neopakovat hlavní faktor
+
+## 🏆 Top 3 výnos
+[odrážky se 3 pozicemi: **TICKER (+XX%)** — krátký komentář]
+
+## 📉 Bottom 3 výnos
+[odrážky se 3 pozicemi: **TICKER (-XX%)** — krátký komentář s doporučením]
+
+## 🛡️ Strategie na 12 měsíců
+[1-2 odstavce strategického výhledu]
+
+DŮLEŽITÉ obecně:
+- Buď upřímný, neboj se uvést negativa
+- Pro koncentrované pozice (>10% portfolia) buď zvlášť opatrný
+- Pro pozice s velkou ztrátou (<-30%) zvaž "Snížit" nebo "Prodat"`;
+    try {
+      const txt = await callGemini(
+        geminiKey,
+        "Jsi zkušený portfolio analytik. Odpovídej v češtině, strukturovaně markdown s nadpisy ## a tučnými klíčovými pojmy.",
+        [{ role: "user", content: prompt }],
+        geminiModel,
+        workerUrl
+      );
+      setFullReport(txt);
+      const today = new Date().toISOString().slice(0,10);
+      setFullReportDate(today);
+      try { localStorage.setItem("ib_ai_full_report", JSON.stringify({ date: today, text: txt })); } catch(e) {}
+    } catch(e) {
+      setFullReport(`❌ Chyba: ${e.message}`);
+    } finally { setFullReportLoading(false); }
+  }, [geminiKey, workerUrl, geminiModel, allRows]);
+
+  // ── generateMonthlyReport ─────────────────────────────────────────────────
   const generateMonthlyReport = useCallback(async () => {
     if (!geminiKey && !workerUrl) return;
     if (allRows.length === 0) return;
@@ -1849,27 +2050,21 @@ ${posLines}`;
     } finally { setRiskLoading(false); }
   }, [geminiKey, workerUrl, geminiModel, allRows]);
 
-  // Auto-spustit analýzu portfolia jednou denně (cache check — volá Gemini jen pokud není dnešní cache)
-  const analysisAutoRunDone = useRef(false);
+  // Auto-spustit sjednocený AI Report jednou denně (nahrazuje analyzePortfolio + assessRisk auto-runs)
+  const fullReportAutoRunDone = useRef(false);
   useEffect(() => {
-    if (analysisAutoRunDone.current) return;
+    if (fullReportAutoRunDone.current) return;
     if (!(geminiKey || workerUrl) || allRows.length === 0) return;
     const today = new Date().toISOString().slice(0,10);
-    if (aiAnalysisDate === today && aiAnalysis) { analysisAutoRunDone.current = true; return; }
-    analysisAutoRunDone.current = true;
-    analyzePortfolio();
-  }, [geminiKey, workerUrl, allRows.length, aiAnalysisDate, aiAnalysis, analyzePortfolio]);
+    if (fullReportDate === today && fullReport) { fullReportAutoRunDone.current = true; return; }
+    fullReportAutoRunDone.current = true;
+    generateFullReport();
+  }, [geminiKey, workerUrl, allRows.length, fullReportDate, fullReport, generateFullReport]);
 
-  // Auto-spustit hodnocení rizikovosti (cache check — volá Gemini jen pokud není dnešní cache)
-  const riskAutoRunDone = useRef(false);
+  // Cleanup starých AI cache klíčů (Vlna 8)
   useEffect(() => {
-    if (riskAutoRunDone.current) return;
-    if (!((geminiKey || workerUrl) && allRows.length > 0)) return;
-    riskAutoRunDone.current = true;
-    const today = new Date().toISOString().slice(0,10);
-    if (riskResultDate === today && riskResult) return;
-    assessRisk();
-  }, [geminiKey, workerUrl, allRows.length, riskResultDate, riskResult, assessRisk]);
+    try { localStorage.removeItem("ib_ai_analysis"); localStorage.removeItem("ib_ai_risk"); } catch(e) {}
+  }, []);
 
   // Auto-spustit měsíční report v prvních 7 dnech nového měsíce
   const monthlyReportAutoRunDone = useRef(false);
@@ -4919,41 +5114,62 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
           </div>
         ) : (<>
 
-          {/* ── Analýza portfolia ────────────────────────────────────────── */}
+          {/* ── 🤖 AI Report portfolia (sjednocený — Vlna 8) ────────────── */}
           <div style={{ ...C, marginBottom: 16 }}>
-            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-              <div style={{ fontSize: 12, color: T.muted }}>
-                Gemini analyzuje všech <strong style={{ color: T.text }}>{allRows.length}</strong> pozic
-                {aiAnalysisDate && <span style={{ marginLeft: 8, color: T.subtle }}>· poslední z {new Date(aiAnalysisDate).toLocaleDateString("cs-CZ")}</span>}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 14 }}>
+              <div>
+                <div style={{ fontSize: 15, fontWeight: 700, color: T.text }}>🤖 AI Report portfolia</div>
+                <div style={{ fontSize: 12, color: T.muted, marginTop: 3 }}>
+                  Hodnocení, doporučení a rizika všech {allRows.length} pozic v jednom přehledu
+                  {fullReportDate && <span style={{ marginLeft: 8, color: T.subtle }}>· poslední z {new Date(fullReportDate).toLocaleDateString("cs-CZ")}</span>}
+                </div>
               </div>
-              <button onClick={analyzePortfolio} disabled={aiAnalysisLoading}
-                className="ib-tertiary-btn"
-                style={{ padding: "8px 18px", borderRadius: 8, border: "none",
-                  background: aiAnalysisLoading ? "rgba(99,102,241,0.3)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
-                  color: "#fff", cursor: aiAnalysisLoading ? "not-allowed" : "pointer",
-                  fontSize: 13, fontWeight: 700, display: "flex", alignItems: "center", gap: 6, whiteSpace: "nowrap" }}>
-                {aiAnalysisLoading
-                  ? <><span style={{ animation: "pulse 1s infinite", display: "inline-block" }}>⏳</span> Analyzuji…</>
-                  : (aiAnalysis ? "🔄 Aktualizovat" : "🔍 Analyzovat portfolio")}
-              </button>
+              <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                {fullReport && (
+                  <button onClick={() => window.print()} className="ib-tertiary-btn"
+                    style={{ background: "rgba(255,255,255,0.06)", border: "1px solid " + T.border, color: T.muted, borderRadius: 8, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}
+                    title="Vytisknout / Uložit jako PDF">
+                    📄 PDF
+                  </button>
+                )}
+                <button onClick={generateFullReport} disabled={fullReportLoading} className="ib-tertiary-btn"
+                  style={{ padding: "8px 18px", borderRadius: 8, border: "none",
+                    background: fullReportLoading ? "rgba(99,102,241,0.3)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
+                    color: "#fff", cursor: fullReportLoading ? "not-allowed" : "pointer",
+                    fontSize: 13, fontWeight: 700, whiteSpace: "nowrap" }}>
+                  {fullReportLoading
+                    ? <><span style={{ animation: "pulse 1s infinite", display: "inline-block" }}>⏳</span> Generuji…</>
+                    : (fullReport ? "🔄 Aktualizovat" : "🔍 Vygenerovat report")}
+                </button>
+              </div>
             </div>
-            {!aiAnalysis && !aiAnalysisLoading && (
-              <div style={{ color: T.subtle, fontSize: 13, textAlign: "center", padding: "32px 0" }}>
-                Klikni <strong style={{ color: T.text }}>Analyzovat portfolio</strong> — Gemini doporučí co koupit, prodat nebo držet.
+            {!fullReport && !fullReportLoading && (
+              <div style={{ color: T.subtle, fontSize: 13, textAlign: "center", padding: "40px 0" }}>
+                Klikni <strong style={{ color: T.text }}>Vygenerovat report</strong> — Gemini sepíše kompletní analýzu portfolia s konkrétními doporučeními a per-pozice rizikem.
               </div>
             )}
-            {aiAnalysisLoading && (
-              <div style={{ color: T.muted, fontSize: 13, padding: "28px 0", textAlign: "center" }}>
-                <span style={{ animation: "pulse 1s infinite", display: "inline-block", marginRight: 8 }}>🤖</span>Gemini analyzuje tvoje portfolio…
+            {fullReportLoading && (
+              <div style={{ color: T.muted, fontSize: 13, padding: "32px 0", textAlign: "center" }}>
+                <span style={{ animation: "pulse 1s infinite", display: "inline-block", marginRight: 8 }}>🤖</span>
+                Gemini analyzuje tvoje portfolio…
               </div>
             )}
-            {aiAnalysis && (
-              <div style={{ fontSize: 15, lineHeight: 1.7 }} dangerouslySetInnerHTML={{ __html: renderMD(aiAnalysis) }} />
-            )}
+            {fullReport && !fullReportLoading && (() => {
+              const parsed = parseFullReport(fullReport);
+              return (
+                <div style={{ fontSize: 14, lineHeight: 1.7 }}>
+                  <div dangerouslySetInnerHTML={{ __html: renderMD(parsed.before) }} />
+                  {parsed.tableRows.length > 0 && (
+                    <RiskTable rows={parsed.tableRows} headers={parsed.headers} allRows={allRows} />
+                  )}
+                  <div dangerouslySetInnerHTML={{ __html: renderMD(parsed.after) }} />
+                </div>
+              );
+            })()}
           </div>
 
-          {/* ── HODNOCENÍ RIZIKOVOSTI ───────────────────────────────────────────── */}
-          {(() => {
+          {/* HODNOCENÍ RIZIKOVOSTI odstraněno — nahrazeno AI Reportem portfolia (Vlna 8) */}
+          {false && (() => {
           const getRiskColor = (s) => {
             const low = (s||"").toLowerCase();
             if (low.includes("nízk")) return T.green;
@@ -5483,6 +5699,10 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
 
           /* Karty */
           .ib-card { border-radius: 10px !important; padding: 14px 14px !important; }
+
+          /* Risk tabulka — mobil: skryj P/E, Doporučení, Hlavní faktor (viditelné v expanded) */
+          .ib-risk-table-row { grid-template-columns: 1fr auto auto 24px !important; }
+          .ib-risk-pe, .ib-risk-rec, .ib-risk-factor { display: none !important; }
 
           /* Penzijko */
           .ib-pension-kpi     { grid-template-columns: 1fr 1fr !important; }
