@@ -178,6 +178,13 @@ async function saveToSheets(manual, imported, settings, pension) {
   if (entries.length) await sheetsSet("pension_entries!A1", [PENSION_ENTRY_HDR, ...entries]);
 }
 
+// Uloží jen settings sheet — bez pozic (rychlejší, vhodné pro auto-sync nastavení)
+async function saveSettingsOnly(settings) {
+  await ensureSheets();
+  await clearSheet("settings");
+  await sheetsSet("settings!A1", [["key","value"], ...Object.entries(settings).map(([k,v])=>[k,v])]);
+}
+
 async function ensurePricesHeader() {
   // Ensure prices sheet has header row A1:C1 with formula column
   try {
@@ -759,10 +766,18 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.50";
+const APP_VERSION = "v4.51";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.51", date: "2. 6. 2026", changes: [
+    "🐛 Graf vývoje portfolia: barva čáry (zelená/červená) se teď správně mění při přepnutí filtru Vše/Fondy/Akcie/Crypto",
+    "🎨 Graf vývoje portfolia: XAxis zobrazuje tick pro každý měsíc v datech",
+    "🎨 Broker karty přesunuty nad tabulku Pozice portfolia",
+    "📱 Celková hodnota portfolia na mobilu zvětšena (40px místo 26px)",
+    "☁️ Nastavení (Cílová alokace, Co když, FIRE, Predikce) se teď ukládají do Google Sheets — synchronizace napříč zařízeními",
+    "⚡ Auto-save nastavení do Sheets po 5 sekundách nečinnosti (jen settings sheet, bez pozic)",
+  ]},
   { version: "v4.50", date: "2. 6. 2026", changes: [
     "🐛 Oprava: po importu CSV se nyní automaticky načtou aktuální ceny ze Sheets — pozice ukazují správné hodnoty a výnos místo ‚+0 Kč'",
   ]},
@@ -1787,6 +1802,31 @@ function InvestBook() {
   React.useEffect(() => { localStorage.setItem("ib_fire_wd",  String(fireWithdrawal)); }, [fireWithdrawal]);
   React.useEffect(() => { localStorage.setItem("ib_gemini_model", geminiModel); }, [geminiModel]);
 
+  // Auto-save nastavení do Sheets se debounce 5s — synchronizace napříč zařízeními
+  // Ukládá jen settings sheet (ne pozice) → rychlé a bezpečné
+  const settingsAutoSaveTimer = React.useRef(null);
+  const settingsAutoSaveInit = React.useRef(false);
+  React.useEffect(() => {
+    if (!settingsAutoSaveInit.current) { settingsAutoSaveInit.current = true; return; } // přeskočit první render
+    if (!gapiInited || !gisInited) return;
+    clearTimeout(settingsAutoSaveTimer.current);
+    settingsAutoSaveTimer.current = setTimeout(() => {
+      withAuthPromise(() => saveSettingsOnly({
+        monthlyContrib: String(monthlyContrib),
+        hypoteka: String(hypoteka),
+        zustatek: String(zustatek),
+        targetAlloc: JSON.stringify(targetAlloc),
+        whatIfAlloc: whatIfAlloc ? JSON.stringify(whatIfAlloc) : "",
+        fireExpenses: String(fireExpenses),
+        fireReturnPct: String(fireReturnPct),
+        fireWithdrawal: String(fireWithdrawal),
+        customRate10: String(customRate10),
+        projYears: String(projYears),
+      })).catch(() => {}); // silent fail
+    }, 5000);
+    return () => clearTimeout(settingsAutoSaveTimer.current);
+  }, [targetAlloc, whatIfAlloc, fireExpenses, fireReturnPct, fireWithdrawal, customRate10, projYears, monthlyContrib, hypoteka, zustatek]);
+
   // Auto-dismiss banneru po 8 sekundách
   useEffect(() => {
     if (!lastOpenInfo.prevTimestamp || bannerDismissed) return;
@@ -2350,6 +2390,14 @@ ${posLines}`;
       if (data.settings.monthlyContrib) setMonthlyContrib(parseFloat(data.settings.monthlyContrib));
       if (data.settings.hypoteka) setHypoteka(parseFloat(data.settings.hypoteka));
       if (data.settings.zustatek) setZustatek(parseFloat(data.settings.zustatek));
+      // Nastavení synchronizovaná přes Sheets (od v4.51)
+      if (data.settings.targetAlloc) { try { setTargetAlloc(JSON.parse(data.settings.targetAlloc)); } catch(e) {} }
+      if (data.settings.whatIfAlloc) { try { setWhatIfAlloc(JSON.parse(data.settings.whatIfAlloc)); } catch(e) {} }
+      if (data.settings.fireExpenses) setFireExpenses(parseFloat(data.settings.fireExpenses));
+      if (data.settings.fireReturnPct) setFireReturnPct(parseFloat(data.settings.fireReturnPct));
+      if (data.settings.fireWithdrawal) setFireWithdrawal(parseFloat(data.settings.fireWithdrawal));
+      if (data.settings.customRate10) setCustomRate10(parseFloat(data.settings.customRate10));
+      if (data.settings.projYears) { const n = parseInt(data.settings.projYears); if (n > 0 && n <= 50) setProjYears(n); }
     }
     if (data.pension && data.pension.length) setPensionAccounts(data.pension);
   };
@@ -2404,6 +2452,14 @@ ${posLines}`;
         monthlyContrib: String(monthlyContrib),
         hypoteka: String(hypoteka),
         zustatek: String(zustatek),
+        // Nastavení synchronizovaná přes Sheets (od v4.51)
+        targetAlloc: JSON.stringify(targetAlloc),
+        whatIfAlloc: whatIfAlloc ? JSON.stringify(whatIfAlloc) : "",
+        fireExpenses: String(fireExpenses),
+        fireReturnPct: String(fireReturnPct),
+        fireWithdrawal: String(fireWithdrawal),
+        customRate10: String(customRate10),
+        projYears: String(projYears),
       }, pensionAccounts));
       setGsStatus("saved");
       setGsMsg("✓ Uloženo do Sheets");
@@ -2982,23 +3038,27 @@ ${posLines}`;
                   const _startV = histData.length >= 2 ? (histData[0][cat.chartKey] ?? histData[0].v) : null;
                   const _endV   = histData.length >= 2 ? (histData[histData.length-1][cat.chartKey] ?? histData[histData.length-1].v) : null;
                   const chartColor = (_startV != null && _endV != null && _endV < _startV) ? T.red : cat.color;
+                  // Dynamické gradient ID — SVG kešuje podle id, měníme ho s barvou a filtrem
+                  const gradId = "gChart_" + cat.id + "_" + (chartColor === T.red ? "r" : "g");
+                  // Ticky XAxis: všechny měsíce v datech
+                  const chartTicks = histDataDisplay.map(d => d.d);
                   return (
                     <ResponsiveContainer width="100%" height={220}>
                       <AreaChart data={histDataDisplay} margin={{ left: 4, right: 4, top: 4, bottom: 0 }}>
                         <defs>
-                          <linearGradient id="gChart" x1="0" y1="0" x2="0" y2="1">
+                          <linearGradient id={gradId} x1="0" y1="0" x2="0" y2="1">
                             <stop offset="0%" stopColor={chartColor} stopOpacity={0.25} />
                             <stop offset="100%" stopColor={chartColor} stopOpacity={0} />
                           </linearGradient>
                         </defs>
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
-                        <XAxis dataKey="d" tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.tick }} axisLine={false} tickLine={false}
+                        <XAxis dataKey="d" ticks={chartTicks} tick={{ fontFamily: "'DM Mono',monospace", fontSize: 11, fill: T.tick }} axisLine={false} tickLine={false}
                           tickFormatter={d => { const [y,m] = d.split("-"); return m === "01" ? y : m + "/" + y.slice(2); }} />
                         <YAxis tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.tick }} axisLine={false} tickLine={false} width={window.innerWidth<=480?46:62}
                           domain={[ dMin => Math.floor(dMin * 0.95 / chartStep) * chartStep, dMax => Math.ceil(dMax * 1.05 / chartStep) * chartStep ]}
                           tickFormatter={v => { const s = window.innerWidth<=480 ? "" : " "+sym; return v >= 1000000 ? (v/1000000).toFixed(1)+"M"+s : v >= 1000 ? Math.round(v/1000)+"k"+s : Math.round(v)+s; }} />
                         <Tooltip {...ttStyle} wrapperStyle={{ maxWidth: 220, zIndex: 10 }} formatter={(v) => [fmtN(v), cat.label]} labelFormatter={d => d} />
-                        <Area type="monotone" dataKey={cat.chartKey} stroke={chartColor} strokeWidth={2.5} fill="url(#gChart)"
+                        <Area type="monotone" dataKey={cat.chartKey} stroke={chartColor} strokeWidth={2.5} fill={"url(#" + gradId + ")"}
                           dot={(props) => {
                             const { cx, cy, payload } = props;
                             if (!payload.isLive) return null;
@@ -3053,6 +3113,51 @@ ${posLines}`;
                 })()}
               </>)}
             </div>
+
+            {/* ── 🏦 BROKER KARTY (filtr nad tabulkou) ──────────────────────── */}
+            {(() => {
+              const bStats = calcBrokerStats(allRows);
+              if (bStats.length === 0) return null;
+              return (
+                <div style={{ marginBottom: 16 }}>
+                  <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 10 }}>
+                    <h3 style={{ fontSize: 15, fontWeight: 700, color: T.text }}>🏦 Podle brokera</h3>
+                    <span style={{ fontSize: 12, color: T.subtle }}>klikni pro filtr v tabulce</span>
+                  </div>
+                  <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10 }}>
+                    {bStats.map((s, i) => {
+                      const color = BROKER_COLORS[i % BROKER_COLORS.length];
+                      const gc = s.gainPct >= 0 ? T.green : T.red;
+                      const isActive = brokerFilter === s.broker;
+                      return (
+                        <div key={s.broker}
+                          onClick={() => setBrokerFilter(isActive ? null : s.broker)}
+                          style={{ background: T.card, border: (isActive ? "2px" : "1px") + " solid " + (isActive ? color : T.border), borderRadius: 12, padding: "14px 16px", cursor: "pointer", transition: "border-color 0.15s, transform 0.15s", position: "relative", overflow: "hidden" }}
+                          onMouseEnter={e => { e.currentTarget.style.borderColor = color; e.currentTarget.style.transform = "translateY(-1px)"; }}
+                          onMouseLeave={e => { e.currentTarget.style.borderColor = isActive ? color : T.border; e.currentTarget.style.transform = "translateY(0)"; }}>
+                          <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: 3, background: color }} />
+                          <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 2, display: "flex", alignItems: "center", gap: 6 }}>
+                            <BrokerBadge broker={s.broker} size={20} />{s.broker}
+                          </div>
+                          <div style={{ fontSize: 11, color: T.muted, marginBottom: 10 }}>{s.positions} {s.positions < 5 ? "pozice" : "pozic"}</div>
+                          <div style={{ fontSize: 18, fontWeight: 800, color: T.text, fontFamily: "'DM Mono',monospace", marginBottom: 4 }}>{fmt(s.value)}</div>
+                          <div style={{ fontSize: 13, fontWeight: 700, color: gc, fontFamily: "'DM Mono',monospace" }}>
+                            {s.gainPct >= 0 ? "+" : ""}{s.gainPct.toFixed(1)}%
+                            <span style={{ fontSize: 11, color: T.muted, marginLeft: 6, fontWeight: 400 }}>({s.gain >= 0 ? "+" : ""}{fmt(s.gain)})</span>
+                          </div>
+                          {s.bestPos && (
+                            <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.05)", fontSize: 11, color: T.muted, display: "flex", justifyContent: "space-between" }}>
+                              <span>top: <strong style={{ color: T.text }}>{s.bestPos.ticker || s.bestPos.name.split("(")[0].trim().slice(0, 8)}</strong></span>
+                              <span style={{ color: T.green, fontFamily: "'DM Mono',monospace" }}>+{s.bestPct.toFixed(0)}%</span>
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Tabulka */}
             <div style={{ background: T.card, border: "1px solid " + (activeCat !== "vse" ? cat.color + "40" : T.border), borderRadius: 16, padding: 20, marginBottom: 20, transition: "border-color 0.2s" }}>
@@ -3368,50 +3473,7 @@ ${posLines}`;
           </>);
         })()}
 
-        {/* ── 🏦 BROKER KARTY ─────────────────────────────────────────────── */}
-        {(() => {
-          const bStats = calcBrokerStats(allRows);
-          if (bStats.length === 0) return null;
-          return (
-            <div style={{ marginBottom: 20 }}>
-              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12 }}>
-                <h3 style={{ fontSize: 15, fontWeight: 700, color: T.text }}>🏦 Podle brokera</h3>
-                <span style={{ fontSize: 12, color: T.subtle }}>klikni pro filtr v tabulce</span>
-              </div>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 10 }}>
-                {bStats.map((s, i) => {
-                  const color = BROKER_COLORS[i % BROKER_COLORS.length];
-                  const gc = s.gainPct >= 0 ? T.green : T.red;
-                  const isActive = brokerFilter === s.broker;
-                  return (
-                    <div key={s.broker}
-                      onClick={() => setBrokerFilter(isActive ? null : s.broker)}
-                      style={{ background: T.card, border: (isActive ? "2px" : "1px") + " solid " + (isActive ? color : T.border), borderRadius: 12, padding: "14px 16px", cursor: "pointer", transition: "border-color 0.15s, transform 0.15s", position: "relative", overflow: "hidden" }}
-                      onMouseEnter={e => { e.currentTarget.style.borderColor = color; e.currentTarget.style.transform = "translateY(-1px)"; }}
-                      onMouseLeave={e => { e.currentTarget.style.borderColor = isActive ? color : T.border; e.currentTarget.style.transform = "translateY(0)"; }}>
-                      <div style={{ position: "absolute", top: 0, left: 0, bottom: 0, width: 3, background: color }} />
-                      <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 2, display: "flex", alignItems: "center", gap: 6 }}>
-                        <BrokerBadge broker={s.broker} size={20} />{s.broker}
-                      </div>
-                      <div style={{ fontSize: 11, color: T.muted, marginBottom: 10 }}>{s.positions} {s.positions < 5 ? "pozice" : "pozic"}</div>
-                      <div style={{ fontSize: 18, fontWeight: 800, color: T.text, fontFamily: "'DM Mono',monospace", marginBottom: 4 }}>{fmt(s.value)}</div>
-                      <div style={{ fontSize: 13, fontWeight: 700, color: gc, fontFamily: "'DM Mono',monospace" }}>
-                        {s.gainPct >= 0 ? "+" : ""}{s.gainPct.toFixed(1)}%
-                        <span style={{ fontSize: 11, color: T.muted, marginLeft: 6, fontWeight: 400 }}>({s.gain >= 0 ? "+" : ""}{fmt(s.gain)})</span>
-                      </div>
-                      {s.bestPos && (
-                        <div style={{ marginTop: 8, paddingTop: 8, borderTop: "1px solid rgba(255,255,255,0.05)", fontSize: 11, color: T.muted, display: "flex", justifyContent: "space-between" }}>
-                          <span>top: <strong style={{ color: T.text }}>{s.bestPos.ticker || s.bestPos.name.split("(")[0].trim().slice(0, 8)}</strong></span>
-                          <span style={{ color: T.green, fontFamily: "'DM Mono',monospace" }}>+{s.bestPct.toFixed(0)}%</span>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-            </div>
-          );
-        })()}
+        {/* Broker karty přesunuty nad tabulku pozic */}
 
         {/* Projections přesunuty do tabAnalyza – pod Roční výkonnost */}
         {(() => { return null; })()}
@@ -5681,7 +5743,7 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
           .ib-mkt-card { min-width: 100px !important; flex-shrink: 0 !important; }
 
           /* Hero hodnota */
-          .ib-hero-value { font-size: 26px !important; letter-spacing: -0.025em !important; word-break: break-word !important; }
+          .ib-hero-value { font-size: 40px !important; letter-spacing: -0.025em !important; word-break: break-word !important; }
           .ib-hero-value-row { gap: 8px !important; }
           .ib-hero-spark { padding-bottom: 0 !important; }
           .ib-hero-spark svg { width: 120px !important; height: 32px !important; }
