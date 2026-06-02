@@ -178,11 +178,18 @@ async function saveToSheets(manual, imported, settings, pension) {
   if (entries.length) await sheetsSet("pension_entries!A1", [PENSION_ENTRY_HDR, ...entries]);
 }
 
-// Uloží jen settings sheet — bez pozic (rychlejší, vhodné pro auto-sync nastavení)
-async function saveSettingsOnly(settings) {
+// Uloží settings + pension bez pozic — rychlejší než plný save, vhodné pro auto-sync
+async function saveSettingsAndPension(settings, pension) {
   await ensureSheets();
-  await clearSheet("settings");
+  await Promise.all([
+    clearSheet("settings"),
+    clearSheet("pension_accounts").catch(()=>{}),
+    clearSheet("pension_entries").catch(()=>{}),
+  ]);
   await sheetsSet("settings!A1", [["key","value"], ...Object.entries(settings).map(([k,v])=>[k,v])]);
+  const { accs, entries } = pensionToRows(pension || []);
+  await sheetsSet("pension_accounts!A1", [PENSION_SHEET_HDR, ...accs]);
+  if (entries.length) await sheetsSet("pension_entries!A1", [PENSION_ENTRY_HDR, ...entries]);
 }
 
 async function ensurePricesHeader() {
@@ -766,10 +773,14 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.51";
+const APP_VERSION = "v4.52";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.52", date: "2. 6. 2026", changes: [
+    "🐛 Graf: barva čáry nyní odpovídá výnosu v aktuálně zobrazené měně (v USD zůstane zelená i když CZK je v záporu kvůli kurzu)",
+    "🐛 Penzijko záznamy se teď automaticky ukládají do Google Sheets — při auto-save se uloží i pension_accounts a pension_entries",
+  ]},
   { version: "v4.51", date: "2. 6. 2026", changes: [
     "🐛 Graf vývoje portfolia: barva čáry (zelená/červená) se teď správně mění při přepnutí filtru Vše/Fondy/Akcie/Crypto",
     "🎨 Graf vývoje portfolia: XAxis zobrazuje tick pro každý měsíc v datech",
@@ -1811,7 +1822,7 @@ function InvestBook() {
     if (!gapiInited || !gisInited) return;
     clearTimeout(settingsAutoSaveTimer.current);
     settingsAutoSaveTimer.current = setTimeout(() => {
-      withAuthPromise(() => saveSettingsOnly({
+      withAuthPromise(() => saveSettingsAndPension({
         monthlyContrib: String(monthlyContrib),
         hypoteka: String(hypoteka),
         zustatek: String(zustatek),
@@ -1822,10 +1833,10 @@ function InvestBook() {
         fireWithdrawal: String(fireWithdrawal),
         customRate10: String(customRate10),
         projYears: String(projYears),
-      })).catch(() => {}); // silent fail
+      }, pensionAccounts)).catch(() => {}); // silent fail
     }, 5000);
     return () => clearTimeout(settingsAutoSaveTimer.current);
-  }, [targetAlloc, whatIfAlloc, fireExpenses, fireReturnPct, fireWithdrawal, customRate10, projYears, monthlyContrib, hypoteka, zustatek]);
+  }, [targetAlloc, whatIfAlloc, fireExpenses, fireReturnPct, fireWithdrawal, customRate10, projYears, monthlyContrib, hypoteka, zustatek, pensionAccounts]);
 
   // Auto-dismiss banneru po 8 sekundách
   useEffect(() => {
@@ -3034,9 +3045,9 @@ ${posLines}`;
                   const chartStep = dispCurrency === 'CZK' ? 50000 : dispCurrency === 'EUR' ? 2500 : 2000;
                   const fmtN = v => new Intl.NumberFormat(dcfg.locale, { style: 'currency', currency: dcfg.cur, maximumFractionDigits: 0 }).format(v);
                   const sym = dcfg.symbol;
-                  // Barva čáry: červená pokud je výnos za vybrané období záporný
-                  const _startV = histData.length >= 2 ? (histData[0][cat.chartKey] ?? histData[0].v) : null;
-                  const _endV   = histData.length >= 2 ? (histData[histData.length-1][cat.chartKey] ?? histData[histData.length-1].v) : null;
+                  // Barva čáry: červená pokud je výnos záporný v aktuální měně (histDataDisplay = po FX)
+                  const _startV = histDataDisplay.length >= 2 ? (histDataDisplay[0][cat.chartKey] ?? histDataDisplay[0].v) : null;
+                  const _endV   = histDataDisplay.length >= 2 ? (histDataDisplay[histDataDisplay.length-1][cat.chartKey] ?? histDataDisplay[histDataDisplay.length-1].v) : null;
                   const chartColor = (_startV != null && _endV != null && _endV < _startV) ? T.red : cat.color;
                   // Dynamické gradient ID — SVG kešuje podle id, měníme ho s barvou a filtrem
                   const gradId = "gChart_" + cat.id + "_" + (chartColor === T.red ? "r" : "g");
