@@ -44,7 +44,10 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.5/babel.min.js" integrity="sha384-1qlE7MZPM2pHD/pBZCU/yB8UCP52RYL8bge/qNdfNBCWToySp8/M+JL2waXU4hjJ" crossorigin="anonymous"></script>
   <script src="https://accounts.google.com/gsi/client" async defer></script>
   <script src="https://apis.google.com/js/api.js" async defer></script>
-  <style>*{margin:0;padding:0;box-sizing:border-box}html,body{background:#0f0f13;overflow-x:hidden;width:100%}</style>
+  <style>*{margin:0;padding:0;box-sizing:border-box}html,body{background:#0f0f13;overflow-x:hidden;width:100%}
+  /* Dotyková odezva — ztmavení při stisku (hover na dotykové obrazovce neexistuje) */
+  @media (hover: none) { button:active { opacity: 0.7; transition: opacity 0.05s; } }
+  </style>
 </head>
 <body>
   <a href="#root" style="position:absolute;left:-9999px;top:0;width:1px;height:1px;overflow:hidden;z-index:9999;background:#fff;color:#000;padding:8px 16px;text-decoration:none;font-size:14px" onfocus="this.style.left='0';this.style.width='auto';this.style.height='auto'" onblur="this.style.left='-9999px';this.style.width='1px';this.style.height='1px'">Přeskočit na hlavní obsah</a>
@@ -773,10 +776,18 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.55";
+const APP_VERSION = "v4.56";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.56", date: "11. 6. 2026", changes: [
+    "⚡ Knihovny (React, Recharts…) se ukládají do telefonu — appka se otevírá výrazně rychleji a šetří mobilní data",
+    "📴 Appka naběhne i bez internetu — zobrazí poslední uloženou verzi UI",
+    "📱 Telefon naležato a malé tablety mají teď plnohodnotný mobilní layout (hranice sjednocena na 768 px)",
+    "⚡ Fonty se načítají jen jednou — odstraněn duplicitní @import, rychlejší první vykreslení",
+    "📱 Tlačítka viditelně reagují na ťuknutí — krátce ztmavnou jako potvrzení dotyku",
+    "🔧 Manifest a ikony PWA srovnány do hlavní složky projektu",
+  ]},
   { version: "v4.55", date: "2. 6. 2026", changes: [
     "🐛 ‚vč. hotovosti' v kartě Hodnota majetku má teď ikonku ⚙️ pro otevření Nastavení",
   ]},
@@ -2939,7 +2950,7 @@ ${posLines}`;
                           <ReferenceLine y={0} stroke="rgba(255,255,255,0.2)" strokeDasharray="4 3" label={{ value:"±0", position:"insideLeft", fill:T.subtle, fontSize:10 }}/>
                           <XAxis dataKey="d" tick={{fontFamily:"'DM Mono',monospace",fontSize:11,fill:T.tick}} axisLine={false} tickLine={false}
                             interval="preserveStartEnd" minTickGap={56}/>
-                          <YAxis tick={{fontFamily:"'DM Mono',monospace",fontSize:11,fill:T.tick}} axisLine={false} tickLine={false} width={window.innerWidth<=480?42:64}
+                          <YAxis tick={{fontFamily:"'DM Mono',monospace",fontSize:11,fill:T.tick}} axisLine={false} tickLine={false} width={window.innerWidth<=768?42:64}
                             domain={[dMin=>Math.floor((dMin-stepN)/stepN)*stepN, dMax=>Math.ceil((dMax+stepN)/stepN)*stepN]}
                             tickFormatter={v=>v>=1000000?(v/1000000).toFixed(1)+"M":v>=1000?Math.round(v/1000)+"k":v}/>
                           <Tooltip wrapperStyle={{background:"rgba(15,15,19,0.95)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,fontSize:12,zIndex:10}}
@@ -2972,7 +2983,7 @@ ${posLines}`;
                           </linearGradient></defs>
                           <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false}/>
                           <XAxis dataKey="d" tick={{fontFamily:"'DM Mono',monospace",fontSize:11,fill:T.tick}} axisLine={false} tickLine={false} interval="preserveStartEnd"/>
-                          <YAxis tick={{fontFamily:"'DM Mono',monospace",fontSize:11,fill:T.tick}} axisLine={false} tickLine={false} width={window.innerWidth<=480?42:62}
+                          <YAxis tick={{fontFamily:"'DM Mono',monospace",fontSize:11,fill:T.tick}} axisLine={false} tickLine={false} width={window.innerWidth<=768?42:62}
                             domain={[dMin=>Math.floor(dMin*0.97/step2)*step2,dMax=>Math.ceil(dMax*1.03/step2)*step2]}
                             tickFormatter={v=>v>=1000?Math.round(v/1000)+"k":v>=10?v.toFixed(0):v.toFixed(2)}/>
                           <Tooltip wrapperStyle={{background:"rgba(15,15,19,0.95)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:8,fontSize:12,zIndex:10}}
@@ -3077,9 +3088,9 @@ ${posLines}`;
                         <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.04)" vertical={false} />
                         <XAxis dataKey="d" ticks={chartTicks} tick={{ fontFamily: "'DM Mono',monospace", fontSize: 11, fill: T.tick }} axisLine={false} tickLine={false}
                           tickFormatter={d => { const [y,m] = d.split("-"); return m === "01" ? y : m + "/" + y.slice(2); }} />
-                        <YAxis tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.tick }} axisLine={false} tickLine={false} width={window.innerWidth<=480?46:62}
+                        <YAxis tick={{ fontFamily: "'DM Mono',monospace", fontSize: 12, fill: T.tick }} axisLine={false} tickLine={false} width={window.innerWidth<=768?46:62}
                           domain={[ dMin => Math.floor(dMin * 0.95 / chartStep) * chartStep, dMax => Math.ceil(dMax * 1.05 / chartStep) * chartStep ]}
-                          tickFormatter={v => { const s = window.innerWidth<=480 ? "" : " "+sym; return v >= 1000000 ? (v/1000000).toFixed(1)+"M"+s : v >= 1000 ? Math.round(v/1000)+"k"+s : Math.round(v)+s; }} />
+                          tickFormatter={v => { const s = window.innerWidth<=768 ? "" : " "+sym; return v >= 1000000 ? (v/1000000).toFixed(1)+"M"+s : v >= 1000 ? Math.round(v/1000)+"k"+s : Math.round(v)+s; }} />
                         <Tooltip {...ttStyle} wrapperStyle={{ maxWidth: 220, zIndex: 10 }} formatter={(v) => [fmtN(v), cat.label]} labelFormatter={d => d} />
                         <Area type="monotone" dataKey={cat.chartKey} stroke={chartColor} strokeWidth={2.5} fill={"url(#" + gradId + ")"}
                           dot={(props) => {
@@ -5370,7 +5381,7 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
               {riskResult && !riskLoading && (
                 <div>
                   {riskRows.length > 0 ? (
-                    window.innerWidth <= 480 ? (
+                    window.innerWidth <= 768 ? (
                       /* ── MOBILE: karty místo tabulky ── */
                       <div>
                         <div style={{ fontSize: 12, color: T.muted, marginBottom: 10 }}>{riskRows.length} pozic · klikni na kartu pro detail</div>
@@ -5711,7 +5722,7 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
   return (
     <div>
       <style>{`
-        @import url('https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&family=DM+Mono:wght@400;500&display=swap');
+        /* Fonty jsou načítány přes <link> v <head> — @import zde byl duplicitní a zpomaloval první vykreslení */
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body { background: #0f0f13; }
         ::-webkit-scrollbar { width: 4px; height: 4px; }
@@ -5751,8 +5762,8 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
         .ib-hdr-currency { display: flex; }
         .ib-hdr-divider  { display: block; }
 
-        /* ── Motorola Edge 50 Neo & podobné (≤ 480 px) ── */
-        @media (max-width: 480px) {
+        /* ── Mobilní layout (≤ 768 px) — telefony na výšku i naležato, malé tablety ── */
+        @media (max-width: 768px) {
           /* Základní layout */
           .ib-main   { padding: 10px 10px 72px 10px !important; max-width: 100% !important; }
           .ib-header { padding: 0 10px !important; height: 48px !important; }
@@ -5908,7 +5919,7 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
           .ib-pos-period-btns button { padding: 8px 11px !important; font-size: 13px !important; min-height: 36px !important; min-width: 38px !important; }
         }
 
-        @media (min-width: 481px) {
+        @media (min-width: 769px) {
           .ib-tab-bar { display: none !important; }
           .ib-nav     { display: flex !important; }
           .ib-main    { padding: 28px 32px; }
