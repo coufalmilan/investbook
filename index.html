@@ -789,10 +789,16 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.59";
+const APP_VERSION = "v4.60";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.60", date: "13. 6. 2026", changes: [
+    "✨ Counterfactual benchmark — co kdybys vložil stejné peníze ve stejné době do S&P 500?",
+    "✨ Přímé srovnání tvého skutečného výnosu (MWR/XIRR) vs hypotetického S&P 500 výnosu",
+    "🤔 Odpovídá klíčovou otázku DIY investora: má moje výběr akcií smysl oproti pasivnímu ETF?",
+    "🤖 AI report teď dostává counterfactual kontext — může komentovat porovnání s S&P 500",
+  ]},
   { version: "v4.59", date: "13. 6. 2026", changes: [
     "✨ Geografická alokace portfolia — rozpad na USA, Evropu, Asii, Crypto a Ostatní v Analýze",
     "✨ Sektorová alokace — Technologie, Healthcare, Obrana, Crypto a další sektory v Analýze",
@@ -1373,6 +1379,52 @@ function calcSectorBreakdown(allRows, totalValue) {
   return Object.entries(breakdown)
     .map(([name, value]) => ({ name, value: Math.round(value), pct: totalValue > 0 ? (value / totalValue) * 100 : 0 }))
     .sort((a, b) => b.value - a.value);
+}
+
+// ─── COUNTERFACTUAL BENCHMARK — „co kdybych vše dal do S&P 500" (Vlna 14) ───
+// Vezme skutečné vklady z PORTFOLIO_HISTORY a spočítá, kolik by bylo dnes,
+// kdybys ty samé peníze vložil do S&P 500 ETF ve stejných datech.
+// Potřebuje: pole `deposit` v PORTFOLIO_HISTORY a InvestBookCore.calcXIRR.
+function calcCounterfactual(history, sp500AnnReturns) {
+  if (!history || history.length < 2) return null;
+
+  const lastDate    = new Date(history[history.length - 1].d + "-01");
+  let totalDeposited = 0;
+  let cfValue        = 0; // aktuální hodnota hypotetického S&P 500 portfolia
+
+  for (const pt of history) {
+    const deposit = pt.deposit != null ? pt.deposit : 0;
+    if (deposit <= 0) continue;
+
+    totalDeposited += deposit;
+    const depositDate = new Date(pt.d + "-01");
+
+    // Zhodnoť vklad od data vložení do dnešního dne rok po roku
+    let value = deposit;
+    const startYear = depositDate.getFullYear();
+    const endYear   = lastDate.getFullYear();
+
+    for (let yr = startYear; yr <= endYear; yr++) {
+      const annReturn  = (sp500AnnReturns[yr] || 0) / 100;
+      const yearStart  = Math.max(depositDate, new Date(yr, 0, 1));
+      const yearEnd    = Math.min(lastDate,    new Date(yr, 11, 31));
+      const fraction   = Math.max(0, (yearEnd - yearStart) / (365.25 * 24 * 60 * 60 * 1000));
+      value *= Math.pow(1 + annReturn, fraction);
+    }
+
+    cfValue += value;
+  }
+
+  // XIRR pro hypotetické S&P 500 portfolio (stejné cashflows, výstup = cfValue)
+  const cashflows = [];
+  for (const pt of history) {
+    const deposit = pt.deposit != null ? pt.deposit : 0;
+    if (deposit !== 0) cashflows.push({ amount: -deposit, date: new Date(pt.d + "-01") });
+  }
+  cashflows.push({ amount: cfValue, date: lastDate });
+  const cfXirr = (typeof InvestBookCore !== "undefined") ? InvestBookCore.calcXIRR(cashflows) : null;
+
+  return { finalValue: Math.round(cfValue), totalDeposited: Math.round(totalDeposited), xirr: cfXirr };
 }
 
 // ─── KNOWN STOCK SPLITS ───────────────────────────────────────────────────────
@@ -2100,13 +2152,30 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
       const gp   = p.gainPctOrig != null ? p.gainPctOrig.toFixed(1) : "?";
       return `${p.ticker || p.name.split("(")[0].trim()} | kat: ${p.category} | hodnota: ${Math.round(p.valueCZK)} CZK | konc: ${konc}% | výnos: ${gp}% | roky: ${yrs}`;
     }).join("\n");
+    // Counterfactual kontext pro AI (potřebuje SP500_ANN z component scope)
+    const cfForAI = (() => {
+      try {
+        const r = calcCounterfactual(PORTFOLIO_HISTORY, SP500_ANN);
+        if (!r || r.totalDeposited === 0) return null;
+        const portCfAI = [];
+        PORTFOLIO_HISTORY.forEach((pt, i) => {
+          const dep = pt.deposit != null ? pt.deposit : (i === 0 ? pt.v : 0);
+          if (dep !== 0) portCfAI.push({ amount: -dep, date: new Date(pt.d + "-01") });
+        });
+        portCfAI.push({ amount: PORTFOLIO_HISTORY[PORTFOLIO_HISTORY.length-1].v, date: new Date(PORTFOLIO_HISTORY[PORTFOLIO_HISTORY.length-1].d + "-01") });
+        const mwrAI = (typeof InvestBookCore !== "undefined") ? InvestBookCore.calcXIRR(portCfAI) : null;
+        return { cf: r, mwr: mwrAI };
+      } catch(e) { return null; }
+    })();
+
     const prompt = `Jsi zkušený portfolio analytik s 15 lety praxe. Vygeneruj přehledný report mého investičního portfolia v ČEŠTINĚ a v MARKDOWN formátu.
 
 KONTEXT:
 - Celková hodnota: ${fmtCZK(totalVal)}
 - Investováno: ${fmtCZK(totalInv)}
 - Zisk: ${fmtCZK(totalGain)} (${gainPct}%)
-- Počet pozic: ${allRows.length}
+- Počet pozic: ${allRows.length}${cfForAI ? `
+- Counterfactual S&P 500 benchmark: kdybys vložil stejné částky ve stejné době do S&P 500 ETF, měl bys dnes ${fmtCZK(cfForAI.cf.finalValue)} (XIRR ${cfForAI.cf.xirr != null ? (cfForAI.cf.xirr*100).toFixed(1)+"% p.a." : "—"}). Tvoje skutečné MWR/XIRR: ${cfForAI.mwr != null ? (cfForAI.mwr*100).toFixed(1)+"% p.a." : "—"}. Výsledek ${cfForAI.cf.finalValue > totalVal ? "HORŠÍ než S&P 500" : "LEPŠÍ než S&P 500"}.` : ""}
 
 POZICE:
 ${posLines}
@@ -4873,6 +4942,92 @@ ${posLines}`;
               <div style={{ marginTop: 10, fontSize: 11, color: T.muted, lineHeight: 1.5 }}>
                 TWR = výnos nezávislý na vkladech, srovnatelný s indexy · MWR/XIRR v Statistikách portfolia ukazuje skutečný výnos tvých peněz
               </div>
+
+              {/* ── Counterfactual benchmark (Vlna 14) ─────────────────────── */}
+              {(() => {
+                // Zjistíme, jestli máme vyplněné deposits (podmínka pro výpočet)
+                const hasDeposits = PORTFOLIO_HISTORY.some(pt => pt.deposit && pt.deposit > 0);
+
+                if (!hasDeposits) {
+                  return (
+                    <div style={{ marginTop: 20, padding: "12px 16px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, fontSize: 12, color: T.muted, lineHeight: 1.6 }}>
+                      ℹ️ Pro výpočet counterfactual benchmarku doplň vklady do <strong style={{ color: T.text }}>PORTFOLIO_HISTORY</strong>.
+                      Každý záznam má pole <code style={{ color: T.blue }}>deposit</code> — kolik nových peněz jsi v daném měsíci přidal.
+                    </div>
+                  );
+                }
+
+                const cfResult = calcCounterfactual(PORTFOLIO_HISTORY, SP500_ANN);
+                if (!cfResult) return null;
+
+                // MWR skutečného portfolia (cashflows shodné s counterfactual)
+                const portCf = [];
+                PORTFOLIO_HISTORY.forEach((pt, i) => {
+                  const dep = pt.deposit != null ? pt.deposit : (i === 0 ? pt.v : 0);
+                  if (dep !== 0) portCf.push({ amount: -dep, date: new Date(pt.d + "-01") });
+                });
+                const lastPt = PORTFOLIO_HISTORY[PORTFOLIO_HISTORY.length - 1];
+                portCf.push({ amount: lastPt.v, date: new Date(lastPt.d + "-01") });
+                const portMwr = (typeof InvestBookCore !== "undefined") ? InvestBookCore.calcXIRR(portCf) : null;
+
+                const actualValue = lastPt.v;
+                const diffValue   = cfResult.finalValue - actualValue;
+                const diffXirr    = (cfResult.xirr != null && portMwr != null) ? (cfResult.xirr - portMwr) * 100 : null;
+
+                // Barva a text verdiktu
+                const diffPct = Math.abs(diffXirr || 0);
+                let verdiktText, verdiktColor;
+                if (diffXirr == null) {
+                  verdiktText = "Nedostatek dat pro verdikt — doplň deposits do PORTFOLIO_HISTORY";
+                  verdiktColor = T.muted;
+                } else if (diffPct < 5) {
+                  verdiktText = `Výsledek je prakticky stejný jako S&P 500 (rozdíl ${diffPct.toFixed(1)} % p.a.)`;
+                  verdiktColor = T.muted;
+                } else if (cfResult.finalValue > actualValue) {
+                  verdiktText = `S&P 500 by byl o ${fmt(diffValue)} Kč lepší (+${diffPct.toFixed(1)} % p.a.)`;
+                  verdiktColor = T.red;
+                } else {
+                  verdiktText = `Porazil jsi S&P 500 o ${fmt(-diffValue)} Kč (+${diffPct.toFixed(1)} % p.a.) 🏆`;
+                  verdiktColor = T.green;
+                }
+
+                const fmtXirr = v => v != null ? (v >= 0 ? "+" : "") + (v * 100).toFixed(1) + " % p.a." : "—";
+                const CardRow = ({ label, value, color }) => (
+                  <div style={{ display: "flex", justifyContent: "space-between", padding: "6px 0", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                    <span style={{ fontSize: 12, color: T.muted }}>{label}</span>
+                    <span style={{ fontSize: 13, fontWeight: 600, color: color || T.text, fontFamily: "'DM Mono',monospace" }}>{value}</span>
+                  </div>
+                );
+
+                return (
+                  <div style={{ marginTop: 20, paddingTop: 16, borderTop: "1px solid rgba(255,255,255,0.07)" }}>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: T.text, marginBottom: 12 }}>🤔 Co kdybych investoval stejně do S&P 500?</div>
+                    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12, marginBottom: 14 }}>
+                      {/* Karta vlevo — skutečné portfolio */}
+                      <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: "14px 16px" }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: T.blue, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 10 }}>Tvoje skutečné portfolio</div>
+                        <CardRow label="Hodnota dnes"   value={fmt(actualValue)} />
+                        <CardRow label="Celkem vloženo" value={fmt(cfResult.totalDeposited)} />
+                        <CardRow label="Výnos (MWR/XIRR)" value={fmtXirr(portMwr)} color={portMwr != null ? (portMwr > 0 ? T.green : T.red) : T.muted} />
+                      </div>
+                      {/* Karta vpravo — hypotetické S&P 500 */}
+                      <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.08)", borderRadius: 10, padding: "14px 16px" }}>
+                        <div style={{ fontSize: 11, fontWeight: 700, color: "#f59e0b", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 10 }}>Kdyby S&P 500 ETF</div>
+                        <CardRow label="Hodnota dnes"   value={fmt(cfResult.finalValue)} color={cfResult.finalValue > actualValue ? T.red : T.green} />
+                        <CardRow label="Celkem vloženo" value={fmt(cfResult.totalDeposited)} />
+                        <CardRow label="Výnos (XIRR)"   value={fmtXirr(cfResult.xirr)} color={cfResult.xirr != null ? (cfResult.xirr > 0 ? T.green : T.red) : T.muted} />
+                      </div>
+                    </div>
+                    {/* Verdikt */}
+                    <div style={{ padding: "12px 16px", background: "rgba(255,255,255,0.03)", borderRadius: 8, fontSize: 13, fontWeight: 700, color: verdiktColor, lineHeight: 1.5 }}>
+                      {verdiktText}
+                    </div>
+                    <div style={{ marginTop: 8, fontSize: 11, color: T.muted }}>
+                      Počítáno s tvými skutečnými vklady ({fmt(cfResult.totalDeposited)} Kč) v jejich skutečných datech · S&P 500 roční výnosy dle historických dat
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           );
         })()}
