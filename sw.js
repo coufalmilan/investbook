@@ -1,5 +1,5 @@
 // InvestBook Service Worker — verze se meni s kazdym deployem
-const SW_VERSION = "v4.56";
+const SW_VERSION = "v4.57";
 const CACHE_NAME = "investbook-" + SW_VERSION;
 
 // ─── Soubory ke stažení dopředu při instalaci ────────────────────────────────

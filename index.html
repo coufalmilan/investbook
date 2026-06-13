@@ -776,10 +776,15 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.56";
+const APP_VERSION = "v4.57";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.57", date: "13. 6. 2026", changes: [
+    "🗑️ Odstraněna záložka ‚Zprávy portfolia' z AI sekce — Gemini tam generoval nepodložené zprávy",
+    "♻️ Cílová alokace a Co když simulátor sloučeny do jednoho panelu — méně klikání, stejná funkcionalita",
+    "♻️ Analýza přeskládána — duplicitní Koncentrace odstraněna, Statistiky přesunuty dolů",
+  ]},
   { version: "v4.56", date: "11. 6. 2026", changes: [
     "⚡ Knihovny (React, Recharts…) se ukládají do telefonu — appka se otevírá výrazně rychleji a šetří mobilní data",
     "📴 Appka naběhne i bez internetu — zobrazí poslední uloženou verzi UI",
@@ -1701,6 +1706,8 @@ function InvestBook() {
   // Sort state pro Cílová alokace & rebalancing
   const [allocSortKey, setAllocSortKey] = useState("curPct");
   const [allocSortDir, setAllocSortDir] = useState("desc");
+  // Simulační mód v Cílová alokace (lokální, neukládá se)
+  const [simMode, setSimMode] = useState(false);
   // Sort state for Ruční pozice (ČSOB) table
   const [manSort, setManSort] = useState("value");
   const [manDir,  setManDir]  = useState("desc");
@@ -2223,13 +2230,6 @@ ${posLines}`;
   // ── ANALÝZA TRHU – stav a funkce ──────────────────────────────────────────
   const [marketData,        setMarketData]        = useState({});
   const [marketLoading,     setMarketLoading]     = useState(false);
-  const [marketNews,        setMarketNews]        = useState(() => {
-    try { const c = JSON.parse(localStorage.getItem("ib_mkt_news")||"null"); return c?.date === new Date().toISOString().slice(0,10) ? c.text : ""; } catch { return ""; }
-  });
-  const [marketNewsLoading, setMarketNewsLoading] = useState(false);
-  const [marketNewsDate,    setMarketNewsDate]    = useState(() => {
-    try { return JSON.parse(localStorage.getItem("ib_mkt_news")||"null")?.date || null; } catch { return null; }
-  });
   // Stooq symboly (Worker volá Stooq server-side – žádný CORS problém)
   const MKT_SYMS = [
     { sym: "^spx",    stooq: "^SPX",    label: "S&P 500",   grp: "index" },
@@ -2280,22 +2280,6 @@ ${posLines}`;
     }
     setMarketLoading(false);
   }, [workerUrl]);
-  const loadMktNews = useCallback(async () => {
-    if (!geminiKey && !workerUrl) return;
-    setMarketNewsLoading(true);
-    const tickers = [...new Set(allRows.map(p => p.name.split("(")[0].trim().slice(0,12)).filter(Boolean))].slice(0,20).join(", ");
-    const today = new Date().toISOString().slice(0,10);
-    const prompt = `Dnes je ${today}. Jsem investor s těmito pozicemi: ${tickers}\n\nPro každou pozici (jen ty, kde jsou relevantní zprávy) stručně shrň nejdůležitější aktuální novinky za poslední 1-2 dny. Zaměř se na: výsledky (earnings), důležité produktové oznámení, regulace, makro faktory. Piš česky, max 2-3 věty na ticker. Začni nejdůležitějšími zprávami.\n\nFormát:\n## TICKER\nStručné shrnutí...`;
-    try {
-      const text = await callGemini(geminiKey, "Jsi zkušený finanční analytik. Odpovídej stručně v češtině.", [{ role: "user", content: prompt }], geminiModel, workerUrl);
-      setMarketNews(text);
-      setMarketNewsDate(today);
-      localStorage.setItem("ib_mkt_news", JSON.stringify({ date: today, text }));
-    } catch (e) {
-      setMarketNews("⚠️ Chyba: " + e.message);
-    }
-    setMarketNewsLoading(false);
-  }, [geminiKey, geminiModel, allRows, workerUrl]);
   useEffect(() => { fetchMktData(); }, []);
   // Při změně periody znovu načti graf aktuální pozice
   useEffect(() => {
@@ -3761,6 +3745,13 @@ ${posLines}`;
           const defaultTargets = {};
           catKeys.forEach((k,i) => { defaultTargets[k] = targetAlloc[k] != null ? targetAlloc[k] : 0; });
           const totalTarget = catKeys.reduce((s,k) => s + (targetAlloc[k]||0), 0);
+          // Simulační mód: používá whatIfAlloc místo targetAlloc pro Cíl %
+          const simAlloc = simMode ? (whatIfAlloc || {...targetAlloc}) : targetAlloc;
+          const setSimAlloc = simMode
+            ? (fn => setWhatIfAlloc(fn))
+            : (fn => setTargetAlloc(fn));
+          const simTotalTarget = catKeys.reduce((s,k) => s + (simAlloc[k]||0), 0);
+          const simIsValid = Math.abs(simTotalTarget - 100) < 0.5;
           const ALLOC_COLS = [
             { key: "k",       label: "Kategorie",   align: "left",  sortFn: (a,b) => a.k.localeCompare(b.k) },
             { key: "curPct",  label: "Aktuální",    align: "right", sortFn: (a,b) => a.curPct - b.curPct },
@@ -3771,17 +3762,35 @@ ${posLines}`;
           const onAllocSort = k => { if(allocSortKey===k) setAllocSortDir(d=>d==="asc"?"desc":"asc"); else{setAllocSortKey(k);setAllocSortDir("desc");} };
           const aArrow = k => allocSortKey===k ? (allocSortDir==="asc"?" ↑":" ↓") : "";
           const allocCol = ALLOC_COLS.find(c=>c.key===allocSortKey)||ALLOC_COLS[1];
+          // rebalRows používá simAlloc pro tgtPct (normální nebo simulační)
           const rebalRows = catKeys.map(k => {
             const curVal = catGroups[k] || 0;
             const curPct = totalValue > 0 ? curVal / totalValue * 100 : 0;
-            const tgtPct = targetAlloc[k] || 0;
+            const tgtPct = simAlloc[k] || 0;
             const diff   = curPct - tgtPct;
             const needed = totalValue > 0 ? Math.round((tgtPct/100 * totalValue) - curVal) : 0;
             return { k, curVal, curPct, tgtPct, diff, needed };
           }).sort((a,b) => allocSortDir==="asc" ? allocCol.sortFn(a,b) : allocCol.sortFn(b,a));
           return (
             <div style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 16, padding: 22, marginBottom: 16 }}>
-              <SectionTitle title="🎯 Cílová alokace & rebalancing" sub={"Součet: " + totalTarget.toFixed(0) + "% · zbývá: " + Math.max(0,100-totalTarget).toFixed(0) + "% " + (totalTarget>100 ? "⚠ překročeno 100%" : totalTarget===100 ? "✓ OK" : "")} />
+              <div style={{ display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:4, gap:8 }}>
+                <SectionTitle title="🎯 Cílová alokace & rebalancing" sub={
+                  simMode
+                    ? "Simulační mód — změny se neuloží dokud neklikneš Uložit jako cíl · Celkem: " + simTotalTarget.toFixed(0) + "%"
+                    : "Součet: " + totalTarget.toFixed(0) + "% · zbývá: " + Math.max(0,100-totalTarget).toFixed(0) + "% " + (totalTarget>100 ? "⚠ překročeno 100%" : totalTarget===100 ? "✓ OK" : "")
+                } />
+                <button onClick={() => { if (!simMode) { setWhatIfAlloc({...targetAlloc}); setWhatIfActive(true); } setSimMode(s=>!s); }}
+                  style={{ minHeight:44, padding:"8px 14px", borderRadius:8, border:"1px solid "+T.border, cursor:"pointer", fontSize:13, fontWeight:600, whiteSpace:"nowrap", flexShrink:0,
+                    background: simMode ? "rgba(239,68,68,0.12)" : "rgba(99,102,241,0.12)",
+                    color: simMode ? T.red : "#a5b4fc" }}>
+                  {simMode ? "✕ Zrušit simulaci" : "🎲 Simulovat"}
+                </button>
+              </div>
+              {simMode && (
+                <div style={{ fontSize:12, color:"#fbbf24", background:"rgba(251,191,36,0.07)", borderRadius:6, padding:"6px 12px", marginBottom:8 }}>
+                  ⚠ Simulační mód — úpravy v Cíl % neovlivní rebalancing dokud neklikneš <strong>✓ Uložit jako cíl</strong>
+                </div>
+              )}
               <div style={{ overflowX:"auto", WebkitOverflowScrolling:"touch", marginTop:8 }}>
                 <table style={{ width:"100%", borderCollapse:"collapse" }}>
                   <thead>
@@ -3813,29 +3822,29 @@ ${posLines}`;
                             {isMobile ? (
                               /* Mobil: slider */
                               <div style={{ display:"flex", flexDirection:"column", alignItems:"flex-end", gap:4 }}>
-                                <span style={{ fontSize:13, color:T.blue, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>{targetAlloc[row.k]||0}%</span>
+                                <span style={{ fontSize:13, color:simMode?"#a5b4fc":T.blue, fontFamily:"'DM Mono',monospace", fontWeight:700 }}>{simAlloc[row.k]||0}%</span>
                                 <input type="range" min="0" max="100" step="1"
-                                  value={targetAlloc[row.k]||0}
+                                  value={simAlloc[row.k]||0}
                                   onChange={e => {
                                     const newVal = Number(e.target.value)||0;
-                                    const others = catKeys.filter(x=>x!==row.k).reduce((s,x)=>s+(targetAlloc[x]||0),0);
+                                    const others = catKeys.filter(x=>x!==row.k).reduce((s,x)=>s+(simAlloc[x]||0),0);
                                     const capped = Math.max(0, Math.min(newVal, 100-others));
-                                    setTargetAlloc(prev => ({...prev, [row.k]: capped}));
+                                    setSimAlloc(prev => ({...prev, [row.k]: capped}));
                                   }}
                                   style={{ width:100, height:6, borderRadius:3, background:"rgba(255,255,255,0.08)", accentColor:CAT_COLOR[row.k]||T.blue, cursor:"pointer" }} />
                               </div>
                             ) : (
                               /* Desktop: číslo */
                               <>
-                                <input type="number" min="0" max="100" step="1" value={targetAlloc[row.k]||""}
+                                <input type="number" min="0" max="100" step="1" value={simAlloc[row.k]||""}
                                   placeholder="0"
                                   onChange={e => {
                                     const newVal = Number(e.target.value)||0;
-                                    const others = catKeys.filter(x=>x!==row.k).reduce((s,x)=>s+(targetAlloc[x]||0),0);
+                                    const others = catKeys.filter(x=>x!==row.k).reduce((s,x)=>s+(simAlloc[x]||0),0);
                                     const capped = Math.max(0, Math.min(newVal, 100-others));
-                                    setTargetAlloc(prev => ({...prev, [row.k]: capped}));
+                                    setSimAlloc(prev => ({...prev, [row.k]: capped}));
                                   }}
-                                  style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.12)", borderRadius:6, color:T.blue, fontFamily:"'DM Mono',monospace", fontSize:14, fontWeight:700, padding:"3px 8px", width:58, textAlign:"right", outline:"none" }}/>
+                                  style={{ background: simMode?"rgba(99,102,241,0.08)":"rgba(255,255,255,0.05)", border:"1px solid "+(simMode?"rgba(99,102,241,0.3)":"rgba(255,255,255,0.12)"), borderRadius:6, color:simMode?"#a5b4fc":T.blue, fontFamily:"'DM Mono',monospace", fontSize:14, fontWeight:700, padding:"3px 8px", width:58, textAlign:"right", outline:"none" }}/>
                                 <span style={{ fontSize:12, color:T.muted, marginLeft:3 }}>%</span>
                               </>
                             )}
@@ -3859,110 +3868,24 @@ ${posLines}`;
                   </tbody>
                 </table>
               </div>
+              {/* Tlačítka simulačního módu */}
+              {simMode && (
+                <div style={{ display:"flex", gap:8, marginTop:16, paddingTop:16, borderTop:"1px solid "+T.border }}>
+                  <button onClick={() => { resetWhatIf(); setSimMode(false); }}
+                    style={{ background:"rgba(255,255,255,0.06)", border:"1px solid "+T.border, color:T.muted, borderRadius:8, padding:"8px 16px", fontSize:13, fontWeight:600, cursor:"pointer", minHeight:44 }}>
+                    ↺ Reset
+                  </button>
+                  <div style={{ flex:1 }} />
+                  <button onClick={() => { setTargetAlloc(whatIfAlloc); setSimMode(false); }} disabled={!simIsValid}
+                    style={{ background:simIsValid?T.green:"rgba(34,197,94,0.3)", border:"none", color:simIsValid?"#000":"#666", borderRadius:8, padding:"8px 20px", fontSize:13, fontWeight:700, cursor:simIsValid?"pointer":"not-allowed", minHeight:44 }}>
+                    ✓ Uložit jako cíl
+                  </button>
+                </div>
+              )}
             </div>
           );
         })()}
 
-        {/* ── 🎲 CO KDYŽ — Simulátor alokace ─────────────────────────────────── */}
-        {(() => {
-          const metrics = whatIfAlloc ? calcWhatIfMetrics(allRows, whatIfAlloc, totalValue) : null;
-          const RISK_SCORES = { "Crypto": 9, "Akcie": 6, "ETF": 3, "Fond": 3, "Portfolio": 4, "Jiné": 5 };
-          let currentRisk = 0;
-          if (totalValue > 0) for (const p of allRows) currentRisk += (p.valueCZK / totalValue) * (RISK_SCORES[p.category] || 5);
-          return (
-            <div style={{ background: T.card, border: "1px solid " + T.border, borderRadius: 16, padding: 22, marginBottom: 16 }}>
-              <SectionTitle title="🎲 Co když — simulátor alokace" sub="Hypoteticky uprav % per kategorie a uvidíš dopady rebalancingu" />
-              {!whatIfActive && (
-                <div style={{ textAlign: "center", padding: "32px 0" }}>
-                  <div style={{ fontSize: 36, marginBottom: 12 }}>🎲</div>
-                  <div style={{ fontSize: 14, color: T.muted, marginBottom: 16 }}>
-                    Začni s aktuální alokací a uprav procentuální zastoupení kategorií.<br/>Aplikace spočítá, kolik bys musel prodat nebo dokoupit.
-                  </div>
-                  <button onClick={initWhatIfFromCurrent}
-                    style={{ background: "linear-gradient(135deg,#6366f1,#8b5cf6)", border: "none", color: "#fff", borderRadius: 10, padding: "10px 24px", fontSize: 14, fontWeight: 700, cursor: "pointer" }}>
-                    🎲 Zahájit simulaci
-                  </button>
-                </div>
-              )}
-              {whatIfActive && whatIfAlloc && metrics && (
-                <>
-                  {/* Slider řádky — stejný kompaktní styl jako Cílová alokace */}
-                  <div style={{ marginBottom: 16, marginTop: 8 }}>
-                    {/* Záhlaví sloupců */}
-                    <div style={{ display:"grid", gridTemplateColumns:"minmax(60px,auto) 52px 1fr 44px", gap:8, padding:"4px 0 6px", borderBottom:"1px solid "+T.border, marginBottom:4 }}>
-                      {["Kategorie","Akt. %","Hypotetické","Cíl %"].map(h => (
-                        <div key={h} style={{ fontSize:11, color:T.subtle, fontWeight:600, textTransform:"uppercase", letterSpacing:"0.07em", textAlign: h==="Kategorie"?"left":"right" }}>{h}</div>
-                      ))}
-                    </div>
-                    {Object.keys(whatIfAlloc).map(k => {
-                      const curPct = totalValue > 0 ? ((allRows.filter(p=>p.category===k).reduce((s,p)=>s+p.valueCZK,0)) / totalValue * 100) : 0;
-                      return (
-                        <div key={k} style={{ display:"grid", gridTemplateColumns:"minmax(60px,auto) 52px 1fr 44px", gap:8, alignItems:"center", padding:"6px 0", borderBottom:"1px solid rgba(255,255,255,0.03)" }}>
-                          <span style={{ fontSize:13, color:CAT_COLOR[k]||T.text, fontWeight:600 }}>{k}</span>
-                          <span style={{ fontSize:13, color:T.muted, fontFamily:"'DM Mono',monospace", textAlign:"right" }}>{curPct.toFixed(1)}%</span>
-                          <div style={{ display:"flex", flexDirection:"column", gap:2 }}>
-                            <input type="range" min="0" max="100" step="1"
-                              value={whatIfAlloc[k] || 0}
-                              onChange={e => setWhatIfAlloc(prev => ({ ...prev, [k]: Number(e.target.value) }))}
-                              style={{ width:"100%", height:6, borderRadius:3, background:"rgba(255,255,255,0.08)", accentColor:CAT_COLOR[k]||T.blue, cursor:"pointer" }} />
-                          </div>
-                          <span style={{ fontSize:13, color:CAT_COLOR[k]||T.text, fontFamily:"'DM Mono',monospace", fontWeight:700, textAlign:"right" }}>{whatIfAlloc[k]}%</span>
-                        </div>
-                      );
-                    })}
-                    <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", padding:"8px 0", borderTop:"1px solid "+T.border, marginTop:4 }}>
-                      <span style={{ fontSize:12, color:T.muted }}>Celkem:</span>
-                      <span style={{ fontSize:14, fontWeight:700, fontFamily:"'DM Mono',monospace", color: metrics.isValid ? T.green : T.amber }}>
-                        {metrics.totalSum.toFixed(0)} %{!metrics.isValid && <span style={{ fontSize:11, marginLeft:6 }}>⚠ musí být 100 %</span>}
-                      </span>
-                    </div>
-                  </div>
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 18 }}>
-                    <div style={{ background: "rgba(255,255,255,0.03)", borderRadius: 10, padding: "12px 14px" }}>
-                      <div style={{ fontSize: 11, color: T.muted, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>Aktuální risk skóre</div>
-                      <div style={{ fontSize: 22, fontWeight: 800, color: T.text, fontFamily: "'DM Mono',monospace" }}>{currentRisk.toFixed(1)} / 10</div>
-                    </div>
-                    <div style={{ background: "rgba(99,102,241,0.06)", border: "1px solid rgba(99,102,241,0.2)", borderRadius: 10, padding: "12px 14px" }}>
-                      <div style={{ fontSize: 11, color: "#a5b4fc", textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 4 }}>Hypotetické risk skóre</div>
-                      <div style={{ fontSize: 22, fontWeight: 800, color: metrics.weightedRisk > currentRisk ? T.red : T.green, fontFamily: "'DM Mono',monospace" }}>
-                        {metrics.weightedRisk.toFixed(1)} / 10
-                        <span style={{ fontSize: 12, marginLeft: 6, fontWeight: 600 }}>({metrics.weightedRisk - currentRisk >= 0 ? "+" : ""}{(metrics.weightedRisk - currentRisk).toFixed(1)})</span>
-                      </div>
-                    </div>
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: T.muted, letterSpacing: "0.08em", textTransform: "uppercase", marginBottom: 10 }}>Doporučené akce</div>
-                    {metrics.actions.filter(a => a.action !== "hold").map(a => (
-                      <div key={a.category} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", marginBottom: 6, borderRadius: 8, background: a.action === "buy" ? "rgba(34,197,94,0.06)" : "rgba(239,68,68,0.06)", border: "1px solid " + (a.action === "buy" ? "rgba(34,197,94,0.2)" : "rgba(239,68,68,0.2)") }}>
-                        <div>
-                          <span style={{ fontSize: 14, fontWeight: 700, color: a.action === "buy" ? T.green : T.red }}>{a.action === "buy" ? "Dokoupit" : "Prodat"}</span>
-                          <span style={{ fontSize: 13, color: T.text, marginLeft: 8 }}>{a.category}</span>
-                        </div>
-                        <div style={{ fontSize: 14, fontWeight: 700, fontFamily: "'DM Mono',monospace", color: a.action === "buy" ? T.green : T.red }}>
-                          {a.action === "buy" ? "+" : ""}{fmt(a.diffValue)}
-                        </div>
-                      </div>
-                    ))}
-                    {metrics.actions.filter(a => a.action !== "hold").length === 0 && (
-                      <div style={{ fontSize: 13, color: T.muted, padding: "12px 0", textAlign: "center" }}>Žádné rebalancing akce — alokace je již na cíli.</div>
-                    )}
-                  </div>
-                  <div style={{ display: "flex", gap: 8, marginTop: 16, paddingTop: 16, borderTop: "1px solid " + T.border }}>
-                    <button onClick={resetWhatIf}
-                      style={{ background: "rgba(255,255,255,0.06)", border: "1px solid " + T.border, color: T.muted, borderRadius: 8, padding: "8px 16px", fontSize: 13, fontWeight: 600, cursor: "pointer" }}>
-                      ↺ Reset
-                    </button>
-                    <div style={{ flex: 1 }} />
-                    <button onClick={() => setTargetAlloc(whatIfAlloc)} disabled={!metrics.isValid}
-                      style={{ background: metrics.isValid ? T.green : "rgba(34,197,94,0.3)", border: "none", color: metrics.isValid ? "#000" : "#666", borderRadius: 8, padding: "8px 20px", fontSize: 13, fontWeight: 700, cursor: metrics.isValid ? "pointer" : "not-allowed" }}>
-                      ✓ Uložit jako cíl
-                    </button>
-                  </div>
-                </>
-              )}
-            </div>
-          );
-        })()}
 
         {/* ── FIRE KALKULAČKA ────────────────────────────────────────────────── */}
         {(() => {
@@ -4211,17 +4134,29 @@ ${posLines}`;
           );
         })()}
 
-        {/* ── 🔗 SKRYTÁ KONCENTRACE (expozice breakdown) ─────────────────────── */}
+        {/* ── 🔗 KONCENTRACE & DIVERZIFIKACE (expozice + top pozice) ─────────── */}
         {(() => {
           const exposures = calcExposureBreakdown(allRows, totalValue);
           if (!exposures.length) return null;
           const EXP_COLORS = ["#6366f1","#22c55e","#f59e0b","#ec4899","#06b6d4","#a78bfa","#84cc16","#fb923c","#94a3b8"];
           const top3pct = exposures.slice(0, 3).reduce((s, e) => s + e.pct, 0);
           const isHighlyConcentrated = top3pct > 70;
+          // Top pozice (Koncentrace portfolia — sloučeno do této sekce ve Vlně 11)
+          const top1val = sorted.slice(0, 1).reduce((s, p) => s + p.valueCZK, 0);
+          const top3val = sorted.slice(0, 3).reduce((s, p) => s + p.valueCZK, 0);
+          const top5val = sorted.slice(0, 5).reduce((s, p) => s + p.valueCZK, 0);
+          const top1pct = totalValue > 0 ? top1val / totalValue * 100 : 0;
+          const top3pct2 = totalValue > 0 ? top3val / totalValue * 100 : 0;
+          const top5pct = totalValue > 0 ? top5val / totalValue * 100 : 0;
+          const concRows = [
+            { label: "Top 1 pozice",  pct: top1pct },
+            { label: "Top 3 pozice",  pct: top3pct2 },
+            { label: "Top 5 pozic",   pct: top5pct },
+          ];
           // expandedExp state je definován na úrovni InvestBook (mimo IIFE)
           return (
             <div style={{ ...C, marginBottom: 16 }}>
-              <SectionTitle title="🔗 Skrytá koncentrace" sub="Skutečná diverzifikace portfolia podle expozic, ne podle kategorií" />
+              <SectionTitle title="🔗 Koncentrace & diverzifikace" sub="Skutečná diverzifikace portfolia podle expozic a podílu největších pozic" />
               {isHighlyConcentrated && (
                 <div style={{ marginBottom: 16, padding: "10px 14px", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)", borderRadius: 8 }}>
                   <div style={{ fontSize: 13, color: T.amber, fontWeight: 600 }}>⚠️ Vysoká koncentrace</div>
@@ -4274,75 +4209,26 @@ ${posLines}`;
                 Některé pozice jsou plně přiřazené k jedné expozici (NVDA = US tech), jiné mají rozdělení (TSLA: 70% US tech + 30% Auto/EV).
                 Fallback pro neznámé tickery: podle kategorie a měny.
               </div>
-            </div>
-          );
-        })()}
-
-        {/* Statistiky portfolia + Koncentrace */}
-        {(() => {
-          const yearsInvesting = oldest ? NOW_YEAR - oldest.start : 0;
-          const avgPos = posCount > 0 ? Math.round(totalValue / posCount) : 0;
-          const lossCount = posCount - profitable;
-          const winPct = posCount > 0 ? (profitable / posCount * 100) : 0;
-
-          const top1val = sorted.slice(0, 1).reduce((s, p) => s + p.valueCZK, 0);
-          const top3val = sorted.slice(0, 3).reduce((s, p) => s + p.valueCZK, 0);
-          const top5val = sorted.slice(0, 5).reduce((s, p) => s + p.valueCZK, 0);
-          const top1pct = totalValue > 0 ? top1val / totalValue * 100 : 0;
-          const top3pct = totalValue > 0 ? top3val / totalValue * 100 : 0;
-          const top5pct = totalValue > 0 ? top5val / totalValue * 100 : 0;
-
-          const statRows = [
-            { label: "Počet pozic", value: posCount + " pozic" },
-            { label: "Roky investování", value: yearsInvesting + " let", sub: "od " + (oldest?.start || NOW_YEAR) },
-            { label: "Průměrná velikost pozice", value: fmt(avgPos) },
-            { label: "Win / Loss", value: profitable + " zisk  ·  " + lossCount + " ztráta", sub: winPct.toFixed(0) + "% pozic v zisku", highlight: winPct >= 50 ? T.green : T.red },
-            { label: "Max Drawdown", value: "-" + maxDrawdown.toFixed(1) + " %", sub: "největší propad od vrcholu", highlight: T.red },
-            { label: "Anualizovaná volatilita", value: portfolioVolatility.toFixed(1) + " %", sub: "měsíční výnosy × √12" },
-            { label: "Sharpe Ratio", value: sharpeRatio != null ? sharpeRatio.toFixed(2) : "—", sub: "bezriziková sazba 3.5 %", highlight: sharpeRatio != null ? (sharpeRatio > 1 ? T.green : sharpeRatio > 0.5 ? "#fbbf24" : T.red) : T.muted },
-          ];
-
-          const concRows = [
-            { label: "Top 1 pozice",  val: top1val, pct: top1pct, names: sorted.slice(0,1).map(p => p.name.split("(")[0].trim()) },
-            { label: "Top 3 pozice",  val: top3val, pct: top3pct, names: sorted.slice(0,3).map(p => p.name.split("(")[0].trim()) },
-            { label: "Top 5 pozic",   val: top5val, pct: top5pct, names: sorted.slice(0,5).map(p => p.name.split("(")[0].trim()) },
-          ];
-
-          return (
-            <div className="ib-grid2" style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 16 }}>
-              {/* Statistiky */}
-              <div style={{ ...C }}>
-                <SectionTitle title="📊 Statistiky portfolia" sub="Na základě importovaných a ručních pozic" />
-                {statRows.map((row, idx) => (
-                  <div key={row.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: idx < statRows.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none" }}>
-                    <span style={{ fontSize: 13, color: T.muted }}>{row.label}</span>
-                    <div style={{ textAlign: "right" }}>
-                      <div style={{ fontSize: 14, fontWeight: 600, color: row.highlight || T.text, fontFamily: "'DM Mono',monospace" }}>{row.value}</div>
-                      {row.sub && <div style={{ fontSize: 13, color: row.highlight || T.subtle, marginTop: 2 }}>{row.sub}</div>}
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Koncentrace */}
-              <div style={{ ...C }}>
-                <SectionTitle title="🎯 Koncentrace portfolia" sub="Podíl největších pozic na celkové hodnotě" />
+              {/* Podíl největších pozic (Top 1/3/5) */}
+              <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid rgba(255,255,255,0.07)" }}>
+                <div style={{ fontSize: 11, fontWeight: 600, color: T.subtle, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 10 }}>Podíl největších pozic</div>
                 {concRows.map(row => (
-                  <div key={row.label} style={{ marginBottom: 16 }}>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 6 }}>
-                      <span style={{ fontSize: 13, color: T.muted }}>{row.label}</span>
-                      <span style={{ fontSize: 15, fontWeight: 700, color: row.pct > 50 ? T.amber : T.text, fontFamily: "'DM Mono',monospace" }}>{row.pct.toFixed(1)} %</span>
+                  <div key={row.label} style={{ marginBottom: 12 }}>
+                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 4 }}>
+                      <span style={{ fontSize: 12, color: T.muted }}>{row.label}</span>
+                      <span style={{ fontSize: 13, fontWeight: 700, color: row.pct > 50 ? T.amber : T.text, fontFamily: "'DM Mono',monospace" }}>{row.pct.toFixed(1)} %</span>
                     </div>
-                    <div style={{ height: 6, borderRadius: 3, background: "rgba(255,255,255,0.07)", overflow: "hidden" }}>
+                    <div style={{ height: 5, borderRadius: 3, background: "rgba(255,255,255,0.07)", overflow: "hidden" }}>
                       <div style={{ height: "100%", width: Math.min(100, row.pct) + "%", borderRadius: 3, background: row.pct > 50 ? T.amber : T.blue, transition: "width 0.4s ease" }} />
                     </div>
-                    <div style={{ fontSize: 13, color: T.subtle, marginTop: 5, lineHeight: 1.4 }}>{row.names.join(" · ")}</div>
                   </div>
                 ))}
               </div>
             </div>
           );
         })()}
+
+        {/* Statistiky portfolia přesunuty za Broker výkonnost (viz sekce dole) */}
 
         {/* Nejlepší vs. nejhorší pozice */}
         {(() => {
@@ -4495,6 +4381,37 @@ ${posLines}`;
                   </table>
                 </div>
               )}
+            </div>
+          );
+        })()}
+
+        {/* ── 📊 STATISTIKY PORTFOLIA — přesunuto sem (pod Broker výkonnost) ───── */}
+        {(() => {
+          const yearsInvesting = oldest ? NOW_YEAR - oldest.start : 0;
+          const avgPos = posCount > 0 ? Math.round(totalValue / posCount) : 0;
+          const lossCount = posCount - profitable;
+          const winPct = posCount > 0 ? (profitable / posCount * 100) : 0;
+          const statRows = [
+            { label: "Počet pozic", value: posCount + " pozic" },
+            { label: "Roky investování", value: yearsInvesting + " let", sub: "od " + (oldest?.start || NOW_YEAR) },
+            { label: "Průměrná velikost pozice", value: fmt(avgPos) },
+            { label: "Win / Loss", value: profitable + " zisk  ·  " + lossCount + " ztráta", sub: winPct.toFixed(0) + "% pozic v zisku", highlight: winPct >= 50 ? T.green : T.red },
+            { label: "Max Drawdown", value: "-" + maxDrawdown.toFixed(1) + " %", sub: "největší propad od vrcholu", highlight: T.red },
+            { label: "Anualizovaná volatilita", value: portfolioVolatility.toFixed(1) + " %", sub: "měsíční výnosy × √12" },
+            { label: "Sharpe Ratio", value: sharpeRatio != null ? sharpeRatio.toFixed(2) : "—", sub: "bezriziková sazba 3.5 %", highlight: sharpeRatio != null ? (sharpeRatio > 1 ? T.green : sharpeRatio > 0.5 ? "#fbbf24" : T.red) : T.muted },
+          ];
+          return (
+            <div style={{ ...C, marginBottom: 16 }}>
+              <SectionTitle title="📊 Statistiky portfolia" sub="Na základě importovaných a ručních pozic" />
+              {statRows.map((row, idx) => (
+                <div key={row.label} style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 0", borderBottom: idx < statRows.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none" }}>
+                  <span style={{ fontSize: 13, color: T.muted }}>{row.label}</span>
+                  <div style={{ textAlign: "right" }}>
+                    <div style={{ fontSize: 14, fontWeight: 600, color: row.highlight || T.text, fontFamily: "'DM Mono',monospace" }}>{row.value}</div>
+                    {row.sub && <div style={{ fontSize: 13, color: row.highlight || T.subtle, marginTop: 2 }}>{row.sub}</div>}
+                  </div>
+                </div>
+              ))}
             </div>
           );
         })()}
@@ -5589,22 +5506,6 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
 
             {aiAdvancedOpen && (
               <div style={{ marginTop: 18, paddingTop: 16, borderTop: "1px solid " + T.border }}>
-                {/* Sub-tab přepínač */}
-                <div style={{ display: "flex", gap: 6, marginBottom: 14 }}>
-                  {[
-                    { key: "chat", icon: "💬", label: "AI Chat" },
-                    { key: "news", icon: "📰", label: "Zprávy portfolia" },
-                  ].map(tab => (
-                    <button key={tab.key} onClick={() => setAiPanel(tab.key)}
-                      style={{ padding: "6px 14px", borderRadius: 8, border: "none", cursor: "pointer",
-                        fontSize: 13, fontWeight: 600,
-                        background: aiPanel === tab.key ? "rgba(99,102,241,0.18)" : "rgba(255,255,255,0.04)",
-                        color: aiPanel === tab.key ? "#a5b4fc" : T.muted }}>
-                      {tab.icon} {tab.label}
-                    </button>
-                  ))}
-                </div>
-
                 {/* Panel: Chat */}
                 {aiPanel === "chat" && (
                   <div style={{ display: "flex", flexDirection: "column" }}>
@@ -5667,38 +5568,6 @@ ${allRows.filter(p => p.valueCZK > 0 && p.investedCZK > 0).slice().sort((a,b)=>b
                         {aiLoading ? "⏳" : "➤"}
                       </button>
                     </div>
-                  </div>
-                )}
-
-                {/* Panel: Zprávy */}
-                {aiPanel === "news" && (
-                  <div>
-                    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 14 }}>
-                      <div style={{ fontSize: 12, color: T.muted }}>
-                        {marketNewsDate ? <span>Načteno: <strong style={{ color: T.text }}>{marketNewsDate}</strong></span> : "Denní AI přehled novinek k tvým pozicím"}
-                      </div>
-                      <button onClick={loadMktNews} disabled={marketNewsLoading}
-                        className="ib-tertiary-btn"
-                        style={{ padding: "8px 18px", borderRadius: 8, border: "none",
-                          background: marketNewsLoading ? "rgba(99,102,241,0.3)" : "linear-gradient(135deg,#6366f1,#8b5cf6)",
-                          color: "#fff", cursor: marketNewsLoading ? "not-allowed" : "pointer",
-                          fontSize: 13, fontWeight: 700, whiteSpace: "nowrap", flexShrink: 0 }}>
-                        {marketNewsLoading ? <><span style={{ animation: "pulse 1s infinite", display: "inline-block" }}>⏳</span> Načítám…</> : "📰 Načíst zprávy"}
-                      </button>
-                    </div>
-                    {!marketNews && !marketNewsLoading && (
-                      <div style={{ color: T.subtle, fontSize: 13, textAlign: "center", padding: "32px 0" }}>
-                        Klikni <strong style={{ color: T.text }}>Načíst zprávy</strong> — Gemini vygeneruje denní přehled novinek k tvým pozicím.
-                      </div>
-                    )}
-                    {marketNewsLoading && (
-                      <div style={{ color: T.muted, fontSize: 13, padding: "28px 0", textAlign: "center" }}>
-                        <span style={{ animation: "pulse 1s infinite", display: "inline-block", marginRight: 8 }}>🤖</span>Gemini generuje přehled zpráv…
-                      </div>
-                    )}
-                    {marketNews && !marketNewsLoading && (
-                      <div style={{ fontSize: 13 }} dangerouslySetInnerHTML={{ __html: renderMD(marketNews) }} />
-                    )}
                   </div>
                 )}
               </div>
