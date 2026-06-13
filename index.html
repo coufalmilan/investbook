@@ -789,10 +789,16 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.58";
+const APP_VERSION = "v4.59";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.59", date: "13. 6. 2026", changes: [
+    "✨ Geografická alokace portfolia — rozpad na USA, Evropu, Asii, Crypto a Ostatní v Analýze",
+    "✨ Sektorová alokace — Technologie, Healthcare, Obrana, Crypto a další sektory v Analýze",
+    "✨ Rychlý geo přehled 🇺🇸 · 🇪🇺 · ₿ přímo v přehledu portfolia pod hlavní hodnotou",
+    "🔧 Nová data TICKER_GEO a TICKER_SECTOR — při přidání nových pozic stačí doplnit ticker",
+  ]},
   { version: "v4.58", date: "13. 6. 2026", changes: [
     "✨ Nová metrika MWR/XIRR — skutečný výnos tvých peněz zohledňující kdy jsi vkládal",
     "✨ Nová metrika TWR — výnos nezávislý na vkladech, férově srovnatelný s S&P 500 a MSCI World",
@@ -1262,6 +1268,111 @@ function getPositionsForExposure(allRows, exposureName) {
     .map(p => { const expos = getExposures(p); const w = expos[exposureName]; return w ? { pos: p, weight: w, contribution: p.valueCZK * w } : null; })
     .filter(Boolean)
     .sort((a, b) => b.contribution - a.contribution);
+}
+
+// ─── GEOGRAFICKÁ A SEKTOROVÁ ALOKACE (Vlna 13) ───────────────────────────────
+// Pokud přidáš novou pozici, doplň sem ticker (uppercase) → region / sektor.
+// Fallback funguje automaticky podle category + currency — neznámé tickery nejsou chyba.
+
+const TICKER_GEO = {
+  "SXR8.DE":  "USA",
+  "CSPX.L":   "USA",
+  "NVDA":     "USA",
+  "META":     "USA",
+  "MSFT":     "USA",
+  "GOOG":     "USA",
+  "GOOGL":    "USA",
+  "AMZN":     "USA",
+  "AAPL":     "USA",
+  "TSLA":     "USA",
+  "TSM":      "Asie",
+  "LRCX":     "USA",
+  "ABBV":     "USA",
+  "RHM.DE":   "Evropa",
+  "DFND.PA":  "Evropa",
+  "BA-.L":    "Evropa",
+  "CSG.AS":   "Evropa",
+  "BTC-USD":  "Crypto",
+  "ETH-USD":  "Crypto",
+  "XRP-USD":  "Crypto",
+  "LTC-USD":  "Crypto",
+  "ETC-USD":  "Crypto",
+  "SOL-USD":  "Crypto",
+  "DOGE-USD": "Crypto",
+  "BNB-USD":  "Crypto",
+};
+
+const TICKER_SECTOR = {
+  "SXR8.DE":  "Diverzifikovaný",
+  "CSPX.L":   "Diverzifikovaný",
+  "NVDA":     "Technologie",
+  "META":     "Technologie",
+  "MSFT":     "Technologie",
+  "GOOG":     "Technologie",
+  "GOOGL":    "Technologie",
+  "AMZN":     "Technologie",
+  "AAPL":     "Technologie",
+  "TSLA":     "Automobilový",
+  "TSM":      "Technologie",
+  "LRCX":     "Technologie",
+  "ABBV":     "Healthcare",
+  "RHM.DE":   "Obrana",
+  "DFND.PA":  "Obrana",
+  "BA-.L":    "Obrana",
+  "CSG.AS":   "Spotřební zboží",
+  "BTC-USD":  "Crypto",
+  "ETH-USD":  "Crypto",
+  "XRP-USD":  "Crypto",
+  "LTC-USD":  "Crypto",
+  "ETC-USD":  "Crypto",
+  "SOL-USD":  "Crypto",
+  "DOGE-USD": "Crypto",
+  "BNB-USD":  "Crypto",
+};
+
+// Fallback pro tickery bez záznamu v TICKER_GEO
+function getGeo(pos) {
+  if (pos.ticker && TICKER_GEO[pos.ticker.toUpperCase()]) return TICKER_GEO[pos.ticker.toUpperCase()];
+  if (pos.category === "Crypto") return "Crypto";
+  if (pos.category === "Fond" && pos.name?.includes("Amerika")) return "USA";
+  if (pos.category === "Fond") return "ČR/Evropa"; // ČSOB fondy
+  if (pos.category === "Portfolio") return "ČR";   // penzijní
+  if (pos.currency === "USD") return "USA";
+  if (pos.currency === "EUR") return "Evropa";
+  return "Ostatní";
+}
+
+// Fallback pro tickery bez záznamu v TICKER_SECTOR
+function getSector(pos) {
+  if (pos.ticker && TICKER_SECTOR[pos.ticker.toUpperCase()]) return TICKER_SECTOR[pos.ticker.toUpperCase()];
+  if (pos.category === "Crypto") return "Crypto";
+  if (pos.category === "Fond") return "Diverzifikovaný";
+  if (pos.category === "Portfolio") return "Penzijní";
+  return "Ostatní";
+}
+
+// Rozpad portfolia po regionech (součet valueCZK per geo)
+function calcGeoBreakdown(allRows, totalValue) {
+  const breakdown = {};
+  for (const p of allRows) {
+    const geo = getGeo(p);
+    breakdown[geo] = (breakdown[geo] || 0) + p.valueCZK;
+  }
+  return Object.entries(breakdown)
+    .map(([name, value]) => ({ name, value: Math.round(value), pct: totalValue > 0 ? (value / totalValue) * 100 : 0 }))
+    .sort((a, b) => b.value - a.value);
+}
+
+// Rozpad portfolia po sektorech (součet valueCZK per sektor)
+function calcSectorBreakdown(allRows, totalValue) {
+  const breakdown = {};
+  for (const p of allRows) {
+    const sector = getSector(p);
+    breakdown[sector] = (breakdown[sector] || 0) + p.valueCZK;
+  }
+  return Object.entries(breakdown)
+    .map(([name, value]) => ({ name, value: Math.round(value), pct: totalValue > 0 ? (value / totalValue) * 100 : 0 }))
+    .sort((a, b) => b.value - a.value);
 }
 
 // ─── KNOWN STOCK SPLITS ───────────────────────────────────────────────────────
@@ -2687,6 +2798,35 @@ ${posLines}`;
             </>)}
           </div>
         </div>
+
+        {/* Geo inline strip — jen pokud USA+EU+Crypto > 90 % (neplní hero nevýznamnou fragmentací) */}
+        {(() => {
+          if (isFiltered || allRows.length === 0) return null;
+          const geoBreakdown = calcGeoBreakdown(allRows, totalValue);
+          const usa    = geoBreakdown.find(g => g.name === "USA")?.pct || 0;
+          const eu     = (geoBreakdown.find(g => g.name === "Evropa")?.pct || 0) + (geoBreakdown.find(g => g.name === "ČR/Evropa")?.pct || 0) + (geoBreakdown.find(g => g.name === "ČR")?.pct || 0);
+          const crypto = geoBreakdown.find(g => g.name === "Crypto")?.pct || 0;
+          if (usa + eu + crypto < 90) return null; // příliš fragmentované — nezobrazovat
+          return (
+            <div style={{ display: "flex", gap: isMobile ? 8 : 16, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
+              {usa > 0 && <span style={{ fontSize: 12, color: T.muted, display: "flex", alignItems: "center", gap: 4 }}>
+                <span>🇺🇸</span>
+                <span style={{ color: "#3b82f6", fontFamily: "'DM Mono',monospace", fontWeight: 600 }}>{usa.toFixed(1)} %</span>
+                <span style={{ color: T.subtle }}>USA</span>
+              </span>}
+              {eu > 0 && <span style={{ fontSize: 12, color: T.muted, display: "flex", alignItems: "center", gap: 4 }}>
+                <span>🇪🇺</span>
+                <span style={{ color: "#10b981", fontFamily: "'DM Mono',monospace", fontWeight: 600 }}>{eu.toFixed(1)} %</span>
+                <span style={{ color: T.subtle }}>EU/ČR</span>
+              </span>}
+              {crypto > 0 && <span style={{ fontSize: 12, color: T.muted, display: "flex", alignItems: "center", gap: 4 }}>
+                <span>₿</span>
+                <span style={{ color: "#8b5cf6", fontFamily: "'DM Mono',monospace", fontWeight: 600 }}>{crypto.toFixed(1)} %</span>
+                <span style={{ color: T.subtle }}>Crypto</span>
+              </span>}
+            </div>
+          );
+        })()}
 
         {/* Mobilní toggle „více/méně detailů" */}
         {isMobile && (
@@ -4244,6 +4384,49 @@ ${posLines}`;
                   </div>
                 ))}
               </div>
+
+              {/* ── Geografie + Sektory (Vlna 13) ──────────────────────────── */}
+              {(() => {
+                const geoData    = calcGeoBreakdown(allRows, totalValue);
+                const sectorData = calcSectorBreakdown(allRows, totalValue);
+
+                // Barvy pro regiony
+                const GEO_COLORS = { "USA": "#3b82f6", "Evropa": "#10b981", "ČR/Evropa": "#10b981", "ČR": "#6ee7b7", "Asie": "#f59e0b", "Crypto": "#8b5cf6", "Ostatní": T.muted };
+                // Barvy pro sektory
+                const SECTOR_COLORS = { "Technologie": "#3b82f6", "Healthcare": "#10b981", "Obrana": "#ef4444", "Crypto": "#8b5cf6", "Diverzifikovaný": "#94a3b8", "Penzijní": "#64748b", "Automobilový": "#f59e0b", "Spotřební zboží": "#fb923c" };
+                const FALLBACK_COLORS = ["#6366f1","#22c55e","#ec4899","#06b6d4","#84cc16","#a78bfa"];
+
+                // Kompaktní bar-chart komponenta (sdílená pro geo i sektory)
+                const BreakdownCard = ({ title, data, colorMap }) => (
+                  <div style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)", borderRadius: 10, padding: "14px 16px" }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: T.text, marginBottom: 12, letterSpacing: "0.02em" }}>{title}</div>
+                    {data.map((item, i) => {
+                      const color = colorMap[item.name] || FALLBACK_COLORS[i % FALLBACK_COLORS.length];
+                      return (
+                        <div key={item.name} style={{ marginBottom: 9 }}>
+                          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 3 }}>
+                            <span style={{ fontSize: 12, color: T.muted }}>{item.name}</span>
+                            <span style={{ fontSize: 12, fontWeight: 700, color: T.text, fontFamily: "'DM Mono',monospace" }}>{item.pct.toFixed(1)} %</span>
+                          </div>
+                          <div style={{ height: 5, borderRadius: 3, background: "rgba(255,255,255,0.07)", overflow: "hidden" }}>
+                            <div style={{ height: "100%", width: Math.min(100, item.pct) + "%", borderRadius: 3, background: color, transition: "width 0.4s ease" }} />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+
+                return (
+                  <div style={{ marginTop: 18, paddingTop: 14, borderTop: "1px solid rgba(255,255,255,0.07)" }}>
+                    <div style={{ fontSize: 11, fontWeight: 600, color: T.subtle, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 12 }}>Geografie & Sektory</div>
+                    <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "1fr 1fr", gap: 12 }}>
+                      <BreakdownCard title="🌍 Geografická alokace" data={geoData}    colorMap={GEO_COLORS} />
+                      <BreakdownCard title="🏭 Sektorová alokace"   data={sectorData} colorMap={SECTOR_COLORS} />
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           );
         })()}
