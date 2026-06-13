@@ -447,29 +447,40 @@ function parseFullReport(markdown) {
 
 // ─── PORTFOLIO HISTORY ────────────────────────────────────────────────────────
 // v = celkem, fond = Fondy+ETF, akcie = Akcie, crypto = Crypto
+// `deposit` = kolik nových peněz jsi vložil DO tohoto záznamu (od předchozího).
+//   Počáteční záznam: deposit = celá startovní hodnota.
+//   Bez vkladu: deposit = 0 nebo vynech pole.
+//   Výběr: deposit = záporné číslo.
+// Správně vyplněné deposits zpřesní MWR/XIRR výpočet.
+// Pokud nevíš přesně, nastav 0 — TWR funguje vždy, MWR bude mírně zkreslený.
 const PORTFOLIO_HISTORY = [
-  { d: "2021-01", v: 650000,  fond: 520000,  akcie: 110000,  crypto: 20000  },
-  { d: "2021-04", v: 820000,  fond: 630000,  akcie: 140000,  crypto: 50000  },
-  { d: "2021-07", v: 980000,  fond: 710000,  akcie: 170000,  crypto: 100000 },
-  { d: "2021-10", v: 1150000, fond: 790000,  akcie: 200000,  crypto: 160000 },
-  { d: "2022-01", v: 1050000, fond: 740000,  akcie: 190000,  crypto: 120000 },
-  { d: "2022-04", v: 950000,  fond: 700000,  akcie: 170000,  crypto: 80000  },
-  { d: "2022-07", v: 880000,  fond: 670000,  akcie: 155000,  crypto: 55000  },
-  { d: "2022-10", v: 1020000, fond: 760000,  akcie: 180000,  crypto: 80000  },
-  { d: "2023-01", v: 1150000, fond: 840000,  akcie: 210000,  crypto: 100000 },
-  { d: "2023-04", v: 1280000, fond: 920000,  akcie: 240000,  crypto: 120000 },
-  { d: "2023-07", v: 1420000, fond: 1000000, akcie: 270000,  crypto: 150000 },
-  { d: "2023-10", v: 1380000, fond: 980000,  akcie: 255000,  crypto: 145000 },
-  { d: "2024-01", v: 1580000, fond: 1090000, akcie: 320000,  crypto: 170000 },
-  { d: "2024-04", v: 1750000, fond: 1180000, akcie: 380000,  crypto: 190000 },
-  { d: "2024-07", v: 1920000, fond: 1270000, akcie: 430000,  crypto: 220000 },
-  { d: "2024-10", v: 2100000, fond: 1350000, akcie: 530000,  crypto: 220000 },
-  { d: "2025-01", v: 2280000, fond: 1430000, akcie: 620000,  crypto: 230000 },
-  { d: "2025-04", v: 2050000, fond: 1320000, akcie: 530000,  crypto: 200000 },
-  { d: "2025-07", v: 2320000, fond: 1470000, akcie: 620000,  crypto: 230000 },
-  { d: "2025-10", v: 2480000, fond: 1560000, akcie: 680000,  crypto: 240000 },
-  { d: "2026-01", v: 2650000, fond: 1660000, akcie: 750000,  crypto: 240000 },
-  { d: "2026-02", v: 2722295, fond: 1700000, akcie: 806000,  crypto: 216000 },
+  { d: "2021-01", v: 650000,  fond: 520000,  akcie: 110000,  crypto: 20000,  deposit: 650000 }, // počáteční vklad — uprav dle skutečnosti
+  { d: "2021-04", v: 820000,  fond: 630000,  akcie: 140000,  crypto: 50000,  deposit: 0 }, // doplň pokud jsi přikupoval
+  { d: "2021-07", v: 980000,  fond: 710000,  akcie: 170000,  crypto: 100000, deposit: 0 },
+  { d: "2021-10", v: 1150000, fond: 790000,  akcie: 200000,  crypto: 160000, deposit: 0 },
+  { d: "2022-01", v: 1050000, fond: 740000,  akcie: 190000,  crypto: 120000, deposit: 0 },
+  { d: "2022-04", v: 950000,  fond: 700000,  akcie: 170000,  crypto: 80000,  deposit: 0 },
+  { d: "2022-07", v: 880000,  fond: 670000,  akcie: 155000,  crypto: 55000,  deposit: 0 },
+  { d: "2022-10", v: 1020000, fond: 760000,  akcie: 180000,  crypto: 80000,  deposit: 0 },
+  { d: "2023-01", v: 1150000, fond: 840000,  akcie: 210000,  crypto: 100000, deposit: 0 },
+  { d: "2023-04", v: 1280000, fond: 920000,  akcie: 240000,  crypto: 120000, deposit: 0 },
+  { d: "2023-07", v: 1420000, fond: 1000000, akcie: 270000,  crypto: 150000, deposit: 0 },
+  { d: "2023-10", v: 1380000, fond: 980000,  akcie: 255000,  crypto: 145000, deposit: 0 },
+  { d: "2024-01", v: 1580000, fond: 1090000, akcie: 320000,  crypto: 170000, deposit: 0 },
+  { d: "2024-04", v: 1750000, fond: 1180000, akcie: 380000,  crypto: 190000, deposit: 0 },
+  { d: "2024-07", v: 1920000, fond: 1270000, akcie: 430000,  crypto: 220000, deposit: 0 },
+  { d: "2024-10", v: 2100000, fond: 1350000, akcie: 530000,  crypto: 220000, deposit: 0 },
+  { d: "2025-01", v: 2280000, fond: 1430000, akcie: 620000,  crypto: 230000, deposit: 0 },
+  { d: "2025-04", v: 2050000, fond: 1320000, akcie: 530000,  crypto: 200000, deposit: 0 },
+  { d: "2025-07", v: 2320000, fond: 1470000, akcie: 620000,  crypto: 230000, deposit: 0 },
+  { d: "2025-10", v: 2480000, fond: 1560000, akcie: 680000,  crypto: 240000, deposit: 0 },
+  { d: "2026-01", v: 2650000, fond: 1660000, akcie: 750000,  crypto: 240000, deposit: 0 },
+  { d: "2026-02", v: 2722295, fond: 1700000, akcie: 806000,  crypto: 216000, deposit: 0 },
+  // 2026-03 až 2026-05: odhadnuto z tržních pohybů (S&P 500 a dopad posilující koruny vůči USD)
+  // Portfolio klesalo i přes růst S&P — hlavní důvod: apreciace CZK vs USD znehodnotila USD aktiva
+  { d: "2026-03", v: 2578000, fond: 1651000, akcie: 701000,  crypto: 226000, deposit: 0 },
+  { d: "2026-04", v: 2520000, fond: 1635000, akcie: 657000,  crypto: 228000, deposit: 0 },
+  { d: "2026-05", v: 2461000, fond: 1620000, akcie: 615000,  crypto: 226000, deposit: 0 },
 ];
 
 function filterHistory(period) {
@@ -776,10 +787,17 @@ const STATIC = {
 };
 
 const NOW_YEAR = 2026;
-const APP_VERSION = "v4.57";
+const APP_VERSION = "v4.58";
 
 // ─── CHANGELOG ────────────────────────────────────────────────────────────────
 const CHANGELOG = [
+  { version: "v4.58", date: "13. 6. 2026", changes: [
+    "✨ Nová metrika MWR/XIRR — skutečný výnos tvých peněz zohledňující kdy jsi vkládal",
+    "✨ Nová metrika TWR — výnos nezávislý na vkladech, férově srovnatelný s S&P 500 a MSCI World",
+    "✨ Rozdíl TWR vs MWR ukazuje, jestli tvůj timing vkladů pomáhá nebo škodí",
+    "🐛 Srovnání s indexy teď používá TWR místo prostého výnosu — srovnání je teď korektní",
+    "📈 Vývoj portfolia: doplněny odhadnuté hodnoty za březen–květen 2026 (pokles i přes růst S&P — vliv posílení koruny vůči USD)",
+  ]},
   { version: "v4.57", date: "13. 6. 2026", changes: [
     "🗑️ Odstraněna záložka ‚Zprávy portfolia' z AI sekce — Gemini tam generoval nepodložené zprávy",
     "♻️ Cílová alokace a Co když simulátor sloučeny do jednoho panelu — méně klikání, stejná funkcionalita",
@@ -4391,7 +4409,41 @@ ${posLines}`;
           const avgPos = posCount > 0 ? Math.round(totalValue / posCount) : 0;
           const lossCount = posCount - profitable;
           const winPct = posCount > 0 ? (profitable / posCount * 100) : 0;
+
+          // ── MWR (XIRR) výpočet ─────────────────────────────────────
+          // Sestav cashflows z PORTFOLIO_HISTORY: vklady jako záporné, aktuální hodnota jako kladné
+          const cashflows = [];
+          PORTFOLIO_HISTORY.forEach((pt, i) => {
+            // Pokud deposit není vyplněn, použij plnou hodnotu jen u prvního záznamu
+            const dep = pt.deposit != null ? pt.deposit : (i === 0 ? pt.v : 0);
+            if (dep !== 0) cashflows.push({ amount: -dep, date: new Date(pt.d + "-01") });
+          });
+          // Přidej aktuální hodnotu portfolia jako "výstupní" cashflow
+          const lastPt = PORTFOLIO_HISTORY[PORTFOLIO_HISTORY.length - 1];
+          cashflows.push({ amount: lastPt.v, date: new Date(lastPt.d + "-01") });
+
+          const mwrResult = InvestBookCore.calcXIRR(cashflows);
+          const twrResult = InvestBookCore.calcTWR(PORTFOLIO_HISTORY);
+          const twrMwrDiff = (twrResult != null && mwrResult != null) ? (twrResult - mwrResult) : null;
+
+          const fmtMwr = (v) => v != null ? (v * 100).toFixed(1) + " % p.a." : "—";
+          const fmtTwr = (v) => v != null ? ((v >= 0 ? "+" : "") + (v * 100).toFixed(1) + " %") : "—";
+          const mwrColor = mwrResult != null ? (mwrResult > 0.035 ? T.green : mwrResult > 0 ? "#fbbf24" : T.red) : T.muted;
+          const twrColor = twrResult != null ? (twrResult >= 0 ? T.green : T.red) : T.muted;
+          const diffColor = twrMwrDiff != null ? (twrMwrDiff >= 0 ? T.green : T.red) : T.muted;
+
           const statRows = [
+            // MWR/TWR navrchu — nejdůležitější analytické hodnoty
+            { label: "MWR (XIRR)", value: fmtMwr(mwrResult),
+              sub: mwrResult != null ? "skutečný výnos tvých peněz zohledňující timing vkladů" : "doplň deposit do PORTFOLIO_HISTORY pro přesný výsledek",
+              highlight: mwrColor },
+            { label: "TWR", value: fmtTwr(twrResult),
+              sub: "celkový výnos nezávislý na vkladech — srovnatelný s indexy",
+              highlight: twrColor },
+            { label: "Rozdíl TWR vs MWR", value: twrMwrDiff != null ? (twrMwrDiff >= 0 ? "+" : "") + (twrMwrDiff * 100).toFixed(1) + " %" : "—",
+              sub: twrMwrDiff != null ? (twrMwrDiff >= 0 ? "vklady tvůj výnos zlepšily (nakupoval jsi dobře)" : "vklady tvůj výnos zhoršily (nakupoval jsi ve špatný timing)") : "",
+              highlight: diffColor },
+            // Ostatní statistiky
             { label: "Počet pozic", value: posCount + " pozic" },
             { label: "Roky investování", value: yearsInvesting + " let", sub: "od " + (oldest?.start || NOW_YEAR) },
             { label: "Průměrná velikost pozice", value: fmt(avgPos) },
@@ -4535,6 +4587,7 @@ ${posLines}`;
           const msArr = toArr(bmMap.msci);
           const portArr = PORTFOLIO_HISTORY;
 
+          // calcRet pro indexy (S&P, MSCI) — prostý výnos z normalizovaných dat je OK
           const calcRet = (arr, period) => {
             if (!arr || arr.length < 2) return null;
             const last = arr[arr.length - 1];
@@ -4545,9 +4598,20 @@ ${posLines}`;
             return ((last.v - filtered[0].v) / filtered[0].v) * 100;
           };
 
+          // calcTWRPct pro portfolio — používá TWR místo prostého výnosu (nezkresluje vklady)
+          const calcTWRPct = (period) => {
+            const last = portArr[portArr.length - 1];
+            if (!last) return null;
+            const lastDate = new Date(last.d + "-01");
+            const cutoffs = { "1R": new Date(lastDate.getFullYear()-1, lastDate.getMonth(), 1), "3R": new Date(lastDate.getFullYear()-3, lastDate.getMonth(), 1), "5R": new Date(lastDate.getFullYear()-5, lastDate.getMonth(), 1), "MAX": new Date(2000,0,1) };
+            const cutoff = cutoffs[period];
+            const twr = InvestBookCore.calcTWRForPeriod(PORTFOLIO_HISTORY, cutoff);
+            return twr != null ? twr * 100 : null;
+          };
+
           const periods = ["1R", "3R", "5R", "MAX"];
           const rows = periods.map(period => {
-            const myR  = calcRet(portArr, period);
+            const myR  = calcTWRPct(period); // portfolio: TWR (správně srovnatelné s indexy)
             const spR  = calcRet(spArr, period);
             const msR  = calcRet(msArr, period);
             return { period, myR, spR, msR, alfaSp: myR != null && spR != null ? myR - spR : null, alfaMs: myR != null && msR != null ? myR - msR : null };
@@ -4556,7 +4620,7 @@ ${posLines}`;
           const fmtPct = (v) => v == null ? "—" : (v >= 0 ? "+" : "") + v.toFixed(1) + "%";
           return (
             <div style={{ ...C, marginBottom: 16 }}>
-              <SectionTitle title="📈 Srovnání s indexy" sub="Výnos portfolia vs S&P 500 a MSCI World za různá období" />
+              <SectionTitle title="📈 Srovnání s indexy" sub="Výnos portfolia (TWR) vs S&P 500 a MSCI World za různá období" />
               {isMobile ? (
                 /* MOBILNÍ: karty per období */
                 <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
@@ -4569,6 +4633,7 @@ ${posLines}`;
                           <span style={{ fontSize: 16, fontWeight: 700, fontFamily: "'DM Mono',monospace", color: r.myR == null ? T.muted : r.myR >= 0 ? T.green : T.red }}>
                             {fmtPct(r.myR)}
                           </span>
+                          <div style={{ fontSize: 10, color: T.muted, marginTop: 1 }}>(TWR)</div>
                         </div>
                       </div>
                       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8, fontSize: 12 }}>
@@ -4605,7 +4670,10 @@ ${posLines}`;
                       {rows.map(r => (
                         <tr key={r.period} style={{ borderBottom: "1px solid rgba(255,255,255,0.03)" }}>
                           <td style={{ padding: "10px 10px", fontSize: 14, color: T.text, fontWeight: 700 }}>{r.period}</td>
-                          <td style={{ padding: "10px 10px", textAlign: "right", fontSize: 14, color: r.myR == null ? T.muted : r.myR >= 0 ? T.green : T.red, fontFamily: "'DM Mono',monospace", fontWeight: 600 }}>{fmtPct(r.myR)}</td>
+                          <td style={{ padding: "10px 10px", textAlign: "right" }}>
+                            <div style={{ fontSize: 14, color: r.myR == null ? T.muted : r.myR >= 0 ? T.green : T.red, fontFamily: "'DM Mono',monospace", fontWeight: 600 }}>{fmtPct(r.myR)}</div>
+                            <div style={{ fontSize: 10, color: T.muted, marginTop: 2 }}>(TWR)</div>
+                          </td>
                           <td style={{ padding: "10px 10px", textAlign: "right", fontSize: 13, color: T.muted, fontFamily: "'DM Mono',monospace" }}>{fmtPct(r.spR)}</td>
                           <td style={{ padding: "10px 10px", textAlign: "right", fontSize: 13, fontFamily: "'DM Mono',monospace", fontWeight: 700, color: r.alfaSp == null ? T.muted : r.alfaSp >= 0 ? T.green : T.red }}>{fmtPct(r.alfaSp)}</td>
                           <td style={{ padding: "10px 10px", textAlign: "right", fontSize: 13, color: T.muted, fontFamily: "'DM Mono',monospace" }}>{fmtPct(r.msR)}</td>
@@ -4616,6 +4684,10 @@ ${posLines}`;
                   </table>
                 </div>
               )}
+              {/* Legenda pod srovnáním */}
+              <div style={{ marginTop: 10, fontSize: 11, color: T.muted, lineHeight: 1.5 }}>
+                TWR = výnos nezávislý na vkladech, srovnatelný s indexy · MWR/XIRR v Statistikách portfolia ukazuje skutečný výnos tvých peněz
+              </div>
             </div>
           );
         })()}

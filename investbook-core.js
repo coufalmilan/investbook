@@ -222,6 +222,79 @@
     return ((1 + nominalPct / 100) / (1 + inflationPct / 100) - 1) * 100;
   }
 
+  // ── XIRR (Money-Weighted Return) — Newton-Raphson iterace ───────────
+  // cashflows = [{ amount: číslo, date: Date }, ...]
+  // amount < 0 = vklad (peníze odcházejí z kapsy), amount > 0 = hodnota portfolia dnes
+  // Vrací roční výnosovou míru (0.08 = 8 % p.a.) nebo null pokud nelze konvergovat.
+  function calcXIRR(cashflows) {
+    if (!cashflows || cashflows.length < 2) return null;
+    const DAYS_IN_YEAR = 365.25;
+    const firstDate = cashflows[0].date;
+
+    // NPV funkce pro dané rate
+    function npv(rate) {
+      return cashflows.reduce((sum, cf) => {
+        const t = (cf.date - firstDate) / (1000 * 60 * 60 * 24 * DAYS_IN_YEAR);
+        return sum + cf.amount / Math.pow(1 + rate, t);
+      }, 0);
+    }
+
+    // Derivace NPV podle rate (pro Newton-Raphson)
+    function dnpv(rate) {
+      return cashflows.reduce((sum, cf) => {
+        const t = (cf.date - firstDate) / (1000 * 60 * 60 * 24 * DAYS_IN_YEAR);
+        return sum - t * cf.amount / Math.pow(1 + rate, t + 1);
+      }, 0);
+    }
+
+    let rate = 0.1; // počáteční odhad 10 %
+    for (let i = 0; i < 100; i++) {
+      const f  = npv(rate);
+      const df = dnpv(rate);
+      if (Math.abs(df) < 1e-10) return null; // dělení nulou
+      const newRate = rate - f / df;
+      if (Math.abs(newRate - rate) < 1e-8) return newRate; // konvergováno
+      rate = newRate;
+      if (rate < -0.999) rate = -0.999; // ochrana před zacyklením
+    }
+    return null; // nekonvergováno za 100 iterací
+  }
+
+  // ── TWR (Time-Weighted Return) — výnos nezávislý na vkladech ────────
+  // history = PORTFOLIO_HISTORY s poli {d, v, deposit?}
+  // Každé sub-období: endValue = curr.v - deposit (odečteme nový vklad)
+  // Výsledek = geometricky složený výnos přes všechna sub-období.
+  // Vrací celkový TWR jako desetinné číslo (0.15 = 15 %) nebo null.
+  function calcTWR(history) {
+    if (!history || history.length < 2) return null;
+    let twr = 1.0;
+    for (let i = 1; i < history.length; i++) {
+      const prev    = history[i - 1];
+      const curr    = history[i];
+      const deposit = curr.deposit || 0;
+      // Hodnota portfolia na začátku sub-periody (předchozí bod)
+      const startValue = prev.v;
+      // Hodnota na konci sub-periody bez nového vkladu (aby vklad nekreslil výnos)
+      const endValue   = curr.v - deposit;
+      if (startValue <= 0) continue;
+      twr *= endValue / startValue;
+    }
+    return twr - 1;
+  }
+
+  // ── TWR pro konkrétní časové okno (pro Srovnání s indexy) ────────────
+  // Vezme záznamy od cutoffDate (Date objekt) a spočítá TWR pro toto okno.
+  function calcTWRForPeriod(history, cutoffDate) {
+    if (!history || history.length < 2) return null;
+    const filtered = history.filter(pt => new Date(pt.d + "-01") >= cutoffDate);
+    if (filtered.length < 2) return null;
+    // Přidáme bod těsně před cutoff jako startovní hodnotu sub-periody
+    const beforeCutoff = history.filter(pt => new Date(pt.d + "-01") < cutoffDate);
+    const startPt = beforeCutoff.length > 0 ? beforeCutoff[beforeCutoff.length - 1] : null;
+    const window = startPt ? [startPt, ...filtered] : filtered;
+    return calcTWR(window);
+  }
+
   // ── Export ────────────────────────────────────────────────────────────
   const api = {
     // parsing
@@ -237,6 +310,8 @@
     calcFireYears,
     // inflace
     CZ_CPI_YEARLY, cumulativeInflation, realReturn,
+    // výnosové metriky (Vlna 12)
+    calcXIRR, calcTWR, calcTWRForPeriod,
   };
 
   globalObj.InvestBookCore = api;
